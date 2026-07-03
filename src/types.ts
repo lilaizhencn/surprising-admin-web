@@ -75,6 +75,7 @@ export interface OrderRecord {
   executedQuantitySteps: number;
   remainingQuantitySteps: number;
   marginMode: string;
+  positionSide?: string;
   status: string;
   rejectReason?: string | null;
   createdAt: string;
@@ -98,6 +99,7 @@ export interface PositionRecord {
   symbol: string;
   instrumentVersion: number;
   marginMode: string;
+  positionSide: string;
   signedQuantitySteps: number;
   entryPriceTicks: number;
   realizedPnlUnits: number;

@@ -1200,10 +1200,10 @@ function UserProfileView({
               <DataTable rows={[...riskAccount, ...riskPositions]} maxColumns={8} />
             </ProfileSection>
             <ProfileSection title="普通订单">
-              <DataTable rows={orders} columns={["orderId", "userId", "symbol", "side", "orderType", "status", "remainingQuantitySteps", "updatedAt"]} />
+              <DataTable rows={orders} columns={["orderId", "userId", "symbol", "side", "positionSide", "orderType", "status", "remainingQuantitySteps", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="触发订单">
-              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "symbol", "side", "status", "triggerPriceTicks", "updatedAt"]} />
+              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "status", "triggerPriceTicks", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="成交明细">
               <DataTable rows={trades} columns={["tradeId", "orderId", "userId", "symbol", "priceTicks", "quantitySteps", "createdAt"]} />
@@ -1906,7 +1906,7 @@ function OrdersPage() {
           />
           <DataTable
             rows={orders as unknown as UnknownRecord[]}
-            columns={["orderId", "userId", "symbol", "side", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
+            columns={["orderId", "userId", "symbol", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
             onRowClick={(row) => void loadTimeline(Number(row.orderId))}
             actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
           />
@@ -1925,7 +1925,7 @@ function OrdersPage() {
           />
           <DataTable
             rows={triggerOrders}
-            columns={["triggerOrderId", "userId", "symbol", "side", "triggerType", "triggerPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+            columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "triggerPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
             onRowClick={(row) => void loadTriggerTimeline(Number(row.triggerOrderId))}
           />
         </Panel>
@@ -1940,7 +1940,10 @@ function OrdersPage() {
           onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}
           onReset={() => void load(filters.orderCursor, filters.triggerCursor, "")}
         />
-        <DataTable rows={trades} maxColumns={12} />
+        <DataTable
+          rows={trades}
+          columns={["tradeId", "symbol", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+        />
       </Panel>
     </Page>
   );
