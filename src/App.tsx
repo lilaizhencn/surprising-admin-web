@@ -574,20 +574,26 @@ function DashboardPage() {
   async function load() {
     setState({ loading: true, error: null, data: state.data });
     try {
-      const [instruments, candidates, liquidations, insurance, adl, makers, funding] = await Promise.all([
-        instrumentList({ limit: 200, sort: "symbol.asc" }),
+      const instruments = await instrumentList({ limit: 200, sort: "symbol.asc" });
+      const instrumentRows = instruments.instruments ?? instruments.items ?? [];
+      const selectedInstrument = instrumentRows.find((item) => item.symbol === symbol);
+      const shouldLoadFunding = !selectedInstrument || isFundingInstrument(selectedInstrument);
+      const fundingRequest = shouldLoadFunding
+        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol }).catch(() => null)
+        : Promise.resolve(null);
+      const [candidates, liquidations, insurance, adl, makers, funding] = await Promise.all([
         gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/liquidation-candidates", { status: "NEW", limit: 50 }),
         gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[] }>("liquidation-admin", "/orders", { limit: 50 }),
         gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset }),
         gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[] }>("adl", "/admin/queue", { asset, limit: 50, sort: ADL_QUEUE_SORT }),
         gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies"),
-        gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol })
+        fundingRequest
       ]);
       setState({
         loading: false,
         error: null,
         data: {
-          instruments: instruments.instruments ?? instruments.items ?? [],
+          instruments: instrumentRows,
           candidates: candidates.candidates ?? candidates.items ?? [],
           liquidations: liquidations.orders ?? liquidations.items ?? [],
           insurance: insurance.balances ?? insurance.items ?? [],
@@ -604,6 +610,10 @@ function DashboardPage() {
   useEffect(() => { void load(); }, []);
 
   const data = state.data;
+  const selectedInstrument = data?.instruments.find((item) => item.symbol === symbol);
+  const fundingMetric = selectedInstrument && !isFundingInstrument(selectedInstrument)
+    ? "非永续"
+    : formatValue(data?.funding?.fundingRatePpm ?? data?.funding?.fundingRate);
   return (
     <Page title="运营总览" onRefresh={load} loading={state.loading} error={state.error}>
       <div className="filters compact">
@@ -617,7 +627,7 @@ function DashboardPage() {
         <Metric label="强平订单" value={data?.liquidations.length ?? 0} tone={(data?.liquidations.length ?? 0) > 0 ? "warn" : "ok"} />
         <Metric label="ADL 队列" value={data?.adl.length ?? 0} tone={(data?.adl.length ?? 0) > 0 ? "warn" : "ok"} />
         <Metric label="做市策略" value={data?.makers.length ?? 0} tone="muted" />
-        <Metric label="资金费率" value={formatValue(data?.funding?.fundingRatePpm ?? data?.funding?.fundingRate)} tone="muted" />
+        <Metric label="资金费率" value={fundingMetric} tone="muted" />
       </div>
       <TwoColumn>
         <Panel title="保险基金">
@@ -1582,6 +1592,16 @@ function normalizeInstrumentDraft(next: UnknownRecord, changedField: string): Un
 function instrumentTypeForContract(contractType: string) {
   return Object.entries(CONTRACT_TYPES_BY_INSTRUMENT)
     .find(([, contractTypes]) => contractTypes.includes(contractType))?.[0] ?? "";
+}
+
+function isFundingInstrument(instrument?: Instrument | null): boolean {
+  const instrumentType = String(instrument?.instrumentType ?? "");
+  const contractType = String(instrument?.contractType ?? "");
+  return instrumentType === "PERPETUAL"
+    || contractType === "LINEAR_PERPETUAL"
+    || contractType === "INVERSE_PERPETUAL"
+    || contractType === "LINEAR"
+    || contractType === "INVERSE";
 }
 
 function DraftTextField({ label, field, draft, update, upper = false }: {
@@ -6857,7 +6877,7 @@ interface DashboardData {
   insurance: UnknownRecord[];
   adl: UnknownRecord[];
   makers: UnknownRecord[];
-  funding: UnknownRecord;
+  funding: UnknownRecord | null;
 }
 
 interface AccountData {
