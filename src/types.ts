@@ -57,6 +57,13 @@ export interface Instrument {
   makerFeeRatePpm?: number;
   takerFeeRatePpm?: number;
   fundingIntervalHours?: number;
+  expiryTime?: string | null;
+  deliveryTime?: string | null;
+  underlyingSymbol?: string | null;
+  strikePriceUnits?: number | null;
+  optionType?: string | null;
+  optionExerciseStyle?: string | null;
+  settlementMethod?: string | null;
   riskLimitBrackets?: unknown[];
   indexSources?: unknown[];
   [key: string]: unknown;

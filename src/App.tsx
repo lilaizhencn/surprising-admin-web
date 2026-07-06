@@ -154,9 +154,18 @@ const NAV = [
 ] satisfies Array<{ key: RouteKey; label: string; icon: typeof LayoutDashboard }>;
 
 const USER_STATUSES = ["NORMAL", "FROZEN", "TRADE_DISABLED", "WITHDRAW_DISABLED"];
-const INSTRUMENT_TYPES = ["SPOT", "PERPETUAL"];
-const CONTRACT_TYPES = ["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL"];
+const INSTRUMENT_TYPES = ["SPOT", "PERPETUAL", "DELIVERY", "OPTION"];
+const CONTRACT_TYPES = ["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "VANILLA_OPTION"];
 const INSTRUMENT_STATUSES = ["PRE_TRADING", "TRADING", "HALT", "SETTLING", "CLOSED"];
+const OPTION_TYPES = ["CALL", "PUT"];
+const OPTION_EXERCISE_STYLES = ["EUROPEAN", "AMERICAN"];
+const SETTLEMENT_METHODS = ["CASH", "PHYSICAL"];
+const CONTRACT_TYPES_BY_INSTRUMENT: Record<string, string[]> = {
+  SPOT: ["SPOT"],
+  PERPETUAL: ["LINEAR_PERPETUAL", "INVERSE_PERPETUAL"],
+  DELIVERY: ["LINEAR_DELIVERY", "INVERSE_DELIVERY"],
+  OPTION: ["VANILLA_OPTION"]
+};
 const FEE_STATUSES = ["ACTIVE", "DISABLED"];
 const FEE_SOURCE_TYPES = ["USER_OVERRIDE", "VIP", "MARKET_MAKER", "PROMOTION", "RISK_OVERRIDE"];
 const FEE_TIER_QUALIFICATION_MODES = ["VOLUME_ONLY", "BALANCE_ONLY", "VOLUME_OR_BALANCE", "VOLUME_AND_BALANCE"];
@@ -168,7 +177,7 @@ const AML_STATUSES = ["OPEN", "REVIEWING", "ESCALATED", "RESTRICTED", "CLEARED",
 const ORDER_STATUSES = ["", "ACCEPTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED", "CANCELED", "FILLED", "REJECTED"];
 const TRIGGER_ORDER_STATUSES = ["", "PENDING", "TRIGGERING", "TRIGGERED", "TRIGGER_FAILED", "CANCELED", "EXPIRED"];
 const AUDIT_STATUS_FILTERS = Array.from(new Set([...ORDER_STATUSES, ...TRIGGER_ORDER_STATUSES]));
-const ACCOUNT_TYPES = ["", "FUNDING", "SPOT", "USDT_PERPETUAL", "COIN_PERPETUAL"];
+const ACCOUNT_TYPES = ["", "FUNDING", "SPOT", "USDT_PERPETUAL", "COIN_PERPETUAL", "USDT_DELIVERY", "COIN_DELIVERY", "OPTION"];
 const WALLET_WITHDRAWAL_STATUSES = [
   "",
   "PENDING_REVIEW",
@@ -1353,7 +1362,8 @@ function MarketsPage() {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("产品配置必须是 JSON object。");
       }
-      const updated = await upsertInstrument(parsed as UnknownRecord);
+      const body = normalizeInstrumentDraft(parsed as UnknownRecord, "instrumentType");
+      const updated = await upsertInstrument(body);
       setSelected(updated);
       await load("");
     } catch (err) {
@@ -1363,7 +1373,7 @@ function MarketsPage() {
 
   function updateDraftField(field: string, value: unknown) {
     const base = draft ?? objectValue(selected);
-    setJson(JSON.stringify({ ...base, [field]: value }, null, 2));
+    setJson(JSON.stringify(normalizeInstrumentDraft({ ...base, [field]: value }, field), null, 2));
   }
 
   return (
@@ -1391,7 +1401,7 @@ function MarketsPage() {
       {health && <MarketHealthOverview health={health} />}
       <TwoColumn>
         <Panel title="交易产品">
-          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "version", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
+          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "version", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
           <CursorPager
             page={page}
             cursor={filters.cursor}
@@ -1407,6 +1417,8 @@ function MarketsPage() {
                 <Metric label="当前版本" value={selected.version ?? "-"} tone="muted" />
                 <Metric label="状态" value={selected.status ?? "-"} tone={selected.status === "TRADING" ? "ok" : "warn"} />
                 <Metric label="指数源" value={selected.indexSources?.length ?? 0} tone="muted" />
+                <Metric label="到期时间" value={selected.expiryTime ?? "-"} tone="muted" />
+                <Metric label="期权方向" value={selected.optionType ?? "-"} tone="muted" />
               </div>
               <div className="button-row">
                 {INSTRUMENT_STATUSES.map((item) => <button key={item} onClick={() => void changeStatus(item)}>{item}</button>)}
@@ -1423,6 +1435,17 @@ function MarketsPage() {
                     <DraftTextField label="Quote" field="quoteAsset" draft={draft} update={updateDraftField} upper />
                     <DraftTextField label="Settle" field="settleAsset" draft={draft} update={updateDraftField} upper />
                     <DraftTextField label="合约价值资产" field="contractValueAsset" draft={draft} update={updateDraftField} upper />
+                  </div>
+                </ProfileSection>
+                <ProfileSection title="交割与期权">
+                  <div className="form-grid">
+                    <DraftOptionalTextField label="到期时间 ISO" field="expiryTime" draft={draft} update={updateDraftField} />
+                    <DraftOptionalTextField label="交割时间 ISO" field="deliveryTime" draft={draft} update={updateDraftField} />
+                    <DraftOptionalTextField label="底层标的" field="underlyingSymbol" draft={draft} update={updateDraftField} upper />
+                    <DraftOptionalNumberField label="行权价 units" field="strikePriceUnits" draft={draft} update={updateDraftField} />
+                    <DraftOptionalSelectField label="期权方向" field="optionType" draft={draft} update={updateDraftField} options={OPTION_TYPES} />
+                    <DraftOptionalSelectField label="行权方式" field="optionExerciseStyle" draft={draft} update={updateDraftField} options={OPTION_EXERCISE_STYLES} />
+                    <DraftOptionalSelectField label="结算方式" field="settlementMethod" draft={draft} update={updateDraftField} options={SETTLEMENT_METHODS} />
                   </div>
                 </ProfileSection>
                 <ProfileSection title="交易规则">
@@ -1480,7 +1503,7 @@ function MarketsPage() {
                   <TextFilter label="Limit" value={versionFilters.limit} onChange={(value) => updateVersionFilters({ limit: value })} />
                   <button onClick={() => void loadVersions(selected.symbol, "")} disabled={historyLoading}><Search size={16} />查询版本</button>
                 </div>
-                <DataTable rows={versions as unknown as UnknownRecord[]} columns={["version", "status", "effectiveTime", "updatedAt", "makerFeeRatePpm", "takerFeeRatePpm", "maxLeveragePpm"]} onRowClick={(row) => setSelected(row as unknown as Instrument)} />
+                <DataTable rows={versions as unknown as UnknownRecord[]} columns={["version", "status", "contractType", "expiryTime", "effectiveTime", "updatedAt", "makerFeeRatePpm", "takerFeeRatePpm", "maxLeveragePpm"]} onRowClick={(row) => setSelected(row as unknown as Instrument)} />
                 <CursorPager
                   page={versionPage}
                   cursor={versionFilters.cursor}
@@ -1509,6 +1532,58 @@ function parseInstrumentDraft(json: string): { value: UnknownRecord | null; erro
   }
 }
 
+function normalizeInstrumentDraft(next: UnknownRecord, changedField: string): UnknownRecord {
+  const contractType = String(next.contractType ?? "");
+  const inferredType = instrumentTypeForContract(contractType);
+  const instrumentType = changedField === "contractType" && inferredType
+    ? inferredType
+    : String(next.instrumentType ?? "");
+  if (instrumentType) {
+    next.instrumentType = instrumentType;
+    const allowed = CONTRACT_TYPES_BY_INSTRUMENT[instrumentType] ?? CONTRACT_TYPES;
+    if (!allowed.includes(String(next.contractType ?? ""))) {
+      next.contractType = allowed[0];
+    }
+  }
+  if (instrumentType !== "PERPETUAL") {
+    next.fundingIntervalHours = 0;
+    next.interestRatePpm = 0;
+    next.fundingRateCapPpm = 0;
+    next.fundingRateFloorPpm = 0;
+  }
+  if (instrumentType === "SPOT") {
+    next.reduceOnlyEnabled = false;
+    next.riskLimitBrackets = [];
+  }
+  if (instrumentType === "SPOT" || instrumentType === "PERPETUAL") {
+    next.expiryTime = null;
+    next.deliveryTime = null;
+    next.underlyingSymbol = null;
+    next.strikePriceUnits = null;
+    next.optionType = null;
+    next.optionExerciseStyle = null;
+    next.settlementMethod = null;
+  }
+  if (instrumentType === "DELIVERY") {
+    next.settlementMethod = next.settlementMethod || "CASH";
+    next.strikePriceUnits = null;
+    next.optionType = null;
+    next.optionExerciseStyle = null;
+  }
+  if (instrumentType === "OPTION") {
+    next.contractType = "VANILLA_OPTION";
+    next.optionType = next.optionType || "CALL";
+    next.optionExerciseStyle = next.optionExerciseStyle || "EUROPEAN";
+    next.settlementMethod = next.settlementMethod || "CASH";
+  }
+  return next;
+}
+
+function instrumentTypeForContract(contractType: string) {
+  return Object.entries(CONTRACT_TYPES_BY_INSTRUMENT)
+    .find(([, contractTypes]) => contractTypes.includes(contractType))?.[0] ?? "";
+}
+
 function DraftTextField({ label, field, draft, update, upper = false }: {
   label: string;
   field: string;
@@ -1522,6 +1597,27 @@ function DraftTextField({ label, field, draft, update, upper = false }: {
       <input
         value={value}
         onChange={(event) => update(field, upper ? event.target.value.toUpperCase() : event.target.value)}
+      />
+    </label>
+  );
+}
+
+function DraftOptionalTextField({ label, field, draft, update, upper = false }: {
+  label: string;
+  field: string;
+  draft: UnknownRecord | null;
+  update: (field: string, value: unknown) => void;
+  upper?: boolean;
+}) {
+  const value = String(draft?.[field] ?? "");
+  return (
+    <label>{label}
+      <input
+        value={value}
+        onChange={(event) => {
+          const next = upper ? event.target.value.toUpperCase() : event.target.value;
+          update(field, next.trim() ? next : null);
+        }}
       />
     </label>
   );
@@ -1548,6 +1644,27 @@ function DraftNumberField({ label, field, draft, update }: {
   );
 }
 
+function DraftOptionalNumberField({ label, field, draft, update }: {
+  label: string;
+  field: string;
+  draft: UnknownRecord | null;
+  update: (field: string, value: unknown) => void;
+}) {
+  const value = draft?.[field];
+  return (
+    <label>{label}
+      <input
+        inputMode="numeric"
+        value={value === undefined || value === null ? "" : String(value)}
+        onChange={(event) => {
+          const next = event.target.value.trim();
+          update(field, next === "" ? null : Number(next));
+        }}
+      />
+    </label>
+  );
+}
+
 function DraftSelectField({ label, field, draft, update, options }: {
   label: string;
   field: string;
@@ -1559,6 +1676,24 @@ function DraftSelectField({ label, field, draft, update, options }: {
   return (
     <label>{label}
       <select value={value} onChange={(event) => update(field, event.target.value)}>
+        <option value="">请选择</option>
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function DraftOptionalSelectField({ label, field, draft, update, options }: {
+  label: string;
+  field: string;
+  draft: UnknownRecord | null;
+  update: (field: string, value: unknown) => void;
+  options: string[];
+}) {
+  const value = String(draft?.[field] ?? "");
+  return (
+    <label>{label}
+      <select value={value} onChange={(event) => update(field, event.target.value || null)}>
         <option value="">请选择</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
