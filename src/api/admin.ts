@@ -468,7 +468,9 @@ export async function downloadExportFile(exportId: number | string) {
 }
 
 export function gatewayGet<T>(service: string, path: string, params: Record<string, unknown> = {}) {
-  return request<T>(`${adminGatewayPath(service, path)}${queryString(params)}`);
+  return request<T>(`${adminGatewayPath(service, path)}${queryString(params)}`, {
+    productLine: productLineParam(params)
+  });
 }
 
 export function instruments(params: {
@@ -629,6 +631,7 @@ async function gatewayWrite<T>(
   const query = queryString(params);
   const serializedBody = body === undefined ? undefined : JSON.stringify(body);
   const headers: Record<string, string> = {};
+  const productLine = productLineParam(params);
 
   if (requiresApproval(service, path, method)) {
     await attachApproval(headers, service, method, requestPath, query, serializedBody);
@@ -637,7 +640,8 @@ async function gatewayWrite<T>(
   return request<T>(`${requestPath}${query}`, {
     method,
     headers,
-    body: serializedBody
+    body: serializedBody,
+    productLine
   });
 }
 
@@ -715,6 +719,11 @@ async function sha256Hex(value: string) {
   return Array.from(new Uint8Array(digest))
     .map((item) => item.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function productLineParam(params: Record<string, unknown>) {
+  const value = params.productLine;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 async function blobApiError(response: Response) {

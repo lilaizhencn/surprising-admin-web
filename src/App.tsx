@@ -126,6 +126,7 @@ import type {
   Instrument,
   OrderRecord,
   PositionRecord,
+  ProductLine,
   RouteKey,
   StatusTone,
   UnknownRecord
@@ -178,6 +179,25 @@ const ORDER_STATUSES = ["", "ACCEPTED", "PARTIALLY_FILLED", "CANCEL_REQUESTED", 
 const TRIGGER_ORDER_STATUSES = ["", "PENDING", "TRIGGERING", "TRIGGERED", "TRIGGER_FAILED", "CANCELED", "EXPIRED"];
 const AUDIT_STATUS_FILTERS = Array.from(new Set([...ORDER_STATUSES, ...TRIGGER_ORDER_STATUSES]));
 const ACCOUNT_TYPES = ["", "FUNDING", "SPOT", "USDT_PERPETUAL", "COIN_PERPETUAL", "USDT_DELIVERY", "COIN_DELIVERY", "OPTION"];
+const PRODUCT_LINES = ["", "SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"] as const;
+const ACCOUNT_TYPE_PRODUCT_LINE: Record<string, ProductLine> = {
+  SPOT: "SPOT",
+  USDT_PERPETUAL: "LINEAR_PERPETUAL",
+  COIN_PERPETUAL: "INVERSE_PERPETUAL",
+  USDT_DELIVERY: "LINEAR_DELIVERY",
+  COIN_DELIVERY: "INVERSE_DELIVERY",
+  OPTION: "OPTION"
+};
+const productLineForAccountType = (accountType: string) => ACCOUNT_TYPE_PRODUCT_LINE[accountType] ?? "";
+const isFundingProductLine = (productLine: string) => !productLine || productLine === "LINEAR_PERPETUAL" || productLine === "INVERSE_PERPETUAL";
+function productLineForInstrument(instrument?: Pick<Instrument, "instrumentType" | "contractType">): ProductLine {
+  if (instrument?.instrumentType === "SPOT" || instrument?.contractType === "SPOT") return "SPOT";
+  if (instrument?.instrumentType === "OPTION" || instrument?.contractType === "VANILLA_OPTION") return "OPTION";
+  if (instrument?.contractType === "LINEAR_DELIVERY") return "LINEAR_DELIVERY";
+  if (instrument?.contractType === "INVERSE_DELIVERY") return "INVERSE_DELIVERY";
+  if (instrument?.contractType === "INVERSE_PERPETUAL" || instrument?.contractType === "INVERSE") return "INVERSE_PERPETUAL";
+  return "LINEAR_PERPETUAL";
+}
 const WALLET_WITHDRAWAL_STATUSES = [
   "",
   "PENDING_REVIEW",
@@ -577,15 +597,16 @@ function DashboardPage() {
       const instruments = await instrumentList({ limit: 200, sort: "symbol.asc" });
       const instrumentRows = instruments.instruments ?? instruments.items ?? [];
       const selectedInstrument = instrumentRows.find((item) => item.symbol === symbol);
+      const productLine = productLineForInstrument(selectedInstrument);
       const shouldLoadFunding = !selectedInstrument || isFundingInstrument(selectedInstrument);
       const fundingRequest = shouldLoadFunding
-        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol }).catch(() => null)
+        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol, productLine }).catch(() => null)
         : Promise.resolve(null);
       const [candidates, liquidations, insurance, adl, makers, funding] = await Promise.all([
-        gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/liquidation-candidates", { status: "NEW", limit: 50 }),
-        gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[] }>("liquidation-admin", "/orders", { limit: 50 }),
-        gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset }),
-        gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[] }>("adl", "/admin/queue", { asset, limit: 50, sort: ADL_QUEUE_SORT }),
+        gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/liquidation-candidates", { status: "NEW", productLine, limit: 50 }),
+        gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[] }>("liquidation-admin", "/orders", { productLine, limit: 50 }),
+        gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset, productLine }),
+        gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[] }>("adl", "/admin/queue", { asset, productLine, limit: 50, sort: ADL_QUEUE_SORT }),
         gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies"),
         fundingRequest
       ]);
@@ -1831,6 +1852,7 @@ function MarketHealthOverview({ health }: { health: UnknownRecord }) {
 
 function OrdersPage() {
   const [filters, setFilters] = useState({
+    productLine: "LINEAR_PERPETUAL",
     userId: "",
     symbol: "",
     status: "",
@@ -1883,6 +1905,7 @@ function OrdersPage() {
           symbol: filters.symbol,
           status: orderStatus,
           orderId: filters.orderId,
+          productLine: filters.productLine,
           limit: Number(filters.limit) || 100,
           cursor: nextOrderCursor,
           sort: filters.orderSort
@@ -1892,6 +1915,7 @@ function OrdersPage() {
           symbol: filters.symbol,
           status: triggerStatus,
           triggerOrderId: filters.orderId,
+          productLine: filters.productLine,
           limit: Number(filters.limit) || 100,
           cursor: nextTriggerCursor,
           sort: filters.triggerSort
@@ -1900,6 +1924,7 @@ function OrdersPage() {
           userId: filters.userId,
           symbol: filters.symbol,
           orderId: filters.orderId,
+          productLine: filters.productLine,
           limit: Number(filters.limit) || 100,
           cursor: nextTradeCursor,
           sort: filters.tradeSort
@@ -1926,12 +1951,12 @@ function OrdersPage() {
   }
 
   async function loadTimeline(orderId: number) {
-    const response = await gatewayGet<UnknownRecord>("trading-orders", `/${orderId}/timeline`);
+    const response = await gatewayGet<UnknownRecord>("trading-orders", `/${orderId}/timeline`, { productLine: filters.productLine });
     setTimeline(response);
   }
 
   async function loadTriggerTimeline(triggerOrderId: number) {
-    const response = await gatewayGet<UnknownRecord>("trading-trigger", `/${triggerOrderId}/timeline`);
+    const response = await gatewayGet<UnknownRecord>("trading-trigger", `/${triggerOrderId}/timeline`, { productLine: filters.productLine });
     setTriggerTimeline(response);
   }
 
@@ -1945,7 +1970,7 @@ function OrdersPage() {
     setLoading(true);
     setError("");
     try {
-      await gatewayPost("trading-orders", `/${orderId}/cancel`, { reason });
+      await gatewayPost("trading-orders", `/${orderId}/cancel`, { reason }, { productLine: filters.productLine });
       await load("", filters.triggerCursor, filters.tradeCursor);
       await loadTimeline(Number(orderId));
     } catch (err) {
@@ -1969,7 +1994,7 @@ function OrdersPage() {
         symbol: filters.symbol || undefined,
         limit: Number(filters.limit) || 100,
         reason
-      });
+      }, { productLine: filters.productLine });
       setTimeline(response);
       await load("", filters.triggerCursor, filters.tradeCursor);
     } catch (err) {
@@ -1986,6 +2011,7 @@ function OrdersPage() {
       const response = await gatewayGet<UnknownRecord>("trading-orders", "/cancel-preview", {
         userId: filters.userId ? Number(filters.userId) : undefined,
         symbol: filters.symbol || undefined,
+        productLine: filters.productLine,
         limit: Number(filters.limit) || 100
       });
       setCancelPreview(response);
@@ -2013,7 +2039,7 @@ function OrdersPage() {
         symbol: filters.symbol,
         limit: Number(filters.limit) || 100,
         reason
-      });
+      }, { productLine: filters.productLine });
       setTimeline(response);
       await load("", filters.triggerCursor, filters.tradeCursor);
       await previewCancelImpact();
@@ -2029,6 +2055,7 @@ function OrdersPage() {
   return (
     <Page title="订单审计" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
+        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
         <TextFilter label="Order / Trigger ID" value={filters.orderId} onChange={(value) => updateFilters({ orderId: value })} />
@@ -2278,6 +2305,7 @@ function AccountsPage() {
     setLoading(true);
     setError("");
     try {
+      const productLine = productLineForAccountType(accountType);
       const adjustmentParams = {
         userId,
         asset,
@@ -2287,7 +2315,7 @@ function AccountsPage() {
         limit: Number(adjustmentFilters.limit) || 100,
         cursor: nextAdjustmentCursor,
         sort: adjustmentFilters.sort,
-        ...(adjustmentFilters.adjustmentKind === "PRODUCT" ? { accountType } : {})
+        ...(adjustmentFilters.adjustmentKind === "PRODUCT" ? { accountType, productLine } : {})
       };
       const reportParams = {
         valuationAsset: reportFilters.valuationAsset || "USDT",
@@ -2321,8 +2349,8 @@ function AccountsPage() {
         snapshotAlerts
       ] = await Promise.all([
         gatewayGet<{ balances?: BalanceRecord[] }>("account", "/balances", { userId }),
-        gatewayGet<{ balances?: BalanceRecord[] }>("account", "/product-balances", { userId, accountType }),
-        gatewayGet<{ positions?: PositionRecord[] }>("account", "/positions", { userId }),
+        gatewayGet<{ balances?: BalanceRecord[] }>("account", "/product-balances", { userId, accountType, productLine }),
+        gatewayGet<{ positions?: PositionRecord[] }>("account", "/positions", { userId, productLine }),
         gatewayGet<{ entries?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>(
           "account",
           "/ledger",
@@ -2341,6 +2369,7 @@ function AccountsPage() {
             userId,
             accountType,
             asset,
+            productLine,
             limit: Number(ledgerFilters.limit) || 100,
             cursor: nextProductLedgerCursor,
             sort: ledgerFilters.sort
@@ -2353,6 +2382,7 @@ function AccountsPage() {
             userId,
             accountType,
             asset,
+            productLine,
             limit: Number(ledgerFilters.limit) || 100,
             cursor: nextTransferCursor,
             sort: ledgerFilters.sort
@@ -2413,7 +2443,13 @@ function AccountsPage() {
     setLoading(true);
     setError("");
     try {
-      await gatewayPost("account", product ? "/product-balance-adjustments" : "/balance-adjustments", body);
+      const productLine = product ? productLineForAccountType(accountType) : "";
+      await gatewayPost(
+        "account",
+        product ? "/product-balance-adjustments" : "/balance-adjustments",
+        body,
+        productLine ? { productLine } : {}
+      );
       setAdjust({ amountUnits: "", referenceId: "", reason: "" });
       await load("", "", "", "", "", "");
     } catch (err) {
@@ -3812,6 +3848,7 @@ function RiskPage() {
   const [asset, setAsset] = useState("USDT");
   const [userId, setUserId] = useState("");
   const [listFilters, setListFilters] = useState({
+    productLine: "LINEAR_PERPETUAL",
     limit: "100",
     candidateSort: "eventTime.asc",
     highRiskSort: "eventTime.desc",
@@ -3880,18 +3917,21 @@ function RiskPage() {
       const [candidates, liquidations, adlQueue, adlEvents, rules, highRisk] = await Promise.all([
         gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("risk-admin", "/liquidation-candidates", {
           status: "NEW",
+          productLine: listFilters.productLine,
           limit,
           cursor: nextCandidateCursor,
           sort: listFilters.candidateSort
         }),
         gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("liquidation-admin", "/orders", {
           userId,
+          productLine: listFilters.productLine,
           limit,
           cursor: nextLiquidationCursor,
           sort: listFilters.liquidationSort
         }),
         gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("adl", "/admin/queue", {
           asset,
+          productLine: listFilters.productLine,
           limit,
           cursor: nextAdlQueueCursor,
           sort: ADL_QUEUE_SORT
@@ -3899,12 +3939,14 @@ function RiskPage() {
         gatewayGet<{ events?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("adl", "/admin/events", {
           userId,
           asset,
+          productLine: listFilters.productLine,
           limit,
           cursor: nextAdlEventCursor,
           sort: listFilters.adlEventSort
         }),
-        gatewayGet<{ rules?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/rules"),
+        gatewayGet<{ rules?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/rules", { productLine: listFilters.productLine }),
         gatewayGet<{ accounts?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("risk-admin", "/high-risk-accounts", {
+          productLine: listFilters.productLine,
           limit,
           cursor: nextHighRiskCursor,
           sort: listFilters.highRiskSort
@@ -3964,7 +4006,7 @@ function RiskPage() {
       const response = await gatewayGet<UnknownRecord>(
         "liquidation-admin",
         `/candidates/${encodeURIComponent(String(candidateId))}/timeline`,
-        { limit: 200 }
+        { limit: 200, productLine: listFilters.productLine }
       );
       setTimeline(response);
     } catch (err) {
@@ -3988,7 +4030,12 @@ function RiskPage() {
     setLoading(true);
     setError("");
     try {
-      await gatewayPost("liquidation-admin", `/candidates/${encodeURIComponent(String(candidateId))}/cancel`, { reason });
+      await gatewayPost(
+        "liquidation-admin",
+        `/candidates/${encodeURIComponent(String(candidateId))}/cancel`,
+        { reason },
+        { productLine: listFilters.productLine }
+      );
       await load();
       await loadTimeline({ candidateId });
     } catch (err) {
@@ -4014,7 +4061,7 @@ function RiskPage() {
         warningMarginRatioPpm: warning,
         liquidationMarginRatioPpm: liquidation,
         reason
-      });
+      }, { productLine: listFilters.productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -4039,7 +4086,7 @@ function RiskPage() {
         scanDelayMs,
         scanBatchSize,
         reason
-      });
+      }, { productLine: listFilters.productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -4055,6 +4102,7 @@ function RiskPage() {
   return (
     <Page title="风控强平" onRefresh={() => load()} loading={loading} error={error}>
       <div className="filters">
+        <label>产品线<select value={listFilters.productLine} onChange={(event) => updateRiskFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetRiskCursors(); }} />
         <TextFilter label="User ID" value={userId} onChange={(value) => { setUserId(value); resetRiskCursors(); }} />
         <TextFilter label="Limit" value={listFilters.limit} onChange={(value) => updateRiskFilters({ limit: value })} />
@@ -4169,9 +4217,9 @@ function RiskPage() {
         </Panel>
       </TwoColumn>
       <div className="three-grid">
-        <RuntimeConfigPanel title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} />
-        <RuntimeConfigPanel title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} />
-        <RuntimeConfigPanel title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} />
+        <RuntimeConfigPanel title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} productLine={listFilters.productLine} />
       </div>
     </Page>
   );
@@ -4182,6 +4230,7 @@ function FundingInsurancePage() {
   const [asset, setAsset] = useState("USDT");
   const [fundingUserId, setFundingUserId] = useState("");
   const [listFilters, setListFilters] = useState({
+    productLine: "LINEAR_PERPETUAL",
     limit: "100",
     rateSort: "eventTime.desc",
     paymentSort: "createdAt.desc",
@@ -4230,34 +4279,40 @@ function FundingInsurancePage() {
     setLoading(true);
     setError("");
     try {
-      const paymentRequest = fundingUserId.trim()
+      const productLine = listFilters.productLine;
+      const shouldLoadFunding = isFundingProductLine(productLine);
+      const paymentRequest = fundingUserId.trim() && shouldLoadFunding
         ? gatewayGet<{ payments?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("funding", "/admin/payments", {
           userId: fundingUserId.trim(),
           symbol,
+          productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextPaymentCursor,
           sort: listFilters.paymentSort
         })
         : Promise.resolve({ payments: [], items: [], nextCursor: null, hasMore: false, sort: listFilters.paymentSort, limit: Number(listFilters.limit) || 100 });
       const [latest, history, settlement, payments, balances, ledger, coverages] = await Promise.all([
-        gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol }),
-        gatewayGet<{ rates?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("funding", "/admin/rates/history", {
+        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol, productLine }) : Promise.resolve({}),
+        shouldLoadFunding ? gatewayGet<{ rates?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("funding", "/admin/rates/history", {
           symbol,
+          productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextRateCursor,
           sort: listFilters.rateSort
-        }),
-        gatewayGet<UnknownRecord>("funding", "/admin/settlements/latest", { symbol }),
+        }) : Promise.resolve({ rates: [], items: [], nextCursor: null, hasMore: false, sort: listFilters.rateSort, limit: Number(listFilters.limit) || 100 }),
+        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/settlements/latest", { symbol, productLine }) : Promise.resolve({}),
         paymentRequest,
-        gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset }),
+        gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset, productLine }),
         gatewayGet<{ entries?: UnknownRecord[]; ledger?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("insurance-admin", "/ledger", {
           asset,
+          productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextLedgerCursor,
           sort: listFilters.insuranceSort
         }),
         gatewayGet<{ coverages?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("insurance-admin", "/coverages", {
           asset,
+          productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextCoverageCursor,
           sort: listFilters.insuranceSort
@@ -4296,7 +4351,7 @@ function FundingInsurancePage() {
       amountUnits: Number(adjust.amountUnits),
       referenceId: adjust.referenceId,
       reason: adjust.reason
-    });
+    }, { productLine: listFilters.productLine });
     setAdjust({ amountUnits: "", referenceId: "", reason: "" });
     await load();
   }
@@ -4306,6 +4361,7 @@ function FundingInsurancePage() {
   return (
     <Page title="资金费与保险基金" onRefresh={() => load()} loading={loading} error={error}>
       <div className="filters">
+        <label>产品线<select value={listFilters.productLine} onChange={(event) => updateListFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <TextFilter label="Symbol" value={symbol} onChange={(value) => { setSymbol(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="付款 User ID" value={fundingUserId} onChange={(value) => { setFundingUserId(value); resetFundingCursors(); }} />
@@ -4365,8 +4421,10 @@ function FundingInsurancePage() {
         </div>
       </Panel>
       <TwoColumn>
-        <RuntimeConfigPanel title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} />
-        <RuntimeConfigPanel title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} />
+        {isFundingProductLine(listFilters.productLine) && (
+          <RuntimeConfigPanel title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} productLine={listFilters.productLine} />
+        )}
+        <RuntimeConfigPanel title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} productLine={listFilters.productLine} />
       </TwoColumn>
     </Page>
   );
@@ -4996,11 +5054,12 @@ function MarketMakerPage() {
   );
 }
 
-function RuntimeConfigPanel({ title, service, path, template }: {
+function RuntimeConfigPanel({ title, service, path, template, productLine }: {
   title: string;
   service: string;
   path: string;
   template: UnknownRecord;
+  productLine?: string;
 }) {
   const [config, setConfig] = useState<UnknownRecord | null>(null);
   const [json, setJson] = useState(JSON.stringify(template, null, 2));
@@ -5011,7 +5070,7 @@ function RuntimeConfigPanel({ title, service, path, template }: {
     setLoading(true);
     setError("");
     try {
-      setConfig(await gatewayGet<UnknownRecord>(service, path));
+      setConfig(await gatewayGet<UnknownRecord>(service, path, { productLine }));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -5023,7 +5082,7 @@ function RuntimeConfigPanel({ title, service, path, template }: {
     setLoading(true);
     setError("");
     try {
-      const response = await gatewayPost<UnknownRecord>(service, path, JSON.parse(json));
+      const response = await gatewayPost<UnknownRecord>(service, path, JSON.parse(json), { productLine });
       setConfig(response);
     } catch (err) {
       setError(errorMessage(err));
@@ -5032,7 +5091,7 @@ function RuntimeConfigPanel({ title, service, path, template }: {
     }
   }
 
-  useEffect(() => { void load(); }, [service, path]);
+  useEffect(() => { void load(); }, [service, path, productLine]);
 
   return (
     <Panel title={title}>

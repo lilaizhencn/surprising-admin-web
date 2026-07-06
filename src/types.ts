@@ -20,6 +20,7 @@ export type RouteKey =
   | "audit";
 
 export type StatusTone = "ok" | "warn" | "danger" | "muted";
+export type ProductLine = "SPOT" | "LINEAR_PERPETUAL" | "INVERSE_PERPETUAL" | "LINEAR_DELIVERY" | "INVERSE_DELIVERY" | "OPTION";
 
 export interface AuthenticatedUser {
   userId: number;

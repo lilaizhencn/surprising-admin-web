@@ -47,14 +47,25 @@ export function queryString(params: Record<string, unknown>) {
   return value ? `?${value}` : "";
 }
 
-export async function request<T>(path: string, init: RequestInit = {}, session = loadSession()): Promise<T> {
+export interface AdminRequestInit extends RequestInit {
+  productLine?: string;
+}
+
+export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<T> {
+  const { productLine, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (session?.accessToken) {
+    headers.set("Authorization", `Bearer ${session.accessToken}`);
+  }
+  if (productLine) {
+    headers.set("X-Product-Line", productLine);
+  }
   const response = await fetch(`${config.gatewayBaseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}),
-      ...(init.headers || {})
-    }
+    ...requestInit,
+    headers
   });
   if (response.status === 401 && session?.refreshToken && !path.endsWith("/auth/refresh")) {
     const refreshed = await refreshSession(session.refreshToken);
