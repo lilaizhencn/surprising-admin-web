@@ -607,7 +607,7 @@ function DashboardPage() {
         gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[] }>("liquidation-admin", "/orders", { productLine, limit: 50 }),
         gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset, productLine }),
         gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[] }>("adl", "/admin/queue", { asset, productLine, limit: 50, sort: ADL_QUEUE_SORT }),
-        gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies"),
+        gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies", { productLine }),
         fundingRequest
       ]);
       setState({
@@ -4736,6 +4736,7 @@ function MarketMakerPage() {
   const [runLogs, setRunLogs] = useState<UnknownRecord[]>([]);
   const [selectedStrategyId, setSelectedStrategyId] = useState("");
   const [insightFilters, setInsightFilters] = useState({
+    productLine: "LINEAR_PERPETUAL",
     strategyId: "",
     symbol: "",
     accountId: "",
@@ -4762,16 +4763,18 @@ function MarketMakerPage() {
       const insightParams = marketMakerInsightParams(insightFilters);
       const logParams = { ...insightParams, cursor: nextLogCursor, sort: insightFilters.logSort };
       const [strategyResponse, metricsResponse, pnlResponse, logResponse] = await Promise.all([
-        gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies"),
-        gatewayGet<UnknownRecord>("market-maker", "/metrics", { limit: 200 }),
+        gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies", insightParams),
+        gatewayGet<UnknownRecord>("market-maker", "/metrics", { productLine: insightFilters.productLine, limit: 200 }),
         gatewayGet<UnknownRecord>("market-maker", "/pnl-attribution", insightParams),
         gatewayGet<{ events?: UnknownRecord[]; count?: number; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("market-maker", "/strategy-logs", logParams)
       ]);
       const nextStrategies = strategyResponse.strategies ?? strategyResponse.items ?? [];
       setStrategies(nextStrategies);
-      if (!selectedStrategyId && nextStrategies.length) {
+      if (nextStrategies.length && (!selectedStrategyId || !nextStrategies.some((item) => String(item.strategyId ?? item.id ?? "") === selectedStrategyId))) {
         const nextStrategyId = String(nextStrategies[0].strategyId ?? nextStrategies[0].id ?? "");
         setSelectedStrategyId(nextStrategyId);
+      } else if (!nextStrategies.length) {
+        setSelectedStrategyId("");
       }
       setMetrics(metricsResponse);
       setPnl(pnlResponse);
@@ -4790,7 +4793,7 @@ function MarketMakerPage() {
     setLoading(true);
     setError("");
     try {
-      await gatewayPost("market-maker", `/strategies/${strategyId}/${op}`);
+      await gatewayPost("market-maker", `/strategies/${strategyId}/${op}`, undefined, { productLine: insightFilters.productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -4807,7 +4810,11 @@ function MarketMakerPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await gatewayGet<UnknownRecord>("market-maker", `/strategies/${encodeURIComponent(strategyId)}/config`);
+      const response = await gatewayGet<UnknownRecord>(
+        "market-maker",
+        `/strategies/${encodeURIComponent(strategyId)}/config`,
+        { productLine: insightFilters.productLine }
+      );
       setStrategyConfig(response);
       setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
     } catch (err) {
@@ -4828,7 +4835,8 @@ function MarketMakerPage() {
       const response = await gatewayPost<UnknownRecord>(
         "market-maker",
         `/strategies/${encodeURIComponent(selectedStrategyId)}/config`,
-        JSON.parse(configJson)
+        JSON.parse(configJson),
+        { productLine: insightFilters.productLine }
       );
       setStrategyConfig(response);
       setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
@@ -4851,7 +4859,8 @@ function MarketMakerPage() {
       const response = await gatewayPost<UnknownRecord>(
         "market-maker",
         `/strategies/${encodeURIComponent(selectedStrategyId)}/config`,
-        { ...marketMakerConfigTemplate(), reason: "Reset market-maker strategy override" }
+        { ...marketMakerConfigTemplate(), reason: "Reset market-maker strategy override" },
+        { productLine: insightFilters.productLine }
       );
       setStrategyConfig(response);
       setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
@@ -4867,7 +4876,7 @@ function MarketMakerPage() {
     setLoading(true);
     setError("");
     try {
-      await gatewayPost("market-maker", "/run-once", {});
+      await gatewayPost("market-maker", "/run-once", { productLine: insightFilters.productLine }, { productLine: insightFilters.productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -4905,6 +4914,11 @@ function MarketMakerPage() {
       </div>
       <Panel title="收益归因与运行日志筛选">
         <div className="filters">
+          <label>产品线<select value={insightFilters.productLine} onChange={(event) => {
+            setSelectedStrategyId("");
+            setStrategyConfig(null);
+            updateInsightFilters({ productLine: event.target.value });
+          }}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <TextFilter label="Strategy" value={insightFilters.strategyId} onChange={(value) => updateInsightFilters({ strategyId: value })} />
           <TextFilter label="Symbol" value={insightFilters.symbol} onChange={(value) => updateInsightFilters({ symbol: value.toUpperCase() })} />
           <TextFilter label="Account ID" value={insightFilters.accountId} onChange={(value) => updateInsightFilters({ accountId: value })} />
@@ -4929,7 +4943,7 @@ function MarketMakerPage() {
       </div>
       <TwoColumn>
         <Panel title="策略控制">
-          <DataTable rows={strategies} columns={["strategyId", "status", "configuredEnabled", "runtimePaused", "cycleSequence", "submittedOrders", "canceledOrders", "rejectedOrders", "lastTraceId", "lastError"]} actions={(row) => (
+          <DataTable rows={strategies} columns={["productLine", "strategyId", "status", "configuredEnabled", "runtimePaused", "cycleSequence", "submittedOrders", "canceledOrders", "rejectedOrders", "lastTraceId", "lastError"]} actions={(row) => (
             <div className="button-row compact-row">
               <button onClick={() => void action(row.strategyId ?? row.id, "pause")}>暂停</button>
               <button onClick={() => void action(row.strategyId ?? row.id, "resume")}>恢复</button>
@@ -4937,7 +4951,7 @@ function MarketMakerPage() {
           )} />
         </Panel>
         <Panel title="异常列表">
-          <DataTable rows={anomalies} columns={["severity", "type", "strategyId", "symbol", "accountId", "metricValue", "threshold", "summary"]} />
+          <DataTable rows={anomalies} columns={["severity", "type", "productLine", "strategyId", "symbol", "accountId", "metricValue", "threshold", "summary"]} />
         </Panel>
       </TwoColumn>
       <Panel title="策略参数编辑">
@@ -4950,7 +4964,7 @@ function MarketMakerPage() {
             <option value="">请选择</option>
             {strategies.map((strategy) => {
               const strategyId = String(strategy.strategyId ?? strategy.id ?? "");
-              return <option key={strategyId} value={strategyId}>{strategyId}</option>;
+              return <option key={`${strategy.productLine ?? insightFilters.productLine}:${strategyId}`} value={strategyId}>{strategyId}</option>;
             })}
           </select></label>
           <button onClick={() => void loadConfig()}><Search size={16} />读取配置</button>
@@ -4975,6 +4989,7 @@ function MarketMakerPage() {
             rows={pnlRows}
             columns={[
               "strategyId",
+              "productLine",
               "symbol",
               "accountId",
               "marginMode",
@@ -4998,6 +5013,7 @@ function MarketMakerPage() {
               rows={runLogs}
               columns={[
                 "createdAt",
+                "productLine",
                 "strategyId",
                 "symbol",
                 "accountId",
@@ -5025,6 +5041,7 @@ function MarketMakerPage() {
           rows={metricRows}
           columns={[
             "strategyId",
+            "productLine",
             "symbol",
             "accountId",
             "strategyStatus",
@@ -5047,7 +5064,7 @@ function MarketMakerPage() {
       </Panel>
       {warnings.length > 0 && (
         <Panel title="指标采集警告">
-          <DataTable rows={warnings} columns={["strategyId", "symbol", "accountId", "message"]} />
+          <DataTable rows={warnings} columns={["productLine", "strategyId", "symbol", "accountId", "message"]} />
         </Panel>
       )}
     </Page>
@@ -6664,6 +6681,7 @@ function marketMakerConfigPayload(config: UnknownRecord | null): UnknownRecord {
 }
 
 function marketMakerInsightParams(filters: {
+  productLine: string;
   strategyId: string;
   symbol: string;
   accountId: string;
@@ -6678,6 +6696,7 @@ function marketMakerInsightParams(filters: {
     limit: Number(filters.limit) || 100
   };
   if (filters.strategyId.trim()) params.strategyId = filters.strategyId.trim();
+  if (filters.productLine.trim()) params.productLine = filters.productLine.trim();
   if (filters.symbol.trim()) params.symbol = filters.symbol.trim().toUpperCase();
   if (filters.accountId.trim()) params.accountId = filters.accountId.trim();
   if (filters.eventType.trim()) params.eventType = filters.eventType.trim();
