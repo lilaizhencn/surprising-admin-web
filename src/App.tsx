@@ -1917,7 +1917,7 @@ function OrdersPage() {
       const orderStatus = ORDER_STATUSES.includes(filters.status) ? filters.status : "";
       const triggerStatus = TRIGGER_ORDER_STATUSES.includes(filters.status) ? filters.status : "";
       const [metricsResponse, response, triggerResponse, tradeResponse] = await Promise.all([
-        tradingMetrics({ windowMinutes: Number(metricsWindowMinutes) || 1440, limit: 20 }),
+        tradingMetrics({ windowMinutes: Number(metricsWindowMinutes) || 1440, productLine: filters.productLine, limit: 20 }),
         gatewayGet<{ orders?: OrderRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-orders", "", {
           userId: filters.userId,
           symbol: filters.symbol,

@@ -222,7 +222,7 @@ export function systemObservability() {
   return request<UnknownRecord>("/api/v1/admin/system/observability");
 }
 
-export function tradingMetrics(params: { windowMinutes?: number; limit?: number } = {}) {
+export function tradingMetrics(params: { windowMinutes?: number; productLine?: string; limit?: number } = {}) {
   return request<UnknownRecord>(`/api/v1/admin/trading/metrics${queryString(params)}`);
 }
 
