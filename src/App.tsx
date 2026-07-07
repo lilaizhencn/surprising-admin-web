@@ -674,6 +674,7 @@ function UsersPage() {
   const [sessionPageInfo, setSessionPageInfo] = useState(cursorInfo());
   const [profile, setProfile] = useState<UnknownRecord | null>(null);
   const [profileAsset, setProfileAsset] = useState("USDT");
+  const [profileProductLine, setProfileProductLine] = useState("LINEAR_PERPETUAL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rolesText, setRolesText] = useState("");
@@ -695,7 +696,11 @@ function UsersPage() {
   }
 
   async function loadProfile(userId: number) {
-    const response = await userProfile(userId, { settleAsset: profileAsset, limit: 50 });
+    const response = await userProfile(userId, {
+      settleAsset: profileAsset,
+      productLine: profileProductLine,
+      limit: 50
+    });
     setProfile(response);
   }
 
@@ -881,6 +886,8 @@ function UsersPage() {
             profile={profile}
             settleAsset={profileAsset}
             onSettleAssetChange={setProfileAsset}
+            productLine={profileProductLine}
+            onProductLineChange={setProfileProductLine}
             onRefresh={() => void loadProfile(selected.userId)}
           />
         ) : <Empty text="选择用户查看资产、订单和风险画像" />}
@@ -892,6 +899,7 @@ function UsersPage() {
 function SupportPage() {
   const [userId, setUserId] = useState("");
   const [settleAsset, setSettleAsset] = useState("USDT");
+  const [productLine, setProductLine] = useState("LINEAR_PERPETUAL");
   const [overview, setOverview] = useState<UnknownRecord | null>(null);
   const [tickets, setTickets] = useState<UnknownRecord[]>([]);
   const [ticketFilters, setTicketFilters] = useState({ status: "", limit: "50", cursor: "", sort: "updatedAt.desc" });
@@ -929,7 +937,7 @@ function SupportPage() {
     setError("");
     try {
       const [overviewResponse, ticketsResponse] = await Promise.all([
-        supportUserOverview(trimmedUserId, { settleAsset, limit: 25 }),
+        supportUserOverview(trimmedUserId, { settleAsset, productLine, limit: 25 }),
         supportTickets({
           userId: trimmedUserId,
           status: ticketFilters.status,
@@ -1052,6 +1060,7 @@ function SupportPage() {
     <Page title="客服视图" onRefresh={overview ? load : undefined} loading={loading} error={error}>
       <div className="filters">
         <TextFilter label="User ID" value={userId} onChange={setUserId} />
+        <label>产品线<select value={productLine} onChange={(event) => setProductLine(event.target.value)}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <TextFilter label="Settle Asset" value={settleAsset} onChange={(value) => setSettleAsset(value.toUpperCase())} />
         <button className="primary" onClick={() => void load("")}><Search size={16} />查询用户</button>
       </div>
@@ -1078,6 +1087,8 @@ function SupportPage() {
               profile={overview}
               settleAsset={settleAsset}
               onSettleAssetChange={setSettleAsset}
+              productLine={productLine}
+              onProductLineChange={setProductLine}
               onRefresh={() => void load()}
               showAudit={false}
               showRaw={false}
@@ -1174,6 +1185,8 @@ function UserProfileView({
   profile,
   settleAsset,
   onSettleAssetChange,
+  productLine,
+  onProductLineChange,
   onRefresh,
   showAudit = true,
   showRaw = true,
@@ -1182,6 +1195,8 @@ function UserProfileView({
   profile: UnknownRecord | null;
   settleAsset: string;
   onSettleAssetChange: (value: string) => void;
+  productLine?: string;
+  onProductLineChange?: (value: string) => void;
   onRefresh: () => void;
   showAudit?: boolean;
   showRaw?: boolean;
@@ -1208,6 +1223,9 @@ function UserProfileView({
   return (
     <div className="stack">
       <div className="filters compact">
+        {onProductLineChange && (
+          <label>产品线<select value={productLine ?? ""} onChange={(event) => onProductLineChange(event.target.value)}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        )}
         <label>结算资产<input value={settleAsset} onChange={(event) => onSettleAssetChange(event.target.value.toUpperCase())} /></label>
         <button onClick={onRefresh}><RefreshCw size={16} />{refreshLabel}</button>
       </div>

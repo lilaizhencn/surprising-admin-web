@@ -77,11 +77,11 @@ export function userSessions(userId: number, params: { active?: boolean; limit?:
   );
 }
 
-export function userProfile(userId: number, params: { settleAsset?: string; limit?: number } = {}) {
+export function userProfile(userId: number, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
   return request<UnknownRecord>(`/api/v1/admin/users/${userId}/profile${queryString(params)}`);
 }
 
-export function supportUserOverview(userId: number | string, params: { settleAsset?: string; limit?: number } = {}) {
+export function supportUserOverview(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
   return request<UnknownRecord>(`/api/v1/admin/support/users/${userId}/overview${queryString(params)}`);
 }
 
