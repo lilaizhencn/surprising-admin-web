@@ -4432,6 +4432,7 @@ function FundingInsurancePage() {
 
 function FeesPage() {
   const [filters, setFilters] = useState({
+    productLine: "LINEAR_PERPETUAL",
     status: "",
     userId: "",
     symbol: "",
@@ -4467,7 +4468,8 @@ function FeesPage() {
           status: filters.status,
           limit,
           cursor: nextScheduleCursor,
-          sort: filters.scheduleSort
+          sort: filters.scheduleSort,
+          productLine: filters.productLine
         }),
         gatewayGet<{ tiers?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-fees", "/tiers", {
           status: filters.status,
@@ -4475,7 +4477,9 @@ function FeesPage() {
           cursor: nextTierCursor,
           sort: filters.tierSort
         }),
-        filters.userId ? gatewayGet<UnknownRecord>("trading-fees", `/tiers/users/${filters.userId}`) : Promise.resolve(null)
+        filters.userId
+          ? gatewayGet<UnknownRecord>("trading-fees", `/tiers/users/${filters.userId}`, { productLine: filters.productLine })
+          : Promise.resolve(null)
       ]);
       setData({
         schedules: schedules.schedules ?? schedules.items ?? [],
@@ -4522,7 +4526,9 @@ function FeesPage() {
 
   async function submitSchedule() {
     try {
-      await gatewayPost("trading-fees", "/schedules", jsonObject(scheduleJson));
+      const payload = jsonObject(scheduleJson);
+      const productLine = fieldText(payload.productLine) || scheduleForm.productLine || filters.productLine;
+      await gatewayPost("trading-fees", "/schedules", { ...payload, productLine }, { productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -4542,7 +4548,9 @@ function FeesPage() {
     const feeScheduleId = row.feeScheduleId ?? row.id;
     if (!feeScheduleId) return;
     try {
-      await gatewayPost("trading-fees", `/schedules/${encodeURIComponent(String(feeScheduleId))}/disable`);
+      const productLine = fieldText(row.productLine) || filters.productLine;
+      await gatewayPost("trading-fees", `/schedules/${encodeURIComponent(String(feeScheduleId))}/disable`,
+        undefined, { productLine });
       await load(filters.scheduleCursor, filters.tierCursor);
     } catch (err) {
       setError(errorMessage(err));
@@ -4554,6 +4562,7 @@ function FeesPage() {
   return (
     <Page title="费率配置" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
+        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
         <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></select></label>
@@ -4561,14 +4570,15 @@ function FeesPage() {
         <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
         <SortSelect label="档位排序" value={filters.tierSort} options={FEE_TIER_SORTS} onChange={(value) => updateFilters({ tierSort: value })} />
         <button onClick={() => void load("", "")}><Search size={16} />查询</button>
-        <button onClick={() => gatewayPost("trading-fees", "/tiers/refresh-active", undefined, { limit: 1000 }).then(() => load(filters.scheduleCursor, filters.tierCursor))}>刷新活跃用户 VIP</button>
+        <button onClick={() => gatewayPost("trading-fees", "/tiers/refresh-active", undefined, { limit: 1000, productLine: filters.productLine }).then(() => load(filters.scheduleCursor, filters.tierCursor))}>刷新活跃用户 VIP</button>
       </div>
       <div className="two-grid">
         <Panel title="费率计划">
           <div className="stack">
             <DataTable
               rows={records(data?.schedules)}
-              maxColumns={9}
+              columns={["productLine", "feeScheduleId", "userId", "symbol", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
+              maxColumns={11}
               onRowClick={selectSchedule}
               actions={(row) => row.status === "DISABLED" ? <StatusBadge value="DISABLED" /> : <button onClick={() => void disableSchedule(row)}>禁用</button>}
             />
@@ -4596,6 +4606,7 @@ function FeesPage() {
           <div className="stack">
             <div className="form-grid">
               <TextFilter label="Schedule ID" value={scheduleForm.feeScheduleId} onChange={(value) => updateScheduleForm({ feeScheduleId: value })} />
+              <label>产品线<select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
               <TextFilter label="User ID" value={scheduleForm.userId} onChange={(value) => updateScheduleForm({ userId: value })} />
               <TextFilter label="Symbol" value={scheduleForm.symbol} onChange={(value) => updateScheduleForm({ symbol: value.toUpperCase() })} />
               <label>来源<select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -4642,6 +4653,7 @@ function FeesPage() {
 function feeScheduleFormTemplate() {
   return {
     feeScheduleId: "",
+    productLine: "LINEAR_PERPETUAL",
     userId: "",
     symbol: "BTC-USDT",
     makerFeeRatePpm: "200",
@@ -4672,6 +4684,7 @@ function feeTierFormTemplate() {
 function feeScheduleFormFromRecord(row: UnknownRecord) {
   return {
     feeScheduleId: fieldText(row.feeScheduleId),
+    productLine: enumOrDefault(row.productLine, PRODUCT_LINES.filter(Boolean), "LINEAR_PERPETUAL"),
     userId: fieldText(row.userId),
     symbol: fieldText(row.symbol),
     makerFeeRatePpm: fieldText(row.makerFeeRatePpm),
@@ -4702,6 +4715,7 @@ function feeTierFormFromRecord(row: UnknownRecord) {
 function feeSchedulePayload(form: ReturnType<typeof feeScheduleFormTemplate>): UnknownRecord {
   return {
     feeScheduleId: optionalNumber(form.feeScheduleId),
+    productLine: form.productLine,
     userId: numberField(form.userId, "User ID"),
     symbol: textOrNull(form.symbol.toUpperCase()),
     makerFeeRatePpm: numberField(form.makerFeeRatePpm, "Maker ppm"),
