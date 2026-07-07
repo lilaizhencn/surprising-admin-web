@@ -4555,7 +4555,9 @@ function FeesPage() {
 
   async function submitTier() {
     try {
-      await gatewayPost("trading-fees", "/tiers", jsonObject(tierJson));
+      const payload = jsonObject(tierJson);
+      const productLine = fieldText(payload.productLine) || filters.productLine;
+      await gatewayPost("trading-fees", "/tiers", { ...payload, productLine }, { productLine });
       await load();
     } catch (err) {
       setError(errorMessage(err));
