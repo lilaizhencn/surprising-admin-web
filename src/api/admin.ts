@@ -474,6 +474,7 @@ export function gatewayGet<T>(service: string, path: string, params: Record<stri
 }
 
 export function instruments(params: {
+  productLine?: string;
   type?: string;
   status?: string;
   limit?: number;

@@ -6,6 +6,7 @@ import {
   Bell,
   BookOpen,
   CheckCircle2,
+  Clock3,
   CircleDollarSign,
   ClipboardList,
   Database,
@@ -137,6 +138,7 @@ const NAV = [
   { key: "support", label: "客服视图", icon: LifeBuoy },
   { key: "users", label: "用户权限", icon: Users },
   { key: "markets", label: "产品市场", icon: BarChart3 },
+  { key: "lifecycle", label: "交割行权", icon: Clock3 },
   { key: "orders", label: "订单审计", icon: ClipboardList },
   { key: "accounts", label: "账户资产", icon: WalletCards },
   { key: "wallet", label: "钱包运营", icon: Database },
@@ -180,6 +182,7 @@ const TRIGGER_ORDER_STATUSES = ["", "PENDING", "TRIGGERING", "TRIGGERED", "TRIGG
 const AUDIT_STATUS_FILTERS = Array.from(new Set([...ORDER_STATUSES, ...TRIGGER_ORDER_STATUSES]));
 const ACCOUNT_TYPES = ["", "FUNDING", "SPOT", "USDT_PERPETUAL", "COIN_PERPETUAL", "USDT_DELIVERY", "COIN_DELIVERY", "OPTION"];
 const PRODUCT_LINES = ["", "SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"] as const;
+const LIFECYCLE_PRODUCT_LINES = ["LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"] as const;
 const ACCOUNT_TYPE_PRODUCT_LINE: Record<string, ProductLine> = {
   SPOT: "SPOT",
   USDT_PERPETUAL: "LINEAR_PERPETUAL",
@@ -189,6 +192,11 @@ const ACCOUNT_TYPE_PRODUCT_LINE: Record<string, ProductLine> = {
   OPTION: "OPTION"
 };
 const productLineForAccountType = (accountType: string) => ACCOUNT_TYPE_PRODUCT_LINE[accountType] ?? "";
+const PRODUCT_LINE_ACCOUNT_TYPE: Record<string, string> = Object.fromEntries(
+  Object.entries(ACCOUNT_TYPE_PRODUCT_LINE).map(([accountType, productLine]) => [productLine, accountType])
+);
+const accountTypeForProductLine = (productLine: string) => PRODUCT_LINE_ACCOUNT_TYPE[productLine] ?? "USDT_DELIVERY";
+const defaultAssetForProductLine = (productLine: string) => productLine === "INVERSE_DELIVERY" ? "BTC" : "USDT";
 const isFundingProductLine = (productLine: string) => !productLine || productLine === "LINEAR_PERPETUAL" || productLine === "INVERSE_PERPETUAL";
 function productLineForInstrument(instrument?: Pick<Instrument, "instrumentType" | "contractType">): ProductLine {
   if (instrument?.instrumentType === "SPOT" || instrument?.contractType === "SPOT") return "SPOT";
@@ -441,6 +449,7 @@ export default function App() {
           {activeRoute === "support" && <SupportPage />}
           {activeRoute === "users" && <UsersPage />}
           {activeRoute === "markets" && <MarketsPage />}
+          {activeRoute === "lifecycle" && <LifecyclePage />}
           {activeRoute === "orders" && <OrdersPage />}
           {activeRoute === "accounts" && <AccountsPage />}
           {activeRoute === "wallet" && <WalletPage />}
@@ -1261,7 +1270,7 @@ function UserProfileView({
               <DataTable rows={orders} columns={["orderId", "userId", "symbol", "side", "positionSide", "orderType", "status", "remainingQuantitySteps", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="触发订单">
-              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "status", "triggerPriceTicks", "updatedAt"]} />
+              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "status", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="成交明细">
               <DataTable rows={trades} columns={["tradeId", "orderId", "userId", "symbol", "priceTicks", "quantitySteps", "createdAt"]} />
@@ -1568,6 +1577,200 @@ function MarketsPage() {
   );
 }
 
+function LifecyclePage() {
+  const [filters, setFilters] = useState({
+    productLine: "LINEAR_DELIVERY",
+    status: "",
+    symbol: "",
+    userId: "",
+    accountType: "USDT_DELIVERY",
+    asset: "USDT",
+    limit: "100",
+    instrumentCursor: "",
+    ledgerCursor: "",
+    sort: "updatedAt.desc",
+    ledgerSort: "createdAt.desc"
+  });
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [instrumentPageInfo, setInstrumentPageInfo] = useState(cursorInfo());
+  const [ledger, setLedger] = useState<UnknownRecord[]>([]);
+  const [ledgerPageInfo, setLedgerPageInfo] = useState(cursorInfo());
+  const [positions, setPositions] = useState<PositionRecord[]>([]);
+  const [selected, setSelected] = useState<Instrument | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  function updateFilters(patch: Partial<typeof filters>) {
+    setFilters((current) => {
+      const nextProductLine = patch.productLine ?? current.productLine;
+      const nextAccountType = patch.productLine ? accountTypeForProductLine(nextProductLine) : current.accountType;
+      const nextAsset = patch.productLine ? defaultAssetForProductLine(nextProductLine) : current.asset;
+      return {
+        ...current,
+        ...patch,
+        accountType: patch.accountType ?? nextAccountType,
+        asset: patch.asset ?? nextAsset,
+        instrumentCursor: "",
+        ledgerCursor: ""
+      };
+    });
+  }
+
+  async function load(nextInstrumentCursor = filters.instrumentCursor, nextLedgerCursor = filters.ledgerCursor) {
+    setLoading(true);
+    setError("");
+    try {
+      const instrumentType = lifecycleInstrumentType(filters.productLine);
+      const productLine = filters.productLine as ProductLine;
+      const referenceType = lifecycleReferenceType(filters.productLine);
+      const [instrumentResponse, ledgerResponse, positionResponse] = await Promise.all([
+        instrumentList({
+          productLine,
+          type: instrumentType,
+          status: filters.status,
+          limit: Number(filters.limit) || 100,
+          cursor: nextInstrumentCursor,
+          sort: filters.sort
+        }),
+        gatewayGet<{ entries?: UnknownRecord[]; records?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>(
+          "account",
+          "/product-ledger",
+          {
+            userId: filters.userId,
+            accountType: filters.accountType,
+            asset: filters.asset,
+            referenceType,
+            productLine,
+            limit: Number(filters.limit) || 100,
+            cursor: nextLedgerCursor,
+            sort: filters.ledgerSort
+          }
+        ),
+        filters.userId
+          ? gatewayGet<{ positions?: PositionRecord[]; items?: PositionRecord[] }>("account", "/positions", {
+            userId: filters.userId,
+            productLine
+          }).catch(() => ({ positions: [] as PositionRecord[], items: [] as PositionRecord[] }))
+          : Promise.resolve({ positions: [] as PositionRecord[], items: [] as PositionRecord[] })
+      ]);
+      const rawInstruments = instrumentResponse.instruments ?? instrumentResponse.items ?? [];
+      const productInstruments = rawInstruments
+        .filter((item) => productLineForInstrument(item) === productLine)
+        .filter((item) => !filters.symbol || item.symbol.includes(filters.symbol.trim().toUpperCase()));
+      setInstruments(productInstruments);
+      setInstrumentPageInfo(cursorInfo(instrumentResponse));
+      setLedger(ledgerResponse.entries ?? ledgerResponse.records ?? ledgerResponse.items ?? []);
+      setLedgerPageInfo(cursorInfo(ledgerResponse));
+      setPositions(positionResponse.positions ?? positionResponse.items ?? []);
+      setSelected((current) => current
+        ? productInstruments.find((item) => item.symbol === current.symbol) ?? productInstruments[0] ?? null
+        : productInstruments[0] ?? null);
+      setFilters((current) => ({
+        ...current,
+        instrumentCursor: nextInstrumentCursor,
+        ledgerCursor: nextLedgerCursor
+      }));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load("", ""); }, []);
+
+  const closedCount = instruments.filter((item) => item.status === "CLOSED").length;
+  const settlingCount = instruments.filter((item) => ["PRE_TRADING", "SETTLING"].includes(String(item.status ?? ""))).length;
+  const ledgerNet = ledger.reduce((sum, row) => sum + numericValue(row.amountUnits), 0);
+  const referenceType = lifecycleReferenceType(filters.productLine);
+
+  return (
+    <Page title="交割 / 行权核查" onRefresh={() => load(filters.instrumentCursor, filters.ledgerCursor)} loading={loading} error={error}>
+      <div className="filters">
+        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>
+          {LIFECYCLE_PRODUCT_LINES.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select></label>
+        <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
+          <option value="">全部</option>
+          {INSTRUMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
+        </select></label>
+        <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
+        <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
+        <label>账户类型<select value={filters.accountType} onChange={(event) => updateFilters({ accountType: event.target.value })}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
+        <TextFilter label="Asset" value={filters.asset} onChange={(value) => updateFilters({ asset: value.toUpperCase() })} />
+        <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
+        <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(value) => updateFilters({ sort: value })} />
+        <SortSelect label="流水排序" value={filters.ledgerSort} options={CREATED_AT_SORTS} onChange={(value) => updateFilters({ ledgerSort: value })} />
+        <button onClick={() => void load("", "")}><Search size={16} />查询</button>
+      </div>
+      <div className="metrics">
+        <Metric label="生命周期产品" value={instruments.length} tone="muted" />
+        <Metric label="待处理/交割中" value={settlingCount} tone={settlingCount > 0 ? "warn" : "ok"} />
+        <Metric label="已关闭" value={closedCount} tone="ok" />
+        <Metric label="流水类型" value={referenceType} tone="muted" />
+        <Metric label="流水条数" value={ledger.length} tone={ledger.length ? "warn" : "muted"} />
+        <Metric label="流水净额" value={ledgerNet} tone={ledgerNet === 0 ? "ok" : "warn"} />
+      </div>
+      <TwoColumn>
+        <Panel title="交割 / 行权产品">
+          <CursorPager
+            page={instrumentPageInfo}
+            cursor={filters.instrumentCursor}
+            onNext={() => void load(instrumentPageInfo.nextCursor || "", filters.ledgerCursor)}
+            onReset={() => void load("", filters.ledgerCursor)}
+          />
+          <DataTable
+            rows={instruments as unknown as UnknownRecord[]}
+            columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingSymbol", "strikePriceUnits", "optionType", "settlementMethod", "version", "updatedAt"]}
+            maxColumns={13}
+            onRowClick={(row) => setSelected(row as unknown as Instrument)}
+          />
+        </Panel>
+        <Panel title="选中产品核查">
+          {selected ? (
+            <KeyValue data={{
+              symbol: selected.symbol,
+              productLine: productLineForInstrument(selected),
+              status: selected.status,
+              expiryTime: selected.expiryTime ?? "",
+              deliveryTime: selected.deliveryTime ?? "",
+              settlementMethod: selected.settlementMethod ?? "",
+              underlyingSymbol: selected.underlyingSymbol ?? "",
+              strikePriceUnits: selected.strikePriceUnits ?? "",
+              optionType: selected.optionType ?? "",
+              version: selected.version ?? ""
+            }} />
+          ) : <Empty text="选择一个交割或期权产品" />}
+        </Panel>
+      </TwoColumn>
+      <TwoColumn>
+        <Panel title={`${referenceType} 产品流水`}>
+          <CursorPager
+            page={ledgerPageInfo}
+            cursor={filters.ledgerCursor}
+            onNext={() => void load(filters.instrumentCursor, ledgerPageInfo.nextCursor || "")}
+            onReset={() => void load(filters.instrumentCursor, "")}
+          />
+          <DataTable
+            rows={ledger}
+            columns={["ledgerId", "userId", "accountType", "asset", "amountUnits", "balanceAfterUnits", "referenceType", "referenceId", "symbol", "createdAt"]}
+            maxColumns={10}
+          />
+        </Panel>
+        <Panel title="用户持仓残留">
+          {filters.userId ? (
+            <DataTable
+              rows={positions as unknown as UnknownRecord[]}
+              columns={["userId", "symbol", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
+              maxColumns={8}
+            />
+          ) : <Empty text="输入 User ID 后核查生命周期产品是否仍有持仓" />}
+        </Panel>
+      </TwoColumn>
+    </Page>
+  );
+}
+
 function parseInstrumentDraft(json: string): { value: UnknownRecord | null; error: string } {
   if (!json.trim()) return { value: null, error: "" };
   try {
@@ -1641,6 +1844,14 @@ function isFundingInstrument(instrument?: Instrument | null): boolean {
     || contractType === "INVERSE_PERPETUAL"
     || contractType === "LINEAR"
     || contractType === "INVERSE";
+}
+
+function lifecycleInstrumentType(productLine: string) {
+  return productLine === "OPTION" ? "OPTION" : "DELIVERY";
+}
+
+function lifecycleReferenceType(productLine: string) {
+  return productLine === "OPTION" ? "OPTION_EXERCISE" : "DELIVERY_SETTLEMENT";
 }
 
 function DraftTextField({ label, field, draft, update, upper = false }: {
@@ -2125,7 +2336,7 @@ function OrdersPage() {
           />
           <DataTable
             rows={triggerOrders}
-            columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "triggerPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+            columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
             onRowClick={(row) => void loadTriggerTimeline(Number(row.triggerOrderId))}
           />
         </Panel>
@@ -6774,6 +6985,15 @@ function optionalNumber(value: string) {
 
 function fieldText(value: unknown) {
   return value === undefined || value === null ? "" : String(value);
+}
+
+function numericValue(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function textOrNull(value: string) {

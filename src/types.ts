@@ -3,6 +3,7 @@ export type RouteKey =
   | "support"
   | "users"
   | "markets"
+  | "lifecycle"
   | "orders"
   | "accounts"
   | "wallet"
