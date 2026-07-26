@@ -3482,7 +3482,7 @@ function WalletPage() {
 
       <div className="three-grid">
         <Panel title="链配置">
-          <DataTable rows={records(runtime.chainProfiles as UnknownRecord[] | undefined)} maxColumns={9} />
+          <DataTable rows={walletChainRows(runtime.chainProfiles as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
         <Panel title="RPC 节点">
           <DataTable rows={records(runtime.rpcNodes as UnknownRecord[] | undefined)} maxColumns={9} />
@@ -6969,6 +6969,28 @@ function errorMessage(error: unknown) {
 
 function records<T extends UnknownRecord>(items: T[] | undefined | null): UnknownRecord[] {
   return items ? [...items] : [];
+}
+
+function walletChainRows(items: UnknownRecord[] | undefined | null): UnknownRecord[] {
+  return records(items).sort((left, right) => {
+    const taskOrder = Number(hasEnabledChainTask(right)) - Number(hasEnabledChainTask(left));
+    if (taskOrder !== 0) return taskOrder;
+
+    const profileOrder = Number(right.enabled === true) - Number(left.enabled === true);
+    if (profileOrder !== 0) return profileOrder;
+
+    const chainOrder = fieldText(left.chain).localeCompare(fieldText(right.chain));
+    return chainOrder !== 0
+      ? chainOrder
+      : fieldText(left.network).localeCompare(fieldText(right.network));
+  });
+}
+
+function hasEnabledChainTask(row: UnknownRecord): boolean {
+  return row.scanEnabled === true
+    || row.withdrawEnabled === true
+    || row.collectionEnabled === true
+    || row.transferEnabled === true;
 }
 
 function numberField(value: string, field: string) {
