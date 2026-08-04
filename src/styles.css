@@ -460,6 +460,46 @@ main {
   max-height: 520px;
 }
 
+.mobile-card-list {
+  display: none;
+}
+
+.mobile-data-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #263746;
+  border-radius: 8px;
+  background: #101820;
+}
+
+.mobile-data-card-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-data-card-fields > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mobile-data-card-fields span {
+  color: #91a4b7;
+  font-size: 11px;
+}
+
+.mobile-data-card-fields strong {
+  overflow-wrap: anywhere;
+  color: #e5eef7;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mobile-data-card-action {
+  width: 100%;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -565,6 +605,74 @@ tr.clickable:hover td {
 .kyc-document-meta span {
   color: #879bad;
   font-size: 11px;
+}
+
+.kyc-document-preview {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #2e5364;
+  border-radius: 8px;
+  background: #0d171f;
+}
+
+.kyc-document-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kyc-document-preview-heading > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kyc-document-preview-heading strong,
+.kyc-document-preview-heading span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kyc-document-preview-heading strong {
+  color: #dceff6;
+  font-size: 12px;
+}
+
+.kyc-document-preview-heading span {
+  color: #82d7e5;
+  font-size: 11px;
+}
+
+.kyc-document-preview iframe {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid #263442;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.kyc-document-preview img {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  max-height: 480px;
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #0b1117;
+}
+
+.state-alert {
+  position: sticky;
+  top: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .json-editor {
@@ -723,5 +831,14 @@ tr.clickable:hover td {
 
   .table-wrap {
     max-width: calc(100vw - 48px);
+  }
+
+  .mobile-card-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .mobile-table-fallback {
+    display: none;
   }
 }

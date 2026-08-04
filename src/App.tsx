@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BadgeCheck,
@@ -478,6 +478,40 @@ function ApprovalRequestDialog({ prompt, setPrompt }: {
   prompt: ApprovalPromptState;
   setPrompt: React.Dispatch<React.SetStateAction<ApprovalPromptState | null>>;
 }) {
+  const approvalInputRef = useRef<HTMLInputElement>(null);
+  const approvalDialogRef = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    approvalInputRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = Array.from(approvalDialogRef.current?.querySelectorAll<HTMLElement>("button, input, textarea, select, [href], [tabindex]:not([tabindex='-1'])") ?? [])
+          .filter((element) => !element.hasAttribute("disabled"));
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, []);
+
   function update(patch: Partial<Pick<ApprovalPromptState, "approvalId" | "reason" | "error">>) {
     setPrompt((current) => current ? { ...current, ...patch } : current);
   }
@@ -501,9 +535,9 @@ function ApprovalRequestDialog({ prompt, setPrompt }: {
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <form className="modal-panel" onSubmit={submit}>
+      <form ref={approvalDialogRef} className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="approval-dialog-title" onSubmit={submit}>
         <div className="modal-heading">
-          <h2>敏感操作审批</h2>
+          <h2 id="approval-dialog-title">敏感操作审批</h2>
           <p>提交已批准审批单 ID 可继续执行；填写申请原因会创建审批单并中止本次操作。</p>
         </div>
         <KeyValue data={{
@@ -515,7 +549,7 @@ function ApprovalRequestDialog({ prompt, setPrompt }: {
         }} />
         <div className="form-grid">
           <label>审批单 ID
-            <input value={prompt.approvalId} onChange={(event) => update({ approvalId: event.target.value, error: "" })} />
+            <input ref={approvalInputRef} value={prompt.approvalId} onChange={(event) => update({ approvalId: event.target.value, error: "" })} />
           </label>
           <label>审批申请原因
             <input value={prompt.reason} onChange={(event) => update({ reason: event.target.value, error: "" })} />
@@ -3614,6 +3648,46 @@ function CompliancePage() {
   const [amlJson, setAmlJson] = useState(() => JSON.stringify(amlCasePayload(amlCaseFormTemplate()), null, 2));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [kycPreview, setKycPreview] = useState<{ url: string; contentType: string; filename: string } | null>(null);
+  const kycPreviewCloseRef = useRef<HTMLButtonElement>(null);
+  const kycPreviewRef = useRef<HTMLDivElement>(null);
+  const kycRequestVersionRef = useRef(0);
+
+  useEffect(() => () => {
+    if (kycPreview) URL.revokeObjectURL(kycPreview.url);
+  }, [kycPreview]);
+
+  useEffect(() => {
+    if (!kycPreview) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    kycPreviewCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setKycPreview(null);
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = Array.from(kycPreviewRef.current?.querySelectorAll<HTMLElement>("button, [href], [tabindex]:not([tabindex='-1'])") ?? [])
+          .filter((element) => !element.hasAttribute("disabled"));
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, [kycPreview]);
 
   function updateFilters(patch: Partial<typeof filters>) {
     setFilters((current) => ({ ...current, ...patch, cursor: "" }));
@@ -3705,11 +3779,27 @@ function CompliancePage() {
   }
 
   async function loadDetail(userId: number | string) {
-    const response = await complianceUser(userId);
-    setDetail(response);
-    const nextKycForm = kycFormFromRecord(objectValue(response.kyc) || { kycLevel: "BASIC", status: "PENDING" });
-    setKycForm(nextKycForm);
-    setKycJson(JSON.stringify(kycPayload(nextKycForm), null, 2));
+    const requestVersion = kycRequestVersionRef.current + 1;
+    kycRequestVersionRef.current = requestVersion;
+    setKycPreview(null);
+    setLoading(true);
+    setError("");
+    try {
+      const response = await complianceUser(userId);
+      if (kycRequestVersionRef.current !== requestVersion) return;
+      setDetail(response);
+      const nextKycForm = kycFormFromRecord(objectValue(response.kyc) || { kycLevel: "BASIC", status: "PENDING" });
+      setKycForm(nextKycForm);
+      setKycJson(JSON.stringify(kycPayload(nextKycForm), null, 2));
+    } catch (err) {
+      if (kycRequestVersionRef.current === requestVersion) {
+        setError(errorMessage(err));
+      }
+    } finally {
+      if (kycRequestVersionRef.current === requestVersion) {
+        setLoading(false);
+      }
+    }
   }
 
   async function saveKyc() {
@@ -3795,32 +3885,49 @@ function CompliancePage() {
     }
   }
 
-  async function openKycDocument(documentId: unknown) {
+  async function openKycDocument(documentRecord: UnknownRecord) {
     const userId = detailUserId(detail);
-    const normalizedDocumentId = fieldText(documentId);
+    const normalizedDocumentId = fieldText(documentRecord.documentId);
     if (!userId || !normalizedDocumentId) return;
-    const preview = window.open("about:blank", "_blank", "noopener,noreferrer");
+    const requestVersion = kycRequestVersionRef.current + 1;
+    kycRequestVersionRef.current = requestVersion;
     setLoading(true);
     setError("");
     try {
       const blob = await complianceKycDocument(userId, normalizedDocumentId);
       const url = URL.createObjectURL(blob);
-      if (preview) {
-        preview.location.href = url;
-      } else {
-        const link = document.createElement("a");
-        link.href = url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.click();
+      if (kycRequestVersionRef.current !== requestVersion) {
+        URL.revokeObjectURL(url);
+        return;
       }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      const contentType = (blob.type || fieldText(documentRecord.contentType))
+        .split(";", 1)[0]
+        .trim()
+        .toLowerCase();
+      setKycPreview({
+        url,
+        contentType,
+        filename: fieldText(documentRecord.originalFilename) || "KYC 原件"
+      });
     } catch (err) {
-      preview?.close();
-      setError(errorMessage(err));
+      if (kycRequestVersionRef.current === requestVersion) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (kycRequestVersionRef.current === requestVersion) {
+        setLoading(false);
+      }
     }
+  }
+
+  function downloadKycPreview() {
+    if (!kycPreview) return;
+    const link = document.createElement("a");
+    link.href = kycPreview.url;
+    link.download = kycPreview.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   useEffect(() => { void load(); }, []);
@@ -3857,6 +3964,10 @@ function CompliancePage() {
               rows={users}
               columns={["userId", "username", "userStatus", "kycLevel", "kycStatus", "country", "activeRiskTags", "openAmlCases", "updatedAt"]}
               onRowClick={(row) => void loadDetail(String(row.userId ?? ""))}
+              mobileAction={{
+                label: "打开详情",
+                onClick: (row) => void loadDetail(String(row.userId ?? ""))
+              }}
             />
             <CursorPager
               page={pageInfo}
@@ -3980,9 +4091,28 @@ function CompliancePage() {
                         <span>{fieldText(document.documentType)} · {fieldText(document.contentType)} · {compactNumber(document.fileSize)} bytes</span>
                         <span>状态：{fieldText(document.status)} · SHA-256：{fieldText(document.sha256).slice(0, 16)}…</span>
                       </div>
-                      <button disabled={loading} onClick={() => void openKycDocument(document.documentId)}><Eye size={15} />查看原件</button>
+                      <button disabled={loading} onClick={() => void openKycDocument(document)}><Eye size={15} />查看原件</button>
                     </div>
                   ))}
+                </div>
+              )}
+              {kycPreview && (
+                <div ref={kycPreviewRef} className="kyc-document-preview" role="dialog" aria-label={`原件预览：${kycPreview.filename}`}>
+                  <div className="kyc-document-preview-heading">
+                    <div>
+                      <strong>{kycPreview.filename}</strong>
+                      <span>原件已加载 · {kycPreview.contentType}</span>
+                    </div>
+                    <div className="button-row">
+                      <button onClick={downloadKycPreview}><Download size={15} />下载原件</button>
+                      <button ref={kycPreviewCloseRef} onClick={() => setKycPreview(null)}>关闭预览</button>
+                    </div>
+                  </div>
+                  {kycPreview.contentType.startsWith("application/pdf") ? (
+                    <iframe tabIndex={-1} title={`KYC 原件：${kycPreview.filename}`} src={kycPreview.url} />
+                  ) : (
+                    <img src={kycPreview.url} alt={`KYC 原件：${kycPreview.filename}`} />
+                  )}
                 </div>
               )}
             </Panel>
@@ -6789,7 +6919,8 @@ function Page({ title, children, onRefresh, loading, error }: { title: string; c
         </div>
         {onRefresh && <button onClick={() => void onRefresh()} disabled={loading}><RefreshCw size={16} />刷新</button>}
       </div>
-      {error && <div className="alert danger">{error}</div>}
+      {error && <div className="alert danger state-alert" role="alert"><span>{error}</span>{onRefresh && <button onClick={() => void onRefresh()} disabled={loading}>重新加载</button>}</div>}
+      {loading && <div className="alert state-alert" role="status">正在同步数据，请稍候…</div>}
       {children}
     </div>
   );
@@ -6804,12 +6935,13 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function DataTable({ rows, columns, maxColumns = 10, onRowClick, actions }: {
+function DataTable({ rows, columns, maxColumns = 10, onRowClick, actions, mobileAction }: {
   rows: UnknownRecord[];
   columns?: string[];
   maxColumns?: number;
   onRowClick?: (row: UnknownRecord) => void;
   actions?: (row: UnknownRecord) => React.ReactNode;
+  mobileAction?: { label: string; onClick: (row: UnknownRecord) => void };
 }) {
   const visibleColumns = useMemo(() => {
     if (columns?.length) return columns;
@@ -6820,24 +6952,43 @@ function DataTable({ rows, columns, maxColumns = 10, onRowClick, actions }: {
 
   if (!rows.length) return <Empty text="暂无数据" />;
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            {visibleColumns.map((column) => <th key={column}>{column}</th>)}
-            {actions && <th>操作</th>}
-          </tr>
-        </thead>
-        <tbody>
+    <>
+      {mobileAction && (
+        <div className="mobile-card-list">
           {rows.map((row, index) => (
-            <tr key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : ""}>
-              {visibleColumns.map((column) => <td key={column}>{formatValue(row[column])}</td>)}
-              {actions && <td onClick={(event) => event.stopPropagation()}>{actions(row)}</td>}
-            </tr>
+            <article className="mobile-data-card" key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index}>
+              <div className="mobile-data-card-fields">
+                {visibleColumns.map((column) => (
+                  <div key={column}>
+                    <span>{column}</span>
+                    <strong>{formatValue(row[column])}</strong>
+                  </div>
+                ))}
+              </div>
+              <button className="mobile-data-card-action" onClick={() => mobileAction.onClick(row)}>{mobileAction.label}</button>
+            </article>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </div>
+      )}
+      <div className={mobileAction ? "table-wrap mobile-table-fallback" : "table-wrap"}>
+        <table>
+          <thead>
+            <tr>
+              {visibleColumns.map((column) => <th key={column}>{column}</th>)}
+              {actions && <th>操作</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : ""}>
+                {visibleColumns.map((column) => <td key={column}>{formatValue(row[column])}</td>)}
+                {actions && <td onClick={(event) => event.stopPropagation()}>{actions(row)}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
