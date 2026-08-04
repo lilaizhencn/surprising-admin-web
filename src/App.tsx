@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Database,
   Download,
+  Eye,
   FileText,
   Gauge,
   LifeBuoy,
@@ -43,6 +44,7 @@ import {
   approveApproval,
   confirmMfa,
   complianceAmlCases,
+  complianceKycDocument,
   complianceRiskTags,
   complianceUser,
   complianceUsers,
@@ -3793,10 +3795,39 @@ function CompliancePage() {
     }
   }
 
+  async function openKycDocument(documentId: unknown) {
+    const userId = detailUserId(detail);
+    const normalizedDocumentId = fieldText(documentId);
+    if (!userId || !normalizedDocumentId) return;
+    const preview = window.open("about:blank", "_blank", "noopener,noreferrer");
+    setLoading(true);
+    setError("");
+    try {
+      const blob = await complianceKycDocument(userId, normalizedDocumentId);
+      const url = URL.createObjectURL(blob);
+      if (preview) {
+        preview.location.href = url;
+      } else {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      preview?.close();
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => { void load(); }, []);
 
   const riskTags = records(detail?.riskTags as UnknownRecord[] | undefined);
   const amlCases = records(detail?.amlCases as UnknownRecord[] | undefined);
+  const kycDocuments = records(detail?.kycDocuments as UnknownRecord[] | undefined);
 
   return (
     <Page title="合规风控" onRefresh={load} loading={loading} error={error}>
@@ -3938,6 +3969,22 @@ function CompliancePage() {
                 </details>
                 <button className="primary" onClick={() => void addRiskTag()}>新增标签</button>
               </div>
+            </Panel>
+            <Panel title={`材料证据 (${kycDocuments.length})`}>
+              {kycDocuments.length === 0 ? <Empty text="当前用户尚未上传材料" /> : (
+                <div className="stack kyc-document-list">
+                  {kycDocuments.map((document) => (
+                    <div className="kyc-document-item" key={fieldText(document.documentId)}>
+                      <div className="kyc-document-meta">
+                        <strong>{fieldText(document.originalFilename) || "未命名材料"}</strong>
+                        <span>{fieldText(document.documentType)} · {fieldText(document.contentType)} · {compactNumber(document.fileSize)} bytes</span>
+                        <span>状态：{fieldText(document.status)} · SHA-256：{fieldText(document.sha256).slice(0, 16)}…</span>
+                      </div>
+                      <button disabled={loading} onClick={() => void openKycDocument(document.documentId)}><Eye size={15} />查看原件</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Panel>
           </TwoColumn>
           <Panel title="风险标签">

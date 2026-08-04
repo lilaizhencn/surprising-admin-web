@@ -14,7 +14,7 @@
 
 body {
   margin: 0;
-  min-width: 1180px;
+  min-width: 0;
   background: #0b0f14;
 }
 
@@ -528,6 +528,45 @@ tr.clickable:hover td {
   gap: 12px;
 }
 
+.kyc-document-list {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.kyc-document-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #263442;
+  border-radius: 8px;
+  background: #111922;
+}
+
+.kyc-document-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kyc-document-meta strong,
+.kyc-document-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kyc-document-meta strong {
+  color: #e8f2fb;
+  font-size: 13px;
+}
+
+.kyc-document-meta span {
+  color: #879bad;
+  font-size: 11px;
+}
+
 .json-editor {
   min-height: 440px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -593,4 +632,96 @@ tr.clickable:hover td {
   border-radius: 8px;
   background: #101720;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.36);
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    display: block;
+  }
+
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid #1d2834;
+  }
+
+  .brand {
+    min-height: 42px;
+    margin-bottom: 10px;
+  }
+
+  .sidebar nav {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .sidebar nav button {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .content {
+    padding: 16px 12px 28px;
+  }
+
+  .topbar {
+    position: static;
+    padding: 12px;
+  }
+
+  .metrics,
+  .two-grid,
+  .three-grid,
+  .profile-sections {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid,
+  .kv {
+    grid-template-columns: 1fr;
+  }
+
+  .kyc-document-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .kyc-document-item button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar,
+  .page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metrics,
+  .two-grid,
+  .three-grid,
+  .profile-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
+    align-items: stretch;
+  }
+
+  .filters > label,
+  .filters > button {
+    width: 100%;
+  }
+
+  .table-wrap {
+    max-width: calc(100vw - 48px);
+  }
 }

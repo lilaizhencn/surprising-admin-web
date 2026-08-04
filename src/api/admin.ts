@@ -1,6 +1,6 @@
 import type { AuthenticatedUser, AuthSession, Instrument, UnknownRecord } from "../types";
 import { config } from "../config";
-import { adminGatewayPath, ApiError, loadSession, queryString, request } from "./client";
+import { adminGatewayPath, ApiError, loadSession, queryString, request, requestBlob } from "./client";
 
 type WalletResponse<T> = T | { code?: number; message?: string; data?: T };
 type CursorListParams = {
@@ -382,6 +382,12 @@ export function complianceUsers(params: { userId?: string; kycStatus?: string; t
 
 export function complianceUser(userId: number | string) {
   return request<UnknownRecord>(`/api/v1/admin/compliance/users/${userId}`);
+}
+
+export function complianceKycDocument(userId: number | string, documentId: number | string) {
+  return requestBlob(
+    `/api/v1/admin/compliance/users/${encodeURIComponent(String(userId))}/kyc/documents/${encodeURIComponent(String(documentId))}`
+  );
 }
 
 export function complianceRiskTags(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}) {

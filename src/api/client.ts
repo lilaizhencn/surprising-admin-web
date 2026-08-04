@@ -79,6 +79,29 @@ export async function request<T>(path: string, init: AdminRequestInit = {}, sess
   return text ? JSON.parse(text) as T : undefined as T;
 }
 
+export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<Blob> {
+  const { productLine, ...requestInit } = init;
+  const headers = new Headers(requestInit.headers);
+  if (productLine) {
+    headers.set("X-Product-Line", productLine);
+  }
+  if (session?.accessToken) {
+    headers.set("Authorization", `Bearer ${session.accessToken}`);
+  }
+  const response = await fetch(`${config.gatewayBaseUrl}${path}`, {
+    ...requestInit,
+    headers
+  });
+  if (response.status === 401 && session?.refreshToken && !path.endsWith("/auth/refresh")) {
+    const refreshed = await refreshSession(session.refreshToken);
+    return requestBlob(path, init, refreshed);
+  }
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  return response.blob();
+}
+
 async function refreshSession(refreshToken: string): Promise<AuthSession> {
   const response = await fetch(`${config.gatewayBaseUrl}/api/v1/auth/refresh`, {
     method: "POST",
