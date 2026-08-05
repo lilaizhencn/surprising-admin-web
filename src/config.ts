@@ -1,5 +1,9 @@
+function defaultGatewayBaseUrl(): string {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
 export const config = {
-  gatewayBaseUrl: (import.meta.env.VITE_GATEWAY_BASE_URL || "http://localhost:9094").replace(/\/$/, ""),
+  gatewayBaseUrl: (import.meta.env.VITE_GATEWAY_BASE_URL || defaultGatewayBaseUrl()).replace(/\/$/, ""),
   sessionKey: "surprising-admin.session"
 };
 
