@@ -121,6 +121,7 @@ import {
   walletFinanceWithdrawals
 } from "./api/admin";
 import { ApiError, loadSession, saveSession } from "./api/client";
+import MaintenancePage from "./MaintenancePage";
 import { compactNumber, formatDate, formatValue } from "./config";
 import type {
   AuthSession,
@@ -142,6 +143,7 @@ const NAV = [
   { key: "markets", label: "产品市场", icon: BarChart3 },
   { key: "lifecycle", label: "交割行权", icon: Clock3 },
   { key: "orders", label: "订单审计", icon: ClipboardList },
+  { key: "maintenance", label: "交易维护", icon: SlidersHorizontal },
   { key: "accounts", label: "账户资产", icon: WalletCards },
   { key: "wallet", label: "钱包运营", icon: Database },
   { key: "compliance", label: "合规风控", icon: Scale },
@@ -453,6 +455,7 @@ export default function App() {
           {activeRoute === "markets" && <MarketsPage />}
           {activeRoute === "lifecycle" && <LifecyclePage />}
           {activeRoute === "orders" && <OrdersPage />}
+          {activeRoute === "maintenance" && <MaintenancePage />}
           {activeRoute === "accounts" && <AccountsPage />}
           {activeRoute === "wallet" && <WalletPage />}
           {activeRoute === "compliance" && <CompliancePage />}

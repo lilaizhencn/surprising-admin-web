@@ -5,6 +5,7 @@ export type RouteKey =
   | "markets"
   | "lifecycle"
   | "orders"
+  | "maintenance"
   | "accounts"
   | "wallet"
   | "compliance"

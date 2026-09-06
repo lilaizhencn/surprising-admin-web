@@ -8,6 +8,14 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.maintenance-page .filters { flex-wrap: wrap; }
+.maintenance-page label { display: grid; gap: 6px; min-width: 180px; }
+.maintenance-page pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.maintenance-page p { overflow-wrap: anywhere; line-height: 1.6; }
+.maintenance-page details { padding: 10px 0; }
+.maintenance-page .modal-panel { max-height: calc(100dvh - 48px); overflow-y: auto; }
+.maintenance-error { color: #ff8282; }
+
 * {
   box-sizing: border-box;
 }
