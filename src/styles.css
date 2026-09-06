@@ -15,6 +15,11 @@
 .maintenance-page details { padding: 10px 0; }
 .maintenance-page .modal-panel { max-height: calc(100dvh - 48px); overflow-y: auto; }
 .maintenance-error { color: #ff8282; }
+.maintenance-symbol { position: relative; display: grid; gap: 6px; min-width: 180px; }
+.maintenance-symbol-options { position: absolute; top: 100%; left: 0; right: 0; z-index: 5; max-height: 260px; overflow-y: auto; background: var(--panel, #101820); border: 1px solid #344453; border-radius: 6px; }
+.maintenance-symbol-options [role="option"] { display: block; width: 100%; text-align: left; border: 0; white-space: normal; overflow-wrap: anywhere; }
+.maintenance-symbol-options [aria-selected="true"] { background: #285573; }
+.maintenance-symbol-options p { padding: 0 10px; }
 
 * {
   box-sizing: border-box;

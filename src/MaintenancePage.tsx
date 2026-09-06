@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { gatewayGet, gatewayPost } from "./api/admin";
+import { gatewayGet, gatewayPost, instruments } from "./api/admin";
 import { loadSession } from "./api/client";
+import type { Instrument } from "./types";
 
 const service = "trading-orders";
 const path = "/maintenance";
@@ -40,8 +41,43 @@ export default function MaintenancePage() {
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [dialog, setDialog] = useState<"create" | "retry" | "release" | null>(null);
+  const [symbolList, setSymbolList] = useState<{ line: string; items: Instrument[]; loading: boolean; error: string }>({ line: "", items: [], loading: true, error: "" });
+  const [symbolReload, setSymbolReload] = useState(0);
+  const [symbolSearch, setSymbolSearch] = useState("");
+  const [symbolOpen, setSymbolOpen] = useState(false);
+  const [symbolIndex, setSymbolIndex] = useState(0);
   const generation = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (symbolOpen) document.getElementById(`maintenance-symbol-${symbolIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [symbolOpen, symbolIndex, symbolSearch]);
+
+  useEffect(() => {
+    let stopped = false;
+    setSymbolList({ line, items: [], loading: true, error: "" });
+    async function load() {
+      try {
+        const items = new Map<string, Instrument>();
+        const cursors = new Set<string>();
+        let cursor: string | undefined;
+        do {
+          const page = await instruments({ productLine: line, limit: 100, cursor });
+          if (stopped) return;
+          for (const item of page.instruments) items.set(item.symbol, item);
+          if (!page.hasMore) break;
+          if (!page.nextCursor || cursors.has(page.nextCursor)) throw new Error("币对列表分页异常，请重试");
+          cursor = page.nextCursor;
+          cursors.add(cursor);
+        } while (!stopped);
+        if (!stopped) setSymbolList({ line, items: [...items.values()].sort((a, b) => a.symbol.localeCompare(b.symbol)), loading: false, error: "" });
+      } catch (e) {
+        if (!stopped) setSymbolList({ line, items: [], loading: false, error: message(e) });
+      }
+    }
+    void load();
+    return () => { stopped = true; };
+  }, [line, symbolReload]);
 
   useEffect(() => {
     try { localStorage.setItem(draftKey(), JSON.stringify({ line, draft })); }
@@ -112,7 +148,14 @@ export default function MaintenancePage() {
     } catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
   const hasPrice = draft.mode === "LIMIT" || draft.mode === "SETTLEMENT";
-  const valid = /^[A-Z0-9][A-Z0-9_.-]{0,63}$/.test(draft.symbol) && /^(|[1-9][0-9]*)$/.test(draft.userId)
+  const symbolLoading = symbolList.line !== line || symbolList.loading;
+  const availableSymbols = symbolList.line === line ? symbolList.items : [];
+  const symbolAvailable = availableSymbols.some(item => item.symbol === draft.symbol);
+  const symbolMatches = availableSymbols.filter(item => `${item.symbol} ${item.baseAsset ?? ""} ${item.quoteAsset ?? ""}`.toUpperCase().includes(symbolSearch.trim().toUpperCase()));
+  function chooseSymbol(symbol: string) {
+    change({ symbol }); setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0);
+  }
+  const valid = !symbolOpen && !symbolLoading && !symbolList.error && symbolAvailable && /^(|[1-9][0-9]*)$/.test(draft.userId)
     && draft.reason.trim().length > 0 && (!hasPrice || /^[1-9][0-9]*$/.test(draft.priceTicks));
   const confirmSymbol = dialog === "create" ? draft.symbol : selected?.request.symbol ?? "";
 
@@ -121,8 +164,33 @@ export default function MaintenancePage() {
       <div className="panel-title"><h3>交易维护</h3><span>撤单 · 撮合平仓 · 结算清退</span></div>
       <p>任务按产品线和币对执行。先预览，再提交审批。交易限制作用于整个币对，即使只处理指定用户；完成后需明确恢复交易，结算清退的币对永久停止交易。</p>
       <div className="filters">
-        <label>产品线<select disabled={busy || !!dialog} value={line} onChange={e => { setLine(e.target.value); setBeforeId("0"); change({ mode: "CANCEL", priceTicks: "0" }); }}>{lines.map(v => <option key={v}>{v}</option>)}</select></label>
-        <label>币对<input disabled={busy || !!dialog} value={draft.symbol} placeholder="精确输入币对" maxLength={64} onChange={e => change({ symbol: e.target.value.trim().toUpperCase() })} /></label>
+        <label>产品线<select disabled={busy || !!dialog} value={line} onChange={e => { setLine(e.target.value); setBeforeId("0"); setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); change({ symbol: "", mode: "CANCEL", priceTicks: "0" }); }}>{lines.map(v => <option key={v}>{v}</option>)}</select></label>
+        <div className="maintenance-symbol" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) { setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); } }}>
+          <label htmlFor="maintenance-symbol-input">币对</label>
+          <input id="maintenance-symbol-input" role="combobox" aria-autocomplete="list" aria-expanded={symbolOpen} aria-controls="maintenance-symbol-options"
+            aria-activedescendant={symbolOpen && symbolMatches[symbolIndex] ? `maintenance-symbol-${symbolIndex}` : undefined}
+            autoComplete="off" disabled={busy || !!dialog || symbolLoading || !!symbolList.error || availableSymbols.length === 0}
+            placeholder={symbolLoading ? "正在加载币对…" : symbolList.error ? "币对加载失败" : availableSymbols.length === 0 ? "当前产品线暂无币对" : "输入关键词搜索币对"}
+            value={symbolOpen ? symbolSearch : draft.symbol}
+            onFocus={() => { setSymbolOpen(true); setSymbolSearch(""); setSymbolIndex(0); }}
+            onClick={() => { if (!symbolOpen) { setSymbolOpen(true); setSymbolSearch(""); setSymbolIndex(0); } }}
+            onChange={e => { setSymbolSearch(e.target.value); setSymbolOpen(true); setSymbolIndex(0); }}
+            onKeyDown={e => {
+              if (e.key === "Escape") { e.preventDefault(); setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); }
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault(); setSymbolOpen(true);
+                setSymbolIndex(previous => Math.max(0, Math.min(symbolMatches.length - 1, previous + (e.key === "ArrowDown" ? 1 : -1))));
+              }
+              if (e.key === "Enter" && symbolOpen) { e.preventDefault(); if (symbolMatches[symbolIndex]) chooseSymbol(symbolMatches[symbolIndex].symbol); }
+            }} />
+          {symbolOpen && <div id="maintenance-symbol-options" className="maintenance-symbol-options" role="listbox" aria-label="匹配币对">
+            {symbolMatches.map((item, index) => <button type="button" role="option" id={`maintenance-symbol-${index}`} tabIndex={-1}
+              aria-selected={index === symbolIndex} key={item.symbol} onMouseDown={e => e.preventDefault()}
+              onClick={() => chooseSymbol(item.symbol)}>{item.symbol}{item.status ? ` · ${item.status}` : ""}</button>)}
+            {symbolMatches.length === 0 && <p role="status">没有匹配的币对</p>}
+          </div>}
+          {!symbolLoading && draft.symbol && !symbolAvailable && <small>草稿币对不在当前列表，请重新选择。</small>}
+        </div>
         <label>用户 ID（留空为全部）<input disabled={busy || !!dialog || draft.mode === "SETTLEMENT"} inputMode="numeric" value={draft.userId} onChange={e => change({ userId: e.target.value })} /></label>
         <label>操作方式<select disabled={busy || !!dialog} value={draft.mode} onChange={e => { const mode = e.target.value as Mode; change({ mode, priceTicks: "0", ...(mode === "SETTLEMENT" ? { userId: "" } : {}) }); }}>{Object.entries(modes).filter(([key]) => line !== "SPOT" || key === "CANCEL").map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
         {hasPrice && <label>{draft.mode === "SETTLEMENT" && line === "OPTION" ? "标的结算价格（ticks）" : "价格（ticks，整数最小单位）"}<input disabled={busy || !!dialog} inputMode="numeric" value={draft.priceTicks} onChange={e => change({ priceTicks: e.target.value })} /></label>}
@@ -130,6 +198,7 @@ export default function MaintenancePage() {
         <button disabled={busy || !valid} onClick={() => void inspect()}>预览 Core 当前状态</button>
         <button className="primary" disabled={busy || !valid || !preview || previewScope !== `${line}:${draft.symbol}:${draft.userId || "0"}` || preview.gateMode !== "TRADING"} onClick={() => { setConfirmation(""); setDialog("create"); }}>确认并提交审批</button>
       </div>
+      {symbolList.error && <p role="alert" className="maintenance-error">币对加载失败：{symbolList.error} <button disabled={busy || !!dialog} onClick={() => setSymbolReload(value => value + 1)}>重新加载币对</button></p>}
       {draft.mode === "MARKET" && <p>使用现有市价保护及 IOC 撮合，只减仓。流动性不足可能部分成交或未成交，剩余持仓会保留，任务不会显示完成。</p>}
       <p>草稿保留在当前浏览器。可前往审批中心后返回执行同一请求；修改范围、方式、价格或原因需要重新审批。</p>
       {draft.mode === "LIMIT" && <p>IOC 不挂余单：平多的价格不得低于指定价，平空不得高于指定价。双向持仓共用此价格，请先核对两个方向是否适用同一价格。</p>}
