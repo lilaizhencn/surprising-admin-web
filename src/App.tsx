@@ -73,7 +73,8 @@ import {
   loginLogs,
   instrumentLatest,
   instruments as instrumentList,
-  instrumentVersions,
+  instrumentChanges,
+  type InstrumentChange,
   marketHealth,
   mfaStatus,
   operationLogs,
@@ -1345,14 +1346,15 @@ function ProfileSection({ title, wide = false, children }: { title: string; wide
 }
 
 function MarketsPage() {
-  const [filters, setFilters] = useState({ status: "TRADING", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
-  const [versionFilters, setVersionFilters] = useState({ limit: "50", cursor: "", sort: "version.desc" });
+  const [filters, setFilters] = useState({ productLine: "SPOT", status: "TRADING", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
+  const [coreSync, setCoreSync] = useState<UnknownRecord | null>(null);
+  const [changeReason, setChangeReason] = useState("");
+  const auditRequest = useRef(0);
   const [healthPeriod, setHealthPeriod] = useState("1m");
   const [staleSeconds, setStaleSeconds] = useState("120");
   const [items, setItems] = useState<Instrument[]>([]);
   const [page, setPage] = useState(cursorInfo(null));
-  const [versions, setVersions] = useState<Instrument[]>([]);
-  const [versionPage, setVersionPage] = useState(cursorInfo(null));
+  const [changes, setChanges] = useState<InstrumentChange[]>([]);
   const [health, setHealth] = useState<UnknownRecord | null>(null);
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [json, setJson] = useState("");
@@ -1366,16 +1368,13 @@ function MarketsPage() {
     setFilters((current) => ({ ...current, ...patch, cursor: "" }));
   }
 
-  function updateVersionFilters(patch: Partial<typeof versionFilters>) {
-    setVersionFilters((current) => ({ ...current, ...patch, cursor: "" }));
-  }
-
   async function load(nextCursor = filters.cursor) {
     setLoading(true);
     setError("");
     try {
       const [response, healthResponse] = await Promise.all([
         instrumentList({
+          productLine: filters.productLine,
           type: filters.type,
           status: filters.status,
           limit: Number(filters.limit) || 100,
@@ -1394,10 +1393,9 @@ function MarketsPage() {
         : rows[0] ?? null;
       setSelected(nextSelected);
       if (nextSelected?.symbol) {
-        await loadVersions(nextSelected.symbol, "");
+        await loadChanges(nextSelected);
       } else {
-        setVersions([]);
-        setVersionPage(cursorInfo(null));
+        setChanges([]);
       }
     } catch (err) {
       setError(errorMessage(err));
@@ -1406,22 +1404,19 @@ function MarketsPage() {
     }
   }
 
-  async function loadVersions(symbol = selected?.symbol ?? "", nextCursor = versionFilters.cursor) {
-    if (!symbol) return;
+  async function loadChanges(instrument: Instrument, append = false) {
+    const requestId = ++auditRequest.current;
     setHistoryLoading(true);
+    if (!append) setChanges([]);
     try {
-      const response = await instrumentVersions(symbol, {
-        limit: Number(versionFilters.limit) || 50,
-        cursor: nextCursor,
-        sort: versionFilters.sort
-      });
-      setVersions(response.instruments ?? response.items ?? []);
-      setVersionPage(cursorInfo(response));
-      setVersionFilters((current) => ({ ...current, cursor: nextCursor }));
+      const line = instrument.contractType === "VANILLA_OPTION" ? "OPTION" : instrument.contractType;
+      if (!line) throw new Error("产品线缺失，无法查询操作日志");
+      const rows = await instrumentChanges(instrument.symbol, line, append ? changes.at(-1)?.changeId ?? "0" : "0");
+      if (requestId === auditRequest.current) setChanges(current => append ? [...current, ...rows] : rows);
     } catch (err) {
-      setError(errorMessage(err));
+      if (requestId === auditRequest.current) setError(errorMessage(err));
     } finally {
-      setHistoryLoading(false);
+      if (requestId === auditRequest.current) setHistoryLoading(false);
     }
   }
 
@@ -1429,9 +1424,9 @@ function MarketsPage() {
     setLoading(true);
     setError("");
     try {
-      const detail = await instrumentLatest(row.symbol);
+      const detail = await instrumentLatest(row.symbol, row.contractType === "VANILLA_OPTION" ? "OPTION" : row.contractType);
       setSelected(detail);
-      await loadVersions(detail.symbol, "");
+      await loadChanges(detail);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -1442,10 +1437,28 @@ function MarketsPage() {
   useEffect(() => { void load(); }, []);
   useEffect(() => { setJson(selected ? JSON.stringify(selected, null, 2) : ""); }, [selected]);
 
+  useEffect(() => {
+    if (!selected) { setCoreSync(null); return; }
+    let active = true;
+    const symbol = selected.symbol;
+    const productLine = selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType;
+    setCoreSync(null);
+    const refresh = async () => {
+      try {
+        const state = await gatewayGet<UnknownRecord>("trading-orders", `/instrument-sync/${encodeURIComponent(symbol)}`, { productLine });
+        if (active) setCoreSync(state);
+      } catch (err) { if (active) setCoreSync({ state: "UNKNOWN", error: errorMessage(err) }); }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selected?.symbol, selected?.contractType, selected?.lastChangeId]);
+
   async function changeStatus(next: string) {
     if (!selected) return;
     try {
-      const updated = await updateInstrumentStatus(selected.symbol, next);
+      if (!changeReason.trim()) throw new Error("请填写修改原因");
+      const updated = await updateInstrumentStatus(selected.symbol, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim());
       setSelected(updated);
       await load(filters.cursor);
     } catch (err) {
@@ -1460,7 +1473,10 @@ function MarketsPage() {
         throw new Error("产品配置必须是 JSON object。");
       }
       const body = normalizeInstrumentDraft(parsed as UnknownRecord, "instrumentType");
-      const updated = await upsertInstrument(body);
+      if (!changeReason.trim()) throw new Error("请填写修改原因");
+      delete body.changeId;
+      delete body.lastChangeId;
+      const updated = await upsertInstrument(body, changeReason.trim());
       setSelected(updated);
       await load("");
     } catch (err) {
@@ -1476,6 +1492,9 @@ function MarketsPage() {
   return (
     <Page title="产品与市场" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
       <div className="filters">
+        <label>产品线<select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
+          {["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}
+        </select></label>
         <label>类型<select value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}>
           <option value="">全部</option>
           {INSTRUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}
@@ -1498,7 +1517,7 @@ function MarketsPage() {
       {health && <MarketHealthOverview health={health} />}
       <TwoColumn>
         <Panel title="交易产品">
-          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "version", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
+          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
           <CursorPager
             page={page}
             cursor={filters.cursor}
@@ -1511,7 +1530,7 @@ function MarketsPage() {
             <div className="stack">
               <div className="metrics">
                 <Metric label="当前产品" value={selected.symbol} tone="muted" />
-                <Metric label="当前版本" value={selected.version ?? "-"} tone="muted" />
+                <Metric label="Core 同步" value={coreSync?.state === "APPLIED" && String(coreSync.appliedChangeId) === String(selected.lastChangeId) ? "已确认" : coreSync?.state === "BLOCKED" ? "受阻，自动重试" : coreSync?.state === "UNKNOWN" ? "查询失败" : "待确认"} tone="muted" />
                 <Metric label="状态" value={selected.status ?? "-"} tone={selected.status === "TRADING" ? "ok" : "warn"} />
                 <Metric label="指数源" value={selected.indexSources?.length ?? 0} tone="muted" />
                 <Metric label="到期时间" value={selected.expiryTime ?? "-"} tone="muted" />
@@ -1593,20 +1612,17 @@ function MarketsPage() {
                 <summary>高级 JSON 配置</summary>
                 <textarea className="json-editor" value={json} onChange={(event) => setJson(event.target.value)} />
               </details>
+              <TextFilter label="修改原因（必填）" value={changeReason} onChange={setChangeReason} />
               <button className="primary" onClick={() => void upsert()}>保存产品配置</button>
-              <ProfileSection title="版本历史" wide>
-                <div className="filters">
-                  <SortSelect label="版本排序" value={versionFilters.sort} options={INSTRUMENT_VERSION_SORTS} onChange={(sort) => updateVersionFilters({ sort })} />
-                  <TextFilter label="Limit" value={versionFilters.limit} onChange={(value) => updateVersionFilters({ limit: value })} />
-                  <button onClick={() => void loadVersions(selected.symbol, "")} disabled={historyLoading}><Search size={16} />查询版本</button>
-                </div>
-                <DataTable rows={versions as unknown as UnknownRecord[]} columns={["version", "status", "contractType", "expiryTime", "effectiveTime", "updatedAt", "makerFeeRatePpm", "takerFeeRatePpm", "maxLeveragePpm"]} onRowClick={(row) => setSelected(row as unknown as Instrument)} />
-                <CursorPager
-                  page={versionPage}
-                  cursor={versionFilters.cursor}
-                  onNext={() => void loadVersions(selected.symbol, versionPage.nextCursor)}
-                  onReset={() => void loadVersions(selected.symbol, "")}
-                />
+              {coreSync?.error != null && <p role="status">Core 同步：{String(coreSync.error)}</p>}
+              <ProfileSection title="配置操作日志" wide>
+                <button onClick={() => void loadChanges(selected)} disabled={historyLoading}>刷新操作日志</button>
+                {changes.map(change => <details key={change.changeId} className="raw-toggle">
+                  <summary>{change.changedAt} · {change.operatorId} · {change.reason}</summary>
+                  <DataTable rows={instrumentChangeRows(change)} columns={["字段", "修改前", "修改后"]} />
+                </details>)}
+                {!historyLoading && changes.length === 0 && <Empty text="暂无操作日志" />}
+                {changes.length > 0 && changes.length % 50 === 0 && <button disabled={historyLoading} onClick={() => void loadChanges(selected, true)}>加载更早日志</button>}
               </ProfileSection>
             </div>
           ) : <Empty text="选择一个产品" />}
@@ -1760,7 +1776,7 @@ function LifecyclePage() {
           />
           <DataTable
             rows={instruments as unknown as UnknownRecord[]}
-            columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingSymbol", "strikePriceUnits", "optionType", "settlementMethod", "version", "updatedAt"]}
+            columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingSymbol", "strikePriceUnits", "optionType", "settlementMethod", "updatedAt"]}
             maxColumns={13}
             onRowClick={(row) => setSelected(row as unknown as Instrument)}
           />
@@ -1777,7 +1793,7 @@ function LifecyclePage() {
               underlyingSymbol: selected.underlyingSymbol ?? "",
               strikePriceUnits: selected.strikePriceUnits ?? "",
               optionType: selected.optionType ?? "",
-              version: selected.version ?? ""
+              changeId: selected.changeId ?? ""
             }} />
           ) : <Empty text="选择一个交割或期权产品" />}
         </Panel>
@@ -7054,7 +7070,7 @@ const ACCOUNT_SNAPSHOT_SORTS = ["snapshotDate.desc", "snapshotDate.asc"];
 const COMPLIANCE_RISK_TAG_SORTS = ["createdAt.desc", "createdAt.asc", "updatedAt.desc", "updatedAt.asc"];
 const COMPLIANCE_AML_CASE_SORTS = ["updatedAt.desc", "updatedAt.asc", "createdAt.desc", "createdAt.asc"];
 const INSTRUMENT_SORTS = ["symbol.asc", "symbol.desc", "updatedAt.desc", "updatedAt.asc", "createdAt.desc", "createdAt.asc"];
-const INSTRUMENT_VERSION_SORTS = ["version.desc", "version.asc"];
+
 const ADL_QUEUE_SORT = "priorityScorePpm.desc";
 
 function SortSelect({ label = "排序", value, options, onChange }: {
@@ -7492,4 +7508,15 @@ interface WalletAdminConfig extends UnknownRecord {
   tables?: Record<string, UnknownRecord>;
   rows?: Record<string, UnknownRecord[]>;
   secretStatus?: UnknownRecord[];
+}
+
+function instrumentChangeRows(change: InstrumentChange): UnknownRecord[] {
+  try {
+    const before = change.beforeValues ? JSON.parse(change.beforeValues) as UnknownRecord : {};
+    const after = JSON.parse(change.afterValues) as UnknownRecord;
+    return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+      .filter(key => !["changeId", "change_id", "createdAt", "updatedAt", "created_at", "updated_at"].includes(key))
+      .filter(key => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
+      .map(key => ({ "字段": key, "修改前": JSON.stringify(before[key]) ?? "—", "修改后": JSON.stringify(after[key]) ?? "—" }));
+  } catch { return [{ "字段": "日志内容", "修改前": change.beforeValues ?? "—", "修改后": change.afterValues }]; }
 }

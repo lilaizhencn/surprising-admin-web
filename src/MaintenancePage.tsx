@@ -12,7 +12,7 @@ type Draft = { requestId: string; symbol: string; userId: string; mode: Mode; pr
 type Task = { id: string; productLine: string; request: Draft; adminUserId: string; status: string; phase: string; error: string | null; updatedAt: string };
 type Action = { key: string; requestJson: string; resultJson: string | null; completed: boolean };
 type Position = { userId: string; symbol: string; marginMode: string; positionSide: string; signedQuantitySteps: string; entryPriceTicks: string; positionMarginUnits: string };
-type Preview = { productLine: string; symbol: string; gateMode: string; gateTaskId: string; instrumentVersion: string; positions: Position[]; orderIds: string[]; triggerOrderIds: string[]; moreUsers: boolean; nextUserId: string; moreOrders: boolean; moreTriggers: boolean };
+type Preview = { productLine: string; symbol: string; gateMode: string; gateTaskId: string; instrumentChangeId: string; positions: Position[]; orderIds: string[]; triggerOrderIds: string[]; moreUsers: boolean; nextUserId: string; moreOrders: boolean; moreTriggers: boolean };
 const statuses: Record<string, string> = { RUNNING: "处理中", BLOCKED: "已阻塞，需检查", COMPLETED: "Core 已确认完成，维护限制保留", RELEASED: "维护任务已解除" };
 const phases: Record<string, string> = { GATE: "限制交易", GATE_REJECTED: "尚未进入维护", TRIGGERS: "撤触发单", ORDERS: "撤普通单", CLOSE: "撮合平仓", SETTLE: "分批结算", VERIFY: "核对剩余状态", RELEASE: "恢复交易", RELEASE_REJECTED: "恢复交易被拒绝" };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -207,7 +207,7 @@ export default function MaintenancePage() {
     </section>
     {preview && <section className="panel">
       <div className="panel-title"><h3>Core 实时预览 · {preview.productLine} · {preview.symbol}</h3></div>
-      <p>限制：{preview.gateMode} · 维护任务：{preview.gateTaskId} · 合约版本：{preview.instrumentVersion}。这是分批预览，不代表全部数量；执行前会重新读取状态。</p>
+      <p>限制：{preview.gateMode} · 维护任务：{preview.gateTaskId}。这是分批预览，不代表全部数量；执行前会重新读取状态。</p>
       <p>本页普通单：{preview.orderIds.join(", ") || "无"}{preview.moreOrders ? "（还有更多）" : ""}</p>
       <p>本页触发单：{preview.triggerOrderIds.join(", ") || "无"}{preview.moreTriggers ? "（还有更多）" : ""}</p>
       <div className="table-wrap"><table><thead><tr>{["用户", "保证金模式", "持仓方向", "有符号持仓量（steps）", "开仓价（ticks）", "保证金（units）"].map(v => <th key={v}>{v}</th>)}</tr></thead><tbody>{preview.positions.map(p => <tr key={`${p.userId}:${p.marginMode}:${p.positionSide}`}><td>{p.userId}</td><td>{p.marginMode}</td><td>{p.positionSide}</td><td>{p.signedQuantitySteps}</td><td>{p.entryPriceTicks}</td><td>{p.positionMarginUnits}</td></tr>)}</tbody></table></div>

@@ -49,7 +49,8 @@ export interface QueryState<T> {
 
 export interface Instrument {
   symbol: string;
-  version?: number;
+  changeId?: number;
+  lastChangeId?: number;
   instrumentType?: string;
   contractType?: string;
   baseAsset?: string;
@@ -107,7 +108,7 @@ export interface BalanceRecord {
 export interface PositionRecord {
   userId: number;
   symbol: string;
-  instrumentVersion: number;
+  instrumentChangeId: number;
   marginMode: string;
   positionSide: string;
   signedQuantitySteps: number;

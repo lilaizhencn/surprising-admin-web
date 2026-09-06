@@ -488,24 +488,22 @@ export function instruments(params: {
   return gatewayGet<CursorPage<Instrument, "instruments"> & { items?: Instrument[] }>("instrument-admin", "/list", params);
 }
 
-export function instrumentLatest(symbol: string) {
-  return gatewayGet<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}`);
+export function instrumentLatest(symbol: string, productLine?: string) {
+  return gatewayGet<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}`, { productLine });
 }
 
-export function instrumentVersions(symbol: string, params: { limit?: number } & CursorListParams = {}) {
-  return gatewayGet<CursorPage<Instrument, "instruments"> & { items?: Instrument[] }>(
-    "instrument-admin",
-    `/${encodeURIComponent(symbol)}/versions`,
-    params
-  );
+export type InstrumentChange = { changeId: string; operatorId: string; reason: string; changedAt: string; beforeValues: string | null; afterValues: string };
+
+export function instrumentChanges(symbol: string, productLine: string, beforeId = "0", limit = 50) {
+  return gatewayGet<InstrumentChange[]>("instrument-admin", `/${encodeURIComponent(symbol)}/changes`, { productLine, beforeId, limit });
 }
 
-export function upsertInstrument(body: UnknownRecord) {
-  return gatewayPost<Instrument>("instrument-admin", "/upsert", body);
+export function upsertInstrument(body: UnknownRecord, reason = "Admin configuration update") {
+  return gatewayPost<Instrument>("instrument-admin", "/upsert", body, { reason });
 }
 
-export function updateInstrumentStatus(symbol: string, status: string) {
-  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}/status`, undefined, { status });
+export function updateInstrumentStatus(symbol: string, status: string, productLine?: string, reason = "Admin trading status update") {
+  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}/status`, undefined, { status, productLine, reason });
 }
 
 export function accountAdjustments(params: {
