@@ -259,7 +259,7 @@ export function createAccountAssetSnapshot(params: {
   });
 }
 
-export function marketHealth(params: { symbol?: string; period?: string; staleSeconds?: number; limit?: number } = {}) {
+export function marketHealth(params: { instrumentId?: string; period?: string; staleSeconds?: number; limit?: number } = {}) {
   return request<UnknownRecord>(`/api/v1/admin/market/health${queryString(params)}`);
 }
 

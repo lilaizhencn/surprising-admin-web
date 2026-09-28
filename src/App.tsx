@@ -291,13 +291,13 @@ const EXPORT_PARAM_TEMPLATES: Record<string, Record<string, string>> = {
   LOGIN_LOGS: { userId: "", result: "", limit: "1000" },
   ADMIN_OPERATIONS: { adminUserId: "", service: "", method: "", success: "", limit: "1000" },
   COMPLIANCE_USERS: { userId: "", kycStatus: "", tagCode: "", limit: "1000" },
-  ORDERS: { userId: "", orderId: "", symbol: "", status: "", createdAfter: "", createdBefore: "", limit: "1000" },
-  TRIGGER_ORDERS: { userId: "", triggerOrderId: "", symbol: "", status: "", createdAfter: "", createdBefore: "", limit: "1000" },
-  MATCH_TRADES: { userId: "", orderId: "", symbol: "", takerSide: "", createdAfter: "", createdBefore: "", limit: "1000" },
+  ORDERS: { userId: "", orderId: "", instrumentId: "", status: "", createdAfter: "", createdBefore: "", limit: "1000" },
+  TRIGGER_ORDERS: { userId: "", triggerOrderId: "", instrumentId: "", status: "", createdAfter: "", createdBefore: "", limit: "1000" },
+  MATCH_TRADES: { userId: "", orderId: "", instrumentId: "", takerSide: "", createdAfter: "", createdBefore: "", limit: "1000" },
   ACCOUNT_BALANCES: { userId: "", asset: "", nonZeroOnly: "true", limit: "1000" },
   PRODUCT_BALANCES: { userId: "", accountType: "", asset: "", nonZeroOnly: "true", limit: "1000" },
-  POSITIONS: { userId: "", symbol: "", marginMode: "", openOnly: "true", limit: "1000" },
-  ACCOUNT_LEDGER: { userId: "", asset: "", symbol: "", orderId: "", referenceType: "", createdAfter: "", createdBefore: "", limit: "1000" },
+  POSITIONS: { userId: "", instrumentId: "", marginMode: "", openOnly: "true", limit: "1000" },
+  ACCOUNT_LEDGER: { userId: "", asset: "", instrumentId: "", orderId: "", referenceType: "", createdAfter: "", createdBefore: "", limit: "1000" },
   PRODUCT_LEDGER: { userId: "", accountType: "", asset: "", referenceType: "", createdAfter: "", createdBefore: "", limit: "1000" },
   PRODUCT_TRANSFERS: { userId: "", accountType: "", asset: "", status: "", createdAfter: "", createdBefore: "", limit: "1000" },
   ACCOUNT_ADJUSTMENTS: {
@@ -321,7 +321,7 @@ const QUERY_TASK_PARAM_TEMPLATES: Record<string, Record<string, string>> = {
     userId: "",
     orderId: "",
     clientOrderId: "",
-    symbol: "",
+    instrumentId: "",
     status: "",
     side: "",
     marginMode: "",
@@ -335,7 +335,7 @@ const QUERY_TASK_PARAM_TEMPLATES: Record<string, Record<string, string>> = {
     triggerOrderId: "",
     clientTriggerOrderId: "",
     ocoGroupId: "",
-    symbol: "",
+    instrumentId: "",
     status: "",
     side: "",
     triggerType: "",
@@ -348,7 +348,7 @@ const QUERY_TASK_PARAM_TEMPLATES: Record<string, Record<string, string>> = {
     userId: "",
     orderId: "",
     tradeId: "",
-    symbol: "",
+    instrumentId: "",
     takerSide: "",
     traceId: "",
     createdAfter: "",
@@ -640,7 +640,7 @@ function ForbiddenScreen({ session, onLogout }: { session: AuthSession; onLogout
 
 function DashboardPage() {
   const [state, setState] = useState(loadable<DashboardData>());
-  const [symbol, setSymbol] = useState("BTC-USDT");
+  const [instrumentId, setSymbol] = useState("");
   const [asset, setAsset] = useState("USDT");
 
   async function load() {
@@ -648,11 +648,11 @@ function DashboardPage() {
     try {
       const instruments = await instrumentList({ limit: 200, sort: "symbol.asc" });
       const instrumentRows = instruments.instruments ?? instruments.items ?? [];
-      const selectedInstrument = instrumentRows.find((item) => item.symbol === symbol);
+      const selectedInstrument = instrumentRows.find((item) => String(item.instrumentId) === instrumentId);
       const productLine = productLineForInstrument(selectedInstrument);
       const shouldLoadFunding = !selectedInstrument || isFundingInstrument(selectedInstrument);
       const fundingRequest = shouldLoadFunding
-        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol, productLine }).catch(() => null)
+        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { instrumentId, productLine }).catch(() => null)
         : Promise.resolve(null);
       const [candidates, liquidations, insurance, adl, makers, funding] = await Promise.all([
         gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/liquidation-candidates", { status: "NEW", productLine, limit: 50 }),
@@ -683,14 +683,14 @@ function DashboardPage() {
   useEffect(() => { void load(); }, []);
 
   const data = state.data;
-  const selectedInstrument = data?.instruments.find((item) => item.symbol === symbol);
+  const selectedInstrument = data?.instruments.find((item) => String(item.instrumentId) === instrumentId);
   const fundingMetric = selectedInstrument && !isFundingInstrument(selectedInstrument)
     ? "非永续"
     : formatValue(data?.funding?.fundingRatePpm ?? data?.funding?.fundingRate);
   return (
     <Page title="运营总览" onRefresh={load} loading={state.loading} error={state.error}>
       <div className="filters compact">
-        <label>Symbol<input value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} /></label>
+        <label>Symbol<input value={instrumentId} onChange={(event) => setSymbol(event.target.value.toUpperCase())} /></label>
         <label>Asset<input value={asset} onChange={(event) => setAsset(event.target.value.toUpperCase())} /></label>
         <button onClick={load}><RefreshCw size={16} />刷新</button>
       </div>
@@ -1304,19 +1304,19 @@ function UserProfileView({
               <DataTable rows={productBalances} columns={["userId", "accountType", "asset", "availableUnits", "lockedUnits", "equityUnits", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="合约持仓">
-              <DataTable rows={positions} columns={["userId", "symbol", "marginMode", "positionSide", "signedQuantitySteps", "entryPriceTicks", "updatedAt"]} />
+              <DataTable rows={positions} columns={["userId", "instrumentId", "marginMode", "positionSide", "signedQuantitySteps", "entryPriceTicks", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="风险快照">
               <DataTable rows={[...riskAccount, ...riskPositions]} maxColumns={8} />
             </ProfileSection>
             <ProfileSection title="普通订单">
-              <DataTable rows={orders} columns={["orderId", "userId", "symbol", "side", "positionSide", "orderType", "status", "remainingQuantitySteps", "updatedAt"]} />
+              <DataTable rows={orders} columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "status", "remainingQuantitySteps", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="触发订单">
-              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "status", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "updatedAt"]} />
+              <DataTable rows={triggerOrders} columns={["triggerOrderId", "userId", "instrumentId", "side", "positionSide", "triggerType", "status", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "updatedAt"]} />
             </ProfileSection>
             <ProfileSection title="成交明细">
-              <DataTable rows={trades} columns={["tradeId", "orderId", "userId", "symbol", "priceTicks", "quantitySteps", "createdAt"]} />
+              <DataTable rows={trades} columns={["tradeId", "orderId", "userId", "instrumentId", "priceTicks", "quantitySteps", "createdAt"]} />
             </ProfileSection>
             <ProfileSection title="资金流水">
               <DataTable rows={[...accountLedger, ...productLedger, ...transfers]} maxColumns={8} />
@@ -1554,7 +1554,7 @@ function MarketsPage() {
               <div className="profile-sections">
                 <ProfileSection title="基础信息">
                   <div className="form-grid">
-                    <DraftTextField label="Symbol" field="symbol" draft={draft} update={updateDraftField} upper />
+                    <DraftTextField label="币对 ID" field="symbol" draft={draft} update={updateDraftField} upper />
                     <DraftSelectField label="产品类型" field="instrumentType" draft={draft} update={updateDraftField} options={INSTRUMENT_TYPES} />
                     <DraftSelectField label="合约类型" field="contractType" draft={draft} update={updateDraftField} options={CONTRACT_TYPES} />
                     <DraftSelectField label="状态" field="status" draft={draft} update={updateDraftField} options={INSTRUMENT_STATUSES} />
@@ -1580,7 +1580,8 @@ function MarketsPage() {
                   <div className="form-grid">
                     <DraftOptionalTextField label="到期时间 ISO" field="expiryTime" draft={draft} update={updateDraftField} />
                     <DraftOptionalTextField label="交割时间 ISO" field="deliveryTime" draft={draft} update={updateDraftField} />
-                    <DraftOptionalTextField label="底层标的" field="underlyingSymbol" draft={draft} update={updateDraftField} upper />
+                    <DraftOptionalTextField label="标的币对永久 ID" field="underlyingInstrumentId" draft={draft} update={updateDraftField} />
+                    <DraftOptionalSelectField label="标的产品线" field="underlyingProductLine" draft={draft} update={updateDraftField} options={["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY"]} />
                     <DraftOptionalNumberField label="行权价 units" field="strikePriceUnits" draft={draft} update={updateDraftField} />
                     <DraftOptionalSelectField label="期权方向" field="optionType" draft={draft} update={updateDraftField} options={OPTION_TYPES} />
                     <DraftOptionalSelectField label="行权方式" field="optionExerciseStyle" draft={draft} update={updateDraftField} options={OPTION_EXERCISE_STYLES} />
@@ -1659,7 +1660,7 @@ function LifecyclePage() {
   const [filters, setFilters] = useState({
     productLine: "LINEAR_DELIVERY",
     status: "",
-    symbol: "",
+    instrumentId: "",
     userId: "",
     accountType: "USDT_DELIVERY",
     asset: "USDT",
@@ -1734,14 +1735,14 @@ function LifecyclePage() {
       const rawInstruments = instrumentResponse.instruments ?? instrumentResponse.items ?? [];
       const productInstruments = rawInstruments
         .filter((item) => productLineForInstrument(item) === productLine)
-        .filter((item) => !filters.symbol || item.symbol.includes(filters.symbol.trim().toUpperCase()));
+        .filter((item) => !filters.instrumentId || String(item.instrumentId).includes(filters.instrumentId.trim()));
       setInstruments(productInstruments);
       setInstrumentPageInfo(cursorInfo(instrumentResponse));
       setLedger(ledgerResponse.entries ?? ledgerResponse.records ?? ledgerResponse.items ?? []);
       setLedgerPageInfo(cursorInfo(ledgerResponse));
       setPositions(positionResponse.positions ?? positionResponse.items ?? []);
       setSelected((current) => current
-        ? productInstruments.find((item) => item.symbol === current.symbol) ?? productInstruments[0] ?? null
+        ? productInstruments.find((item) => item.instrumentId === current.instrumentId) ?? productInstruments[0] ?? null
         : productInstruments[0] ?? null);
       setFilters((current) => ({
         ...current,
@@ -1772,7 +1773,7 @@ function LifecyclePage() {
           <option value="">全部</option>
           {INSTRUMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
         </select></label>
-        <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
+        <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <label>账户类型<select value={filters.accountType} onChange={(event) => updateFilters({ accountType: event.target.value })}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
         <TextFilter label="Asset" value={filters.asset} onChange={(value) => updateFilters({ asset: value.toUpperCase() })} />
@@ -1799,7 +1800,7 @@ function LifecyclePage() {
           />
           <DataTable
             rows={instruments as unknown as UnknownRecord[]}
-            columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingSymbol", "strikePriceUnits", "optionType", "settlementMethod", "updatedAt"]}
+            columns={["instrumentId", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingInstrumentId", "strikePriceUnits", "optionType", "settlementMethod", "updatedAt"]}
             maxColumns={13}
             onRowClick={(row) => setSelected(row as unknown as Instrument)}
           />
@@ -1807,13 +1808,14 @@ function LifecyclePage() {
         <Panel title="选中产品核查">
           {selected ? (
             <KeyValue data={{
-              symbol: selected.symbol,
+              instrumentId: selected.instrumentId,
               productLine: productLineForInstrument(selected),
               status: selected.status,
               expiryTime: selected.expiryTime ?? "",
               deliveryTime: selected.deliveryTime ?? "",
               settlementMethod: selected.settlementMethod ?? "",
-              underlyingSymbol: selected.underlyingSymbol ?? "",
+              underlyingInstrumentId: selected.underlyingInstrumentId ?? "",
+              underlyingProductLine: selected.underlyingProductLine ?? "",
               strikePriceUnits: selected.strikePriceUnits ?? "",
               optionType: selected.optionType ?? "",
               changeId: selected.changeId ?? ""
@@ -1831,7 +1833,7 @@ function LifecyclePage() {
           />
           <DataTable
             rows={ledger}
-            columns={["ledgerId", "userId", "accountType", "asset", "amountUnits", "balanceAfterUnits", "referenceType", "referenceId", "symbol", "createdAt"]}
+            columns={["ledgerId", "userId", "accountType", "asset", "amountUnits", "balanceAfterUnits", "referenceType", "referenceId", "instrumentId", "createdAt"]}
             maxColumns={10}
           />
         </Panel>
@@ -1839,7 +1841,7 @@ function LifecyclePage() {
           {filters.userId ? (
             <DataTable
               rows={positions as unknown as UnknownRecord[]}
-              columns={["userId", "symbol", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
+              columns={["userId", "instrumentId", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
               maxColumns={8}
             />
           ) : <Empty text="输入 User ID 后核查生命周期产品是否仍有持仓" />}
@@ -1888,7 +1890,8 @@ function normalizeInstrumentDraft(next: UnknownRecord, changedField: string): Un
   if (instrumentType === "SPOT" || instrumentType === "PERPETUAL") {
     next.expiryTime = null;
     next.deliveryTime = null;
-    next.underlyingSymbol = null;
+    next.underlyingInstrumentId = null;
+    next.underlyingProductLine = null;
     next.strikePriceUnits = null;
     next.optionType = null;
     next.optionExerciseStyle = null;
@@ -2115,7 +2118,7 @@ function MarketHealthOverview({ health }: { health: UnknownRecord }) {
           <DataTable
             rows={symbols}
             columns={[
-              "symbol",
+              "instrumentId",
               "instrumentStatus",
               "indexStatus",
               "markStatus",
@@ -2134,7 +2137,7 @@ function MarketHealthOverview({ health }: { health: UnknownRecord }) {
           <DataTable
             rows={sources}
             columns={[
-              "symbol",
+              "instrumentId",
               "source",
               "sourceSymbol",
               "status",
@@ -2161,7 +2164,7 @@ function OrdersPage() {
   const [filters, setFilters] = useState({
     productLine: "LINEAR_PERPETUAL",
     userId: "",
-    symbol: "",
+    instrumentId: "",
     status: "",
     orderId: "",
     limit: "100",
@@ -2209,7 +2212,7 @@ function OrdersPage() {
         tradingMetrics({ windowMinutes: Number(metricsWindowMinutes) || 1440, productLine: filters.productLine, limit: 20 }),
         gatewayGet<{ orders?: OrderRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-orders", "", {
           userId: filters.userId,
-          symbol: filters.symbol,
+          instrumentId: filters.instrumentId,
           status: orderStatus,
           orderId: filters.orderId,
           productLine: filters.productLine,
@@ -2219,7 +2222,7 @@ function OrdersPage() {
         }),
         gatewayGet<{ orders?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-trigger", "", {
           userId: filters.userId,
-          symbol: filters.symbol,
+          instrumentId: filters.instrumentId,
           status: triggerStatus,
           triggerOrderId: filters.orderId,
           productLine: filters.productLine,
@@ -2229,7 +2232,7 @@ function OrdersPage() {
         }),
         gatewayGet<{ trades?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-orders", "/trades", {
           userId: filters.userId,
-          symbol: filters.symbol,
+          instrumentId: filters.instrumentId,
           orderId: filters.orderId,
           productLine: filters.productLine,
           limit: Number(filters.limit) || 100,
@@ -2298,7 +2301,7 @@ function OrdersPage() {
     try {
       const response = await gatewayPost<UnknownRecord>("trading-orders", "/cancel", {
         userId: filters.userId ? Number(filters.userId) : undefined,
-        symbol: filters.symbol || undefined,
+        instrumentId: filters.instrumentId || undefined,
         limit: Number(filters.limit) || 100,
         reason
       }, { productLine: filters.productLine });
@@ -2317,7 +2320,7 @@ function OrdersPage() {
     try {
       const response = await gatewayGet<UnknownRecord>("trading-orders", "/cancel-preview", {
         userId: filters.userId ? Number(filters.userId) : undefined,
-        symbol: filters.symbol || undefined,
+        instrumentId: filters.instrumentId || undefined,
         productLine: filters.productLine,
         limit: Number(filters.limit) || 100
       });
@@ -2330,7 +2333,7 @@ function OrdersPage() {
   }
 
   async function cancelBySymbol() {
-    if (!filters.symbol) {
+    if (!filters.instrumentId) {
       setError("按 Symbol 撤单需要先输入 Symbol。");
       return;
     }
@@ -2342,8 +2345,8 @@ function OrdersPage() {
     setLoading(true);
     setError("");
     try {
-      const response = await gatewayPost<UnknownRecord>("trading-orders", "/cancel-by-symbol", {
-        symbol: filters.symbol,
+      const response = await gatewayPost<UnknownRecord>("trading-orders", "/cancel-by-instrument", {
+        instrumentId: filters.instrumentId,
         limit: Number(filters.limit) || 100,
         reason
       }, { productLine: filters.productLine });
@@ -2364,7 +2367,7 @@ function OrdersPage() {
       <div className="filters">
         <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
-        <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
+        <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <TextFilter label="Order / Trigger ID" value={filters.orderId} onChange={(value) => updateFilters({ orderId: value })} />
         <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>{AUDIT_STATUS_FILTERS.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <label>统计窗口<select value={metricsWindowMinutes} onChange={(event) => setMetricsWindowMinutes(event.target.value)}>
@@ -2395,7 +2398,7 @@ function OrdersPage() {
           />
           <DataTable
             rows={orders as unknown as UnknownRecord[]}
-            columns={["orderId", "userId", "symbol", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
+            columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
             onRowClick={(row) => void loadTimeline(Number(row.orderId))}
             actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
           />
@@ -2414,7 +2417,7 @@ function OrdersPage() {
           />
           <DataTable
             rows={triggerOrders}
-            columns={["triggerOrderId", "userId", "symbol", "side", "positionSide", "triggerType", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+            columns={["triggerOrderId", "userId", "instrumentId", "side", "positionSide", "triggerType", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
             onRowClick={(row) => void loadTriggerTimeline(Number(row.triggerOrderId))}
           />
         </Panel>
@@ -2431,7 +2434,7 @@ function OrdersPage() {
         />
         <DataTable
           rows={trades}
-          columns={["tradeId", "symbol", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+          columns={["tradeId", "instrumentId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
         />
       </Panel>
     </Page>
@@ -2466,7 +2469,7 @@ function TradingMetricsOverview({ metrics }: { metrics: UnknownRecord }) {
           <DataTable
             rows={symbols}
             columns={[
-              "symbol",
+              "instrumentId",
               "submittedOrders",
               "trades",
               "notionalTicksSteps",
@@ -2486,7 +2489,7 @@ function TradingMetricsOverview({ metrics }: { metrics: UnknownRecord }) {
           <DataTable
             rows={positionSymbols}
             columns={[
-              "symbol",
+              "instrumentId",
               "openPositions",
               "users",
               "longPositions",
@@ -4674,7 +4677,7 @@ function RiskPage() {
 }
 
 function FundingInsurancePage() {
-  const [symbol, setSymbol] = useState("BTC-USDT");
+  const [instrumentId, setSymbol] = useState("");
   const [asset, setAsset] = useState("USDT");
   const [fundingUserId, setFundingUserId] = useState("");
   const [listFilters, setListFilters] = useState({
@@ -4732,7 +4735,7 @@ function FundingInsurancePage() {
       const paymentRequest = fundingUserId.trim() && shouldLoadFunding
         ? gatewayGet<{ payments?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("funding", "/admin/payments", {
           userId: fundingUserId.trim(),
-          symbol,
+          instrumentId,
           productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextPaymentCursor,
@@ -4740,15 +4743,15 @@ function FundingInsurancePage() {
         })
         : Promise.resolve({ payments: [], items: [], nextCursor: null, hasMore: false, sort: listFilters.paymentSort, limit: Number(listFilters.limit) || 100 });
       const [latest, history, settlement, payments, balances, ledger, coverages] = await Promise.all([
-        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { symbol, productLine }) : Promise.resolve({}),
+        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { instrumentId, productLine }) : Promise.resolve({}),
         shouldLoadFunding ? gatewayGet<{ rates?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("funding", "/admin/rates/history", {
-          symbol,
+          instrumentId,
           productLine,
           limit: Number(listFilters.limit) || 100,
           cursor: nextRateCursor,
           sort: listFilters.rateSort
         }) : Promise.resolve({ rates: [], items: [], nextCursor: null, hasMore: false, sort: listFilters.rateSort, limit: Number(listFilters.limit) || 100 }),
-        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/settlements/latest", { symbol, productLine }) : Promise.resolve({}),
+        shouldLoadFunding ? gatewayGet<UnknownRecord>("funding", "/admin/settlements/latest", { instrumentId, productLine }) : Promise.resolve({}),
         paymentRequest,
         gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset, productLine }),
         gatewayGet<{ entries?: UnknownRecord[]; ledger?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("insurance-admin", "/ledger", {
@@ -4810,7 +4813,7 @@ function FundingInsurancePage() {
     <Page title="资金费与保险基金" onRefresh={() => load()} loading={loading} error={error}>
       <div className="filters">
         <label>产品线<select value={listFilters.productLine} onChange={(event) => updateListFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
-        <TextFilter label="Symbol" value={symbol} onChange={(value) => { setSymbol(value.toUpperCase()); resetFundingCursors(); }} />
+        <TextFilter label="币对 ID" value={instrumentId} onChange={(value) => { setSymbol(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="付款 User ID" value={fundingUserId} onChange={(value) => { setFundingUserId(value); resetFundingCursors(); }} />
         <TextFilter label="Limit" value={listFilters.limit} onChange={(value) => updateListFilters({ limit: value })} />
@@ -4883,7 +4886,7 @@ function FeesPage() {
     productLine: "LINEAR_PERPETUAL",
     status: "",
     userId: "",
-    symbol: "",
+    instrumentId: "",
     limit: "200",
     scheduleCursor: "",
     scheduleSort: "updatedAt.desc",
@@ -4912,7 +4915,7 @@ function FeesPage() {
       const [schedules, tiers, userTier] = await Promise.all([
         gatewayGet<{ schedules?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-fees", "/schedules", {
           userId: filters.userId,
-          symbol: filters.symbol,
+          instrumentId: filters.instrumentId,
           status: filters.status,
           limit,
           cursor: nextScheduleCursor,
@@ -5014,7 +5017,7 @@ function FeesPage() {
       <div className="filters">
         <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
-        <TextFilter label="Symbol" value={filters.symbol} onChange={(value) => updateFilters({ symbol: value.toUpperCase() })} />
+        <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></select></label>
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
         <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
@@ -5027,7 +5030,7 @@ function FeesPage() {
           <div className="stack">
             <DataTable
               rows={records(data?.schedules)}
-              columns={["productLine", "feeScheduleId", "userId", "symbol", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
+              columns={["productLine", "feeScheduleId", "userId", "instrumentId", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
               maxColumns={11}
               onRowClick={selectSchedule}
               actions={(row) => row.status === "DISABLED" ? <StatusBadge value="DISABLED" /> : <button onClick={() => void disableSchedule(row)}>禁用</button>}
@@ -5058,7 +5061,7 @@ function FeesPage() {
               <TextFilter label="Schedule ID" value={scheduleForm.feeScheduleId} onChange={(value) => updateScheduleForm({ feeScheduleId: value })} />
               <label>产品线<select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
               <TextFilter label="User ID" value={scheduleForm.userId} onChange={(value) => updateScheduleForm({ userId: value })} />
-              <TextFilter label="Symbol" value={scheduleForm.symbol} onChange={(value) => updateScheduleForm({ symbol: value.toUpperCase() })} />
+              <TextFilter label="币对 ID" value={scheduleForm.instrumentId} onChange={(value) => updateScheduleForm({ instrumentId: value.toUpperCase() })} />
               <label>来源<select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
               <TextFilter label="Tier Code" value={scheduleForm.tierCode} onChange={(value) => updateScheduleForm({ tierCode: value.toUpperCase() })} />
               <label>状态<select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -5105,7 +5108,7 @@ function feeScheduleFormTemplate() {
     feeScheduleId: "",
     productLine: "LINEAR_PERPETUAL",
     userId: "",
-    symbol: "BTC-USDT",
+    instrumentId: "",
     makerFeeRatePpm: "200",
     takerFeeRatePpm: "500",
     sourceType: "USER_OVERRIDE",
@@ -5136,7 +5139,7 @@ function feeScheduleFormFromRecord(row: UnknownRecord) {
     feeScheduleId: fieldText(row.feeScheduleId),
     productLine: enumOrDefault(row.productLine, PRODUCT_LINES.filter(Boolean), "LINEAR_PERPETUAL"),
     userId: fieldText(row.userId),
-    symbol: fieldText(row.symbol),
+    instrumentId: fieldText(row.instrumentId),
     makerFeeRatePpm: fieldText(row.makerFeeRatePpm),
     takerFeeRatePpm: fieldText(row.takerFeeRatePpm),
     sourceType: enumOrDefault(row.sourceType, FEE_SOURCE_TYPES, "USER_OVERRIDE"),
@@ -5167,7 +5170,7 @@ function feeSchedulePayload(form: ReturnType<typeof feeScheduleFormTemplate>): U
     feeScheduleId: optionalNumber(form.feeScheduleId),
     productLine: form.productLine,
     userId: numberField(form.userId, "User ID"),
-    symbol: textOrNull(form.symbol.toUpperCase()),
+    instrumentId: textOrNull(form.instrumentId.toUpperCase()),
     makerFeeRatePpm: numberField(form.makerFeeRatePpm, "Maker ppm"),
     takerFeeRatePpm: numberField(form.takerFeeRatePpm, "Taker ppm"),
     sourceType: form.sourceType,
@@ -5202,7 +5205,7 @@ function MarketMakerPage() {
   const [insightFilters, setInsightFilters] = useState({
     productLine: "LINEAR_PERPETUAL",
     strategyId: "",
-    symbol: "",
+    instrumentId: "",
     accountId: "",
     eventType: "",
     windowHours: "24",
@@ -5384,7 +5387,7 @@ function MarketMakerPage() {
             updateInsightFilters({ productLine: event.target.value });
           }}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <TextFilter label="Strategy" value={insightFilters.strategyId} onChange={(value) => updateInsightFilters({ strategyId: value })} />
-          <TextFilter label="Symbol" value={insightFilters.symbol} onChange={(value) => updateInsightFilters({ symbol: value.toUpperCase() })} />
+          <TextFilter label="币对 ID" value={insightFilters.instrumentId} onChange={(value) => updateInsightFilters({ instrumentId: value.toUpperCase() })} />
           <TextFilter label="Account ID" value={insightFilters.accountId} onChange={(value) => updateInsightFilters({ accountId: value })} />
           <label>事件类型
             <select value={insightFilters.eventType} onChange={(event) => updateInsightFilters({ eventType: event.target.value })}>
@@ -5415,7 +5418,7 @@ function MarketMakerPage() {
           )} />
         </Panel>
         <Panel title="异常列表">
-          <DataTable rows={anomalies} columns={["severity", "type", "productLine", "strategyId", "symbol", "accountId", "metricValue", "threshold", "summary"]} />
+          <DataTable rows={anomalies} columns={["severity", "type", "productLine", "strategyId", "instrumentId", "accountId", "metricValue", "threshold", "summary"]} />
         </Panel>
       </TwoColumn>
       <Panel title="策略参数编辑">
@@ -5454,7 +5457,7 @@ function MarketMakerPage() {
             columns={[
               "strategyId",
               "productLine",
-              "symbol",
+              "instrumentId",
               "accountId",
               "marginMode",
               "orderCount",
@@ -5479,7 +5482,7 @@ function MarketMakerPage() {
                 "createdAt",
                 "productLine",
                 "strategyId",
-                "symbol",
+                "instrumentId",
                 "accountId",
                 "eventType",
                 "cycleSequence",
@@ -5506,7 +5509,7 @@ function MarketMakerPage() {
           columns={[
             "strategyId",
             "productLine",
-            "symbol",
+            "instrumentId",
             "accountId",
             "strategyStatus",
             "qualityStatus",
@@ -5528,7 +5531,7 @@ function MarketMakerPage() {
       </Panel>
       {warnings.length > 0 && (
         <Panel title="指标采集警告">
-          <DataTable rows={warnings} columns={["productLine", "strategyId", "symbol", "accountId", "message"]} />
+          <DataTable rows={warnings} columns={["productLine", "strategyId", "instrumentId", "accountId", "message"]} />
         </Panel>
       )}
     </Page>
@@ -7168,7 +7171,7 @@ function marketMakerConfigPayload(config: UnknownRecord | null): UnknownRecord {
 function marketMakerInsightParams(filters: {
   productLine: string;
   strategyId: string;
-  symbol: string;
+  instrumentId: string;
   accountId: string;
   eventType: string;
   windowHours: string;
@@ -7182,7 +7185,7 @@ function marketMakerInsightParams(filters: {
   };
   if (filters.strategyId.trim()) params.strategyId = filters.strategyId.trim();
   if (filters.productLine.trim()) params.productLine = filters.productLine.trim();
-  if (filters.symbol.trim()) params.symbol = filters.symbol.trim().toUpperCase();
+  if (filters.instrumentId.trim()) params.instrumentId = filters.instrumentId.trim().toUpperCase();
   if (filters.accountId.trim()) params.accountId = filters.accountId.trim();
   if (filters.eventType.trim()) params.eventType = filters.eventType.trim();
   return params;

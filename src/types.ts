@@ -69,7 +69,8 @@ export interface Instrument {
   fundingIntervalHours?: number;
   expiryTime?: string | null;
   deliveryTime?: string | null;
-  underlyingSymbol?: string | null;
+  underlyingInstrumentId?: string | null;
+  underlyingProductLine?: string | null;
   strikePriceUnits?: number | null;
   optionType?: string | null;
   optionExerciseStyle?: string | null;
@@ -83,7 +84,7 @@ export interface OrderRecord {
   orderId: number;
   userId: number;
   clientOrderId?: string;
-  symbol: string;
+  instrumentId: string;
   side: string;
   orderType: string;
   timeInForce: string;
@@ -113,7 +114,7 @@ export interface BalanceRecord {
 
 export interface PositionRecord {
   userId: number;
-  symbol: string;
+  instrumentId: string;
   instrumentChangeId: number;
   marginMode: string;
   positionSide: string;
