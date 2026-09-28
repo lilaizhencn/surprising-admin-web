@@ -488,22 +488,22 @@ export function instruments(params: {
   return gatewayGet<CursorPage<Instrument, "instruments"> & { items?: Instrument[] }>("instrument-admin", "/list", params);
 }
 
-export function instrumentLatest(symbol: string, productLine?: string) {
-  return gatewayGet<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}`, { productLine });
+export function instrumentLatest(instrumentId: number, productLine?: string) {
+  return gatewayGet<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}`, { productLine });
 }
 
 export type InstrumentChange = { changeId: string; operatorId: string; reason: string; changedAt: string; beforeValues: string | null; afterValues: string };
 
-export function instrumentChanges(symbol: string, productLine: string, beforeId = "0", limit = 50) {
-  return gatewayGet<InstrumentChange[]>("instrument-admin", `/${encodeURIComponent(symbol)}/changes`, { productLine, beforeId, limit });
+export function instrumentChanges(instrumentId: number, productLine: string, beforeId = "0", limit = 50) {
+  return gatewayGet<InstrumentChange[]>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/changes`, { productLine, beforeId, limit });
 }
 
 export function upsertInstrument(body: UnknownRecord, reason = "Admin configuration update") {
   return gatewayPost<Instrument>("instrument-admin", "/upsert", body, { reason });
 }
 
-export function updateInstrumentStatus(symbol: string, status: string, productLine?: string, reason = "Admin trading status update") {
-  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(symbol)}/status`, undefined, { status, productLine, reason });
+export function updateInstrumentStatus(instrumentId: number, status: string, productLine?: string, reason = "Admin trading status update") {
+  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/status`, undefined, { status, productLine, reason });
 }
 
 export function accountAdjustments(params: {
@@ -650,7 +650,7 @@ async function gatewayWrite<T>(
   });
 }
 
-async function adminLocalWrite<T>(
+export async function adminLocalWrite<T>(
   method: "POST" | "PATCH" | "PUT" | "DELETE",
   requestPath: string,
   body?: unknown,

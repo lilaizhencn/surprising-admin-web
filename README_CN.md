@@ -377,3 +377,11 @@ export ADMIN_KAFKA_BOOTSTRAP_SERVERS='kafka-1:9092,kafka-2:9092'
 ```bash
 pnpm build
 ```
+
+## 币种与充提网络配置
+
+“币种配置”页由 `src/AssetsPage.tsx` 承担：同页编辑币种基础信息和多个充提网络，接口为 `/api/v1/admin/assets` 与 `/{assetId}/networks`。读取要求 `admin.wallet.read`，写入要求 `admin.wallet.write` 并沿用现有双人审批面板。
+
+币种代码及账务精度创建后固定，显示名称与 Logo 可以调整。网络所属币种、网络标识、合约地址、链上精度创建后固定；更换合约先关闭原网络，再创建新配置。金额通过十进制字符串传递；版本冲突需刷新后重新修改。
+
+产品配置的基础币、计价币、结算币、合约价值资产由上线币种目录选择，提交 `baseAssetId/quoteAssetId/settleAssetId/contractValueAssetId`。已有币对的资产归属不能直接修改。币种的“允许配置交易市场”开关控制新建及重新启用市场资格，不会自动清退现有订单或仓位。

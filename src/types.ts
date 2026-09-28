@@ -2,6 +2,7 @@ export type RouteKey =
   | "dashboard"
   | "support"
   | "users"
+  | "assets"
   | "markets"
   | "lifecycle"
   | "orders"
@@ -48,6 +49,11 @@ export interface QueryState<T> {
 }
 
 export interface Instrument {
+  instrumentId: number;
+  baseAssetId: number;
+  quoteAssetId: number;
+  settleAssetId: number;
+  contractValueAssetId: number;
   symbol: string;
   changeId?: number;
   lastChangeId?: number;

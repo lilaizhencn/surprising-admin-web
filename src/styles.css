@@ -855,3 +855,8 @@ tr.clickable:hover td {
     display: none;
   }
 }
+
+.asset-configuration fieldset { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; display: grid; gap: 16px; }
+.asset-configuration .button-row select { max-width: 420px; }
+.asset-configuration .checkbox-grid label { display: flex; align-items: center; gap: 8px; }
+.asset-configuration .form-grid { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }

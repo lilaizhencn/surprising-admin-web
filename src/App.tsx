@@ -1,3 +1,4 @@
+import { AssetsPage, type Asset } from "./AssetsPage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -121,7 +122,7 @@ import {
   walletFinanceWithdrawalReviews,
   walletFinanceWithdrawals
 } from "./api/admin";
-import { ApiError, loadSession, saveSession } from "./api/client";
+import { ApiError, loadSession, saveSession, request } from "./api/client";
 import MaintenancePage from "./MaintenancePage";
 import { compactNumber, formatDate, formatValue } from "./config";
 import type {
@@ -141,6 +142,7 @@ const NAV = [
   { key: "dashboard", label: "总览", icon: LayoutDashboard },
   { key: "support", label: "客服视图", icon: LifeBuoy },
   { key: "users", label: "用户权限", icon: Users },
+  { key: "assets", label: "币种配置", icon: Database },
   { key: "markets", label: "产品市场", icon: BarChart3 },
   { key: "lifecycle", label: "交割行权", icon: Clock3 },
   { key: "orders", label: "订单审计", icon: ClipboardList },
@@ -453,6 +455,7 @@ export default function App() {
           {activeRoute === "dashboard" && <DashboardPage />}
           {activeRoute === "support" && <SupportPage />}
           {activeRoute === "users" && <UsersPage />}
+          {activeRoute === "assets" && <AssetsPage />}
           {activeRoute === "markets" && <MarketsPage />}
           {activeRoute === "lifecycle" && <LifecyclePage />}
           {activeRoute === "orders" && <OrdersPage />}
@@ -1346,6 +1349,13 @@ function ProfileSection({ title, wide = false, children }: { title: string; wide
 }
 
 function MarketsPage() {
+  const [assetOptions, setAssetOptions] = useState<Asset[]>([]);
+  useEffect(() => {
+    const abort = new AbortController();
+    request<Asset[]>("/api/v1/admin/assets?listedOnly=true", { signal: abort.signal }).then(setAssetOptions)
+      .catch(e => { if (!abort.signal.aborted) setError(errorMessage(e)); });
+    return () => abort.abort();
+  }, []);
   const [filters, setFilters] = useState({ productLine: "SPOT", status: "TRADING", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
   const [coreSync, setCoreSync] = useState<UnknownRecord | null>(null);
   const [changeReason, setChangeReason] = useState("");
@@ -1389,7 +1399,7 @@ function MarketsPage() {
       setFilters((current) => ({ ...current, cursor: nextCursor }));
       setHealth(healthResponse);
       const nextSelected = selected?.symbol
-        ? rows.find((row) => row.symbol === selected.symbol) ?? rows[0] ?? null
+        ? rows.find((row) => row.instrumentId === selected.instrumentId && row.contractType === selected.contractType) ?? rows[0] ?? null
         : rows[0] ?? null;
       setSelected(nextSelected);
       if (nextSelected?.symbol) {
@@ -1411,7 +1421,7 @@ function MarketsPage() {
     try {
       const line = instrument.contractType === "VANILLA_OPTION" ? "OPTION" : instrument.contractType;
       if (!line) throw new Error("产品线缺失，无法查询操作日志");
-      const rows = await instrumentChanges(instrument.symbol, line, append ? changes.at(-1)?.changeId ?? "0" : "0");
+      const rows = await instrumentChanges(instrument.instrumentId, line, append ? changes.at(-1)?.changeId ?? "0" : "0");
       if (requestId === auditRequest.current) setChanges(current => append ? [...current, ...rows] : rows);
     } catch (err) {
       if (requestId === auditRequest.current) setError(errorMessage(err));
@@ -1424,7 +1434,7 @@ function MarketsPage() {
     setLoading(true);
     setError("");
     try {
-      const detail = await instrumentLatest(row.symbol, row.contractType === "VANILLA_OPTION" ? "OPTION" : row.contractType);
+      const detail = await instrumentLatest(row.instrumentId, row.contractType === "VANILLA_OPTION" ? "OPTION" : row.contractType);
       setSelected(detail);
       await loadChanges(detail);
     } catch (err) {
@@ -1440,25 +1450,25 @@ function MarketsPage() {
   useEffect(() => {
     if (!selected) { setCoreSync(null); return; }
     let active = true;
-    const symbol = selected.symbol;
+    const instrumentId = selected.instrumentId;
     const productLine = selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType;
     setCoreSync(null);
     const refresh = async () => {
       try {
-        const state = await gatewayGet<UnknownRecord>("trading-orders", `/instrument-sync/${encodeURIComponent(symbol)}`, { productLine });
+        const state = await gatewayGet<UnknownRecord>("trading-orders", `/instrument-sync/${encodeURIComponent(String(instrumentId))}`, { productLine });
         if (active) setCoreSync(state);
       } catch (err) { if (active) setCoreSync({ state: "UNKNOWN", error: errorMessage(err) }); }
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 3000);
     return () => { active = false; window.clearInterval(timer); };
-  }, [selected?.symbol, selected?.contractType, selected?.lastChangeId]);
+  }, [selected?.instrumentId, selected?.contractType, selected?.lastChangeId]);
 
   async function changeStatus(next: string) {
     if (!selected) return;
     try {
       if (!changeReason.trim()) throw new Error("请填写修改原因");
-      const updated = await updateInstrumentStatus(selected.symbol, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim());
+      const updated = await updateInstrumentStatus(selected.instrumentId, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim());
       setSelected(updated);
       await load(filters.cursor);
     } catch (err) {
@@ -1476,6 +1486,7 @@ function MarketsPage() {
       if (!changeReason.trim()) throw new Error("请填写修改原因");
       delete body.changeId;
       delete body.lastChangeId;
+      for (const field of ["baseAsset", "quoteAsset", "settleAsset", "contractValueAsset", "createdAt", "updatedAt"]) delete body[field];
       const updated = await upsertInstrument(body, changeReason.trim());
       setSelected(updated);
       await load("");
@@ -1547,10 +1558,22 @@ function MarketsPage() {
                     <DraftSelectField label="产品类型" field="instrumentType" draft={draft} update={updateDraftField} options={INSTRUMENT_TYPES} />
                     <DraftSelectField label="合约类型" field="contractType" draft={draft} update={updateDraftField} options={CONTRACT_TYPES} />
                     <DraftSelectField label="状态" field="status" draft={draft} update={updateDraftField} options={INSTRUMENT_STATUSES} />
-                    <DraftTextField label="Base" field="baseAsset" draft={draft} update={updateDraftField} upper />
-                    <DraftTextField label="Quote" field="quoteAsset" draft={draft} update={updateDraftField} upper />
-                    <DraftTextField label="Settle" field="settleAsset" draft={draft} update={updateDraftField} upper />
-                    <DraftTextField label="合约价值资产" field="contractValueAsset" draft={draft} update={updateDraftField} upper />
+                    <label>基础币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.baseAssetId ?? "")} onChange={e => updateDraftField("baseAssetId", Number(e.target.value))}>
+                      <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
+                      {draft?.baseAssetId && !assetOptions.some(a => a.assetId === draft.baseAssetId) ? <option value={String(draft.baseAssetId)}>{String(draft.baseAsset ?? draft.baseAssetId)}（已停用）</option> : null}
+                    </select></label>
+                    <label>计价币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.quoteAssetId ?? "")} onChange={e => updateDraftField("quoteAssetId", Number(e.target.value))}>
+                      <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
+                      {draft?.quoteAssetId && !assetOptions.some(a => a.assetId === draft.quoteAssetId) ? <option value={String(draft.quoteAssetId)}>{String(draft.quoteAsset ?? draft.quoteAssetId)}（已停用）</option> : null}
+                    </select></label>
+                    <label>结算币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.settleAssetId ?? "")} onChange={e => updateDraftField("settleAssetId", Number(e.target.value))}>
+                      <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
+                      {draft?.settleAssetId && !assetOptions.some(a => a.assetId === draft.settleAssetId) ? <option value={String(draft.settleAssetId)}>{String(draft.settleAsset ?? draft.settleAssetId)}（已停用）</option> : null}
+                    </select></label>
+                    <label>合约价值资产<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.contractValueAssetId ?? "")} onChange={e => updateDraftField("contractValueAssetId", Number(e.target.value))}>
+                      <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
+                      {draft?.contractValueAssetId && !assetOptions.some(a => a.assetId === draft.contractValueAssetId) ? <option value={String(draft.contractValueAssetId)}>{String(draft.contractValueAsset ?? draft.contractValueAssetId)}（已停用）</option> : null}
+                    </select></label>
                   </div>
                 </ProfileSection>
                 <ProfileSection title="交割与期权">
