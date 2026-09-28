@@ -55,7 +55,9 @@ export function AssetsPage() {
     if (!window.confirm(`确认保存 ${asset.asset} 的币种配置？${asset.listed ? "" : "该币种将不在可选上线币种列表中。"}`)) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const saved = await adminLocalWrite<Asset>("POST", "/api/v1/admin/assets", asset);
+      const { assetId, asset: code, displayName, logoUrl, scaleUnits, listed, tradingEnabled, revision, reason } = asset;
+      const saved = await adminLocalWrite<Asset>("POST", "/api/v1/admin/assets",
+        { assetId, asset: code, displayName, logoUrl, scaleUnits, listed, tradingEnabled, revision, reason });
       setAssets(current => [...current.filter(a => a.assetId !== saved.assetId), saved].sort((a,b) => a.assetId-b.assetId));
       setAsset({ ...saved, reason: "" }); setNotice("币种配置已保存");
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
@@ -65,7 +67,11 @@ export function AssetsPage() {
     if (!selectedId || !window.confirm(`确认保存 ${asset.asset} / ${network.networkCode} 的充提配置？`)) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const saved = await adminLocalWrite<Network>("POST", `/api/v1/admin/assets/${selectedId}/networks`, network);
+      const { networkId, networkCode, displayName, contractAddress, nativeAsset, chainDecimals,
+        depositEnabled, withdrawalEnabled, minDeposit, minWithdrawal, withdrawalFee, confirmations, revision, reason } = network;
+      const saved = await adminLocalWrite<Network>("POST", `/api/v1/admin/assets/${selectedId}/networks`,
+        { networkId, networkCode, displayName, contractAddress, nativeAsset, chainDecimals,
+          depositEnabled, withdrawalEnabled, minDeposit, minWithdrawal, withdrawalFee, confirmations, revision, reason });
       setNetworks(current => [...current.filter(n => n.networkId !== saved.networkId), saved].sort((a,b) => a.networkId-b.networkId));
       setNetwork({ ...saved, reason: "" }); setNotice("网络配置已保存");
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
