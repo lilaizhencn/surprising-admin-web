@@ -5564,6 +5564,7 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
   });
   const [selected, setSelected] = useState("");
   const [multiple, setMultiple] = useState("5");
+  const [repriceCrossMargin, setRepriceCrossMargin] = useState(false);
   const [reason, setReason] = useState("");
   const [setting, setSetting] = useState<UnknownRecord | null>(null);
   const [error, setError] = useState("");
@@ -5575,12 +5576,12 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
     if (save && (!Number.isSafeInteger(leveragePpm) || leveragePpm < 1_000_000 || !reason.trim())) {
       setError("请填写至少 1 倍的有效杠杆和调整原因"); return;
     }
-    if (save && !window.confirm(`确认将 ${productLine} ${choice.label} 的全仓杠杆调整为 ${multiple} 倍？保证金仍由交易核心校验。`)) return;
+    if (save && !window.confirm(`确认将 ${productLine} ${choice.label} 的全仓杠杆调整为 ${multiple} 倍？${repriceCrossMargin ? "将从可用余额补足持仓保证金；存在挂单、资金不足或提高杠杆时拒绝。" : "保证金仍由交易核心校验。"}`)) return;
     setBusy(true); setError("");
     try {
       const params = { productLine, userId: choice.userId, instrumentId: choice.instrumentId, marginMode: "CROSS" };
       const response = save
-        ? await gatewayPost<UnknownRecord>("trading-leverage", "/settings", { ...params, leveragePpm, reason: reason.trim() }, { productLine })
+        ? await gatewayPost<UnknownRecord>("trading-leverage", "/settings", { ...params, leveragePpm, reason: reason.trim(), repriceCrossMargin }, { productLine })
         : await gatewayGet<UnknownRecord>("trading-leverage", "/settings", params);
       setSetting(response);
     } catch (err) { setError(errorMessage(err)); }
@@ -5594,9 +5595,11 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
       </select></label>
       <TextFilter label="杠杆倍数" value={multiple} onChange={setMultiple} />
       <TextFilter label="调整原因" value={reason} onChange={setReason} />
+      <label><input type="checkbox" checked={repriceCrossMargin} onChange={(event) => setRepriceCrossMargin(event.target.checked)} />降低杠杆并补足持仓保证金</label>
       <button disabled={busy || !choice} onClick={() => void submit(false)}>读取</button>
       <button disabled={busy || !choice} className="primary" onClick={() => void submit(true)}>调整杠杆</button>
     </div>
+    {repriceCrossMargin && <p>请先暂停该策略并撤完该账户该合约的全仓挂单；调整成功后再恢复报价。</p>}
     {error && <div className="alert danger">{error}</div>}
     {setting && <KeyValue data={setting} />}
   </Panel>;
