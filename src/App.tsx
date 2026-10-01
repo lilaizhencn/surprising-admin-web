@@ -5355,12 +5355,21 @@ function MarketMakerPage() {
   useEffect(() => { void load(); }, []);
 
   const totals = objectValue(metrics?.totals);
-  const metricRows = records(metrics?.rows as UnknownRecord[] | undefined).map((row) => ({
+  const metricRows: UnknownRecord[] = records(metrics?.rows as UnknownRecord[] | undefined).map((row) => ({
     ...row,
     inventoryUsage: ppmPercent(row.inventoryUsagePpm),
     quoteCoverage: ppmPercent(row.quoteCoveragePpm),
     spreadPpmText: ppmPercent(row.spreadPpm)
   }));
+  const liquidityRows = metricRows.filter((row) => row.liquidity != null).map((row) => {
+    const liquidity = objectValue(row.liquidity);
+    return { strategyId: row.strategyId, productLine: row.productLine, instrumentId: row.instrumentId,
+      accountId: row.accountId, slippage: ppmPercent(liquidity.slippagePpm),
+      targetNotionalUnits: liquidity.targetNotionalUnits,
+      bidNotionalWithinBandUnits: liquidity.bidNotionalWithinBandUnits,
+      askNotionalWithinBandUnits: liquidity.askNotionalWithinBandUnits,
+      fresh: liquidity.fresh, bookEventTime: liquidity.bookEventTime, bookSequence: liquidity.bookSequence };
+  });
   const anomalies = records(metrics?.anomalies as UnknownRecord[] | undefined);
   const warnings = records(metrics?.warnings as UnknownRecord[] | undefined);
   const pnlTotals = objectValue(pnl?.totals);
@@ -5503,6 +5512,12 @@ function MarketMakerPage() {
           </div>
         </Panel>
       </TwoColumn>
+      <MakerLeveragePanel key={insightFilters.productLine} productLine={insightFilters.productLine} strategies={strategies} />
+      <Panel title="价格带内可成交深度">
+        <p>金额为合约报价资产的最小单位；滑点相对当前最优买卖价，不含价差和手续费。过期盘口不能作为可成交容量。</p>
+        <DataTable rows={liquidityRows} columns={["strategyId", "productLine", "instrumentId", "accountId", "slippage",
+          "targetNotionalUnits", "bidNotionalWithinBandUnits", "askNotionalWithinBandUnits", "fresh", "bookEventTime", "bookSequence"]} />
+      </Panel>
       <Panel title="做市质量指标">
         <DataTable
           rows={metricRows}
@@ -5536,6 +5551,55 @@ function MarketMakerPage() {
       )}
     </Page>
   );
+}
+
+function MakerLeveragePanel({ productLine, strategies }: { productLine: string; strategies: UnknownRecord[] }) {
+  const choices = strategies.filter((strategy) => strategy.productLine === productLine).flatMap((strategy) => {
+    const accounts = Array.isArray(strategy.accountIds) ? strategy.accountIds : [];
+    const instruments = Array.isArray(strategy.instrumentIds) ? strategy.instrumentIds : [];
+    return accounts.flatMap((account) => instruments.map((instrument) => ({
+      key: `${account}:${instrument}`, userId: Number(account), instrumentId: String(instrument),
+      label: `${strategy.strategyId} / 账号 ${account} / 合约 ${instrument}`
+    })));
+  });
+  const [selected, setSelected] = useState("");
+  const [multiple, setMultiple] = useState("5");
+  const [reason, setReason] = useState("");
+  const [setting, setSetting] = useState<UnknownRecord | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const choice = choices.find((item) => item.key === selected);
+  async function submit(save: boolean) {
+    if (!choice) { setError("请选择做市账号和合约"); return; }
+    const leveragePpm = Number(multiple) * 1_000_000;
+    if (save && (!Number.isSafeInteger(leveragePpm) || leveragePpm < 1_000_000 || !reason.trim())) {
+      setError("请填写至少 1 倍的有效杠杆和调整原因"); return;
+    }
+    if (save && !window.confirm(`确认将 ${productLine} ${choice.label} 的全仓杠杆调整为 ${multiple} 倍？保证金仍由交易核心校验。`)) return;
+    setBusy(true); setError("");
+    try {
+      const params = { productLine, userId: choice.userId, instrumentId: choice.instrumentId, marginMode: "CROSS" };
+      const response = save
+        ? await gatewayPost<UnknownRecord>("trading-leverage", "/settings", { ...params, leveragePpm, reason: reason.trim() }, { productLine })
+        : await gatewayGet<UnknownRecord>("trading-leverage", "/settings", params);
+      setSetting(response);
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setBusy(false); }
+  }
+  return <Panel title="做市账号全仓杠杆">
+    <div className="filters">
+      <label>账号与合约<select value={selected} onChange={(event) => { setSelected(event.target.value); setSetting(null); }}>
+        <option value="">请选择</option>
+        {choices.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+      </select></label>
+      <TextFilter label="杠杆倍数" value={multiple} onChange={setMultiple} />
+      <TextFilter label="调整原因" value={reason} onChange={setReason} />
+      <button disabled={busy || !choice} onClick={() => void submit(false)}>读取</button>
+      <button disabled={busy || !choice} className="primary" onClick={() => void submit(true)}>调整杠杆</button>
+    </div>
+    {error && <div className="alert danger">{error}</div>}
+    {setting && <KeyValue data={setting} />}
+  </Panel>;
 }
 
 function RuntimeConfigPanel({ title, service, path, template, productLine }: {

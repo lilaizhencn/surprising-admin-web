@@ -710,7 +710,7 @@ function requiresApproval(service: string, path: string, method: string) {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
   const normalizedService = service.trim().toLowerCase();
   const normalizedPath = path.trim().toLowerCase();
-  if (["account", "instrument-admin", "insurance-admin", "trading-fees", "trading-orders", "market-maker", "risk-admin", "liquidation-admin", "wallet-admin"]
+  if (["account", "instrument-admin", "insurance-admin", "trading-fees", "trading-orders", "trading-leverage", "market-maker", "risk-admin", "liquidation-admin", "wallet-admin"]
     .includes(normalizedService)) {
     return true;
   }
