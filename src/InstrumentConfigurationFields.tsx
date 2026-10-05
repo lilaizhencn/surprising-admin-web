@@ -15,7 +15,7 @@ const sourceFields: Field[] = [
   { key: "baseUrl", label: "HTTP 服务地址", kind: "url", hint: "完整 https:// 或 http:// 地址，不包含用户名和密码。" },
   { key: "path", label: "行情请求路径", kind: "text", hint: "以单个 / 开头，可包含接口查询参数。" },
   { key: "sourceSymbol", label: "来源交易对", kind: "text", hint: "填写外部行情接口使用的交易对标识。" },
-  { key: "parser", label: "行情解析器", kind: "text", hint: "填写价格服务支持的解析器标识；接口校验后才能保存。" },
+  { key: "parser", label: "行情解析器", kind: "text", options: ["BINANCE_BOOK_TICKER", "OKX_TICKER", "OKX_INDEX_TICKER", "BYBIT_TICKER", "COINBASE_TICKER", "KRAKEN_TICKER", "OPTION_RISK_TICKER"], hint: "期权选择 OPTION_RISK_TICKER：来源须提供权利金、标的指数和同到期远期价，不能使用普通现货报价代替。" },
   { key: "quoteCurrency", label: "来源计价币", kind: "text", hint: "行情原始价格使用的计价币种。" },
   { key: "targetQuoteCurrency", label: "目标计价币", kind: "text", hint: "合约指数统一使用的计价币种。" },
   { key: "weightPpm", label: "来源权重", hint: "正整数；最终按有效来源权重之和归一化。" },
@@ -75,7 +75,18 @@ export function validateInstrumentForm(draft: UnknownRecord): void {
     if (BigInt(String(draft[min])) > BigInt(String(draft[max]))) throw new Error(`${min} 不得大于 ${max}。`);
   if (draft.instrumentType === "PERPETUAL" && ![1, 2, 3, 4, 6, 8, 12, 24].includes(Number(draft.fundingIntervalHours))) throw new Error("资金费周期须为 1、2、3、4、6、8、12 或 24 小时。");
   if (String(draft.baseAssetId) === String(draft.quoteAssetId)) throw new Error("基础资产与计价资产不能相同。");
+  if (draft.instrumentType === "OPTION") {
+    const strike = integer(draft.strikePriceUnits, "行权价格");
+    if (strike % BigInt(String(draft.priceTickUnits)) !== 0n) throw new Error("行权价格必须是价格跳动单位的整数倍。");
+    integer(draft.underlyingInstrumentId, "标的合约编号");
+  }
   const sourceNames = new Set<string>();
+  if (draft.instrumentType === "OPTION") {
+    for (const source of (draft.indexSources ?? []) as UnknownRecord[]) {
+      if (source.parser !== "OPTION_RISK_TICKER" || source.websocketEnabled && source.websocketParser !== "OPTION_RISK_TICKER"
+        || source.quoteCurrency !== source.targetQuoteCurrency) throw new Error("期权行情必须使用 OPTION_RISK_TICKER，且报价币种与合约计价币一致。");
+    }
+  }
   for (const source of (draft.indexSources ?? []) as UnknownRecord[]) {
     for (const key of ["source", "sourceSymbol", "parser", "quoteCurrency", "targetQuoteCurrency"])
       if (!String(source[key] ?? "").trim()) throw new Error(`行情来源的 ${sourceFields.find(field => field.key === key)?.label ?? key}不能为空。`);

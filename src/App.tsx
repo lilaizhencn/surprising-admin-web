@@ -442,7 +442,7 @@ export default function App() {
         <header className="topbar">
           <div>
             <h1>{visibleNav.find((item) => item.key === activeRoute)?.label}</h1>
-            <p>当前管理员：{session.user.username}</p>
+            <p>当前管理员：{session.user.username || session.user.email || `用户 ${session.user.userId}`}</p>
           </div>
           <div className="top-actions">
             <span className="role-pill">{session.user.roles.join(", ")}</span>
@@ -634,7 +634,7 @@ function ForbiddenScreen({ session, onLogout }: { session: AuthSession; onLogout
       <div className="login-panel">
         <StatusBadge value="FORBIDDEN" />
         <h2>当前账号不是后台管理员</h2>
-        <p>{session.user.username} 的角色为 {session.user.roles.join(", ") || "空"}。后台访问需要 ADMIN 或 SUPER_ADMIN。</p>
+        <p>{session.user.username || session.user.email || `用户 ${session.user.userId}`} 的角色为 {session.user.roles.join(", ") || "空"}。后台访问需要 ADMIN 或 SUPER_ADMIN。</p>
         <button className="primary" onClick={onLogout}>退出</button>
       </div>
     </div>
@@ -1370,6 +1370,7 @@ function MarketsPage() {
   const [page, setPage] = useState(cursorInfo(null));
   const [changes, setChanges] = useState<InstrumentChange[]>([]);
   const [health, setHealth] = useState<UnknownRecord | null>(null);
+  const [healthError, setHealthError] = useState("");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [json, setJson] = useState("");
   const [loading, setLoading] = useState(false);
@@ -1386,7 +1387,7 @@ function MarketsPage() {
     setLoading(true);
     setError("");
     try {
-      const [response, healthResponse] = await Promise.all([
+      const [instrumentResult, healthResult] = await Promise.allSettled([
         instrumentList({
           productLine: filters.productLine,
           type: filters.type,
@@ -1397,11 +1398,14 @@ function MarketsPage() {
         }),
         marketHealth({ period: healthPeriod, staleSeconds: Number(staleSeconds) || 120, limit: 100 })
       ]);
+      if (instrumentResult.status === "rejected") throw instrumentResult.reason;
+      const response = instrumentResult.value;
+      setHealth(healthResult.status === "fulfilled" ? healthResult.value : null);
+      setHealthError(healthResult.status === "rejected" ? "暂时无法获取行情健康状态；合约配置可继续维护。" : "");
       const rows = response.instruments ?? response.items ?? [];
       setItems(rows);
       setPage(cursorInfo(response));
       setFilters((current) => ({ ...current, cursor: nextCursor }));
-      setHealth(healthResponse);
       const nextSelected = preferred?.symbol
         ? rows.find((row) => row.instrumentId === preferred.instrumentId && row.contractType === preferred.contractType) ?? preferred ?? rows[0] ?? null
         : rows[0] ?? null;
@@ -1513,6 +1517,7 @@ function MarketsPage() {
 
   return (
     <Page title="产品与市场" description="在一个页面完成合约配置、上线、交易开关和做市维护。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
+      <PriceSettingsPanel key={filters.productLine} productLine={filters.productLine} />
       <div className="filters">
         <label>产品线<select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
           <option value="">全部产品线</option>
@@ -1537,10 +1542,11 @@ function MarketsPage() {
         <TextFilter label="过期秒数" value={staleSeconds} onChange={setStaleSeconds} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
       </div>
+      {healthError && <div role="status" className="alert">{healthError}</div>}
       {health && <MarketHealthOverview health={health} />}
       <div className="instrument-workspace">
         <Panel title="交易产品">
-          <button onClick={() => { setSelected({ instrumentId: 0, symbol: "", baseAssetId: 0, quoteAssetId: 0, settleAssetId: 0, contractValueAssetId: 0, instrumentType: "PERPETUAL", contractType: "LINEAR_PERPETUAL", status: "DRAFT", supportedOrderTypes: ["LIMIT"], supportedTimeInForce: ["GTC"], riskLimitBrackets: [], indexSources: [] }); setChanges([]); setChangeReason(""); }}>新增合约</button>
+          <button disabled={!filters.productLine} title={filters.productLine ? "新增当前产品线合约" : "请先选择产品线"} onClick={() => { setSelected({ instrumentId: 0, symbol: "", baseAssetId: 0, quoteAssetId: 0, settleAssetId: 0, contractValueAssetId: 0, instrumentType: filters.productLine === "SPOT" ? "SPOT" : filters.productLine === "OPTION" ? "OPTION" : filters.productLine.endsWith("DELIVERY") ? "DELIVERY" : "PERPETUAL", contractType: filters.productLine === "OPTION" ? "VANILLA_OPTION" : filters.productLine, status: "DRAFT", supportedOrderTypes: ["LIMIT"], supportedTimeInForce: ["GTC"], riskLimitBrackets: [], indexSources: [] }); setChanges([]); setChangeReason(""); }}>新增合约</button>
           <p>保存草稿 → 上线展示 → 开启交易。配置保存后自动同步，交易核心确认后生效。</p>
           <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
           <CursorPager
@@ -4700,9 +4706,9 @@ function RiskPage() {
         </Panel>
       </TwoColumn>
       <div className="three-grid">
-        <RuntimeConfigPanel title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} productLine={listFilters.productLine} />
-        <RuntimeConfigPanel title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} productLine={listFilters.productLine} />
-        <RuntimeConfigPanel title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel key={`risk-${listFilters.productLine}`} title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel key={`liquidation-${listFilters.productLine}`} title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel key={`adl-${listFilters.productLine}`} title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} productLine={listFilters.productLine} />
       </div>
     </Page>
   );
@@ -4905,9 +4911,9 @@ function FundingInsurancePage() {
       </Panel>
       <TwoColumn>
         {isFundingProductLine(listFilters.productLine) && (
-          <RuntimeConfigPanel title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} productLine={listFilters.productLine} />
+          <RuntimeConfigPanel key={`funding-${listFilters.productLine}`} title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} productLine={listFilters.productLine} />
         )}
-        <RuntimeConfigPanel title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} productLine={listFilters.productLine} />
+        <RuntimeConfigPanel key={`insurance-admin-${listFilters.productLine}`} title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} productLine={listFilters.productLine} />
       </TwoColumn>
     </Page>
   );
@@ -5536,6 +5542,83 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
   </Panel>;
 }
 
+function PriceSettingsPanel({ productLine }: { productLine: string }) {
+  const [config, setConfig] = useState<UnknownRecord | null>(null);
+  const [fields, setFields] = useState<Record<string, UnknownRecord>>({});
+  const [draft, setDraft] = useState<UnknownRecord>({});
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    if (!productLine) return;
+    setLoading(true); setError("");
+    try {
+      const response = await gatewayGet<UnknownRecord>("price-index", "/admin/business-settings", { productLine });
+      const saved = response.config as UnknownRecord;
+      setConfig(saved); setFields(response.fields as Record<string, UnknownRecord>);
+      setDraft(Object.fromEntries(Object.entries(saved.settings as UnknownRecord).map(([key, value]) =>
+        [key, Array.isArray(value) ? value.join(",") : value])));
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { setConfig(null); setDraft({}); setFields({}); setError(""); }, [productLine]);
+  async function save() {
+    if (!config) return;
+    setLoading(true); setError("");
+    try {
+      if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
+      const settings: UnknownRecord = {};
+      for (const [key, field] of Object.entries(fields)) {
+        const value = draft[key];
+        if (field.kind === "boolean") { settings[key] = Boolean(value); continue; }
+        if (field.kind === "text") {
+          const text = String(value ?? "").trim();
+          if (text.length < Number(field.minimum) || text.length > Number(field.maximum)) throw new Error(`${field.label}长度不符合要求。`);
+          settings[key] = text; continue;
+        }
+        if (field.kind === "list") {
+          const list = String(value ?? "").split(/[,，\s]+/).filter(Boolean);
+          if (list.length > Number(field.maximum) || list.some(item => !/^[A-Z][A-Z0-9]{1,15}$/.test(item)) || new Set(list).size !== list.length)
+            throw new Error(`${field.label}须填写不重复的大写币种代码。`);
+          settings[key] = list; continue;
+        }
+        const number = Number(value);
+        if (!String(value).trim() || !Number.isFinite(number) || number < Number(field.minimum) || number > Number(field.maximum)
+          || (field.kind !== "decimal" && !Number.isSafeInteger(number))) throw new Error(`${field.label}范围为 ${field.minimum} 至 ${field.maximum}。`);
+        settings[key] = number;
+      }
+      for (const prefix of ["fiat", "stable"]) {
+        if (!settings[`${prefix}Enabled`]) continue;
+        let url: URL;
+        try { url = new URL(String(settings[`${prefix}BaseUrl`])); } catch { throw new Error("启用汇率来源前请填写完整 HTTP(S) 地址。"); }
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash
+          || !String(settings[`${prefix}Path`]).startsWith("/")) throw new Error("汇率来源地址或路径不合法。");
+      }
+      if (settings.stableEnabled && !settings.fiatEnabled) throw new Error("稳定币汇率需要同时启用法币汇率。");
+      if (settings.fiatEnabled && !(settings.fiatQuoteCurrencies as string[]).length) throw new Error("启用法币汇率前请填写报价币种。");
+      if (!window.confirm(`确认更新 ${productLine} 的价格业务设置？保存后热生效。`)) return;
+      await gatewayPost("price-index", "/admin/business-settings", { settings, expectedVersion: config.version, reason: reason.trim() }, { productLine });
+      await load();
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setLoading(false); }
+  }
+  return <details className="panel"><summary>产品线价格与汇率设置</summary><div className="stack">
+    <p>选择产品线后读取设置。合约专属行情来源在下方合约表单维护；此处控制本产品线的指数、标记价和汇率公共参数。</p>
+    {error && <div role="alert" className="alert danger">{error}</div>}
+    <button disabled={!productLine || loading} onClick={() => void load()}>读取 {productLine || "所选产品线"} 设置</button>
+    {config && <><p>版本 {String(config.version)} · 保存后无需重启；版本冲突时重新读取后再修改。</p>
+      <div className="form-grid">{Object.entries(fields).map(([key, field]) => <label key={key}>{String(field.label)}
+        {field.kind === "boolean" ? <input type="checkbox" checked={Boolean(draft[key])} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
+          : <input type={["integer", "duration", "decimal"].includes(String(field.kind)) ? "number" : "text"}
+              min={Number(field.minimum)} max={Number(field.maximum)} step={field.kind === "decimal" ? "any" : 1}
+              value={String(draft[key] ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
+        <small>{String(field.help)}{["integer", "duration", "decimal"].includes(String(field.kind)) && `。范围 ${field.minimum}–${field.maximum}`}</small>
+      </label>)}</div>
+      <label>修改原因<input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
+      <button className="primary" disabled={loading} onClick={() => void save()}>保存价格设置</button></>}
+  </div></details>;
+}
+
 function RuntimeConfigPanel({ title, service, path, template, productLine }: {
   title: string; service: string; path: string; template: UnknownRecord; productLine?: string;
 }) {
@@ -5548,9 +5631,30 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
     calculationEnabled: "启用计算", coordinationEnabled: "启用协调", settlementEnabled: "启用结算",
     executionEnabled: "启用执行", scannerEnabled: "启用扫描", coverageEnabled: "启用保险赔付",
     scanDelayMs: "扫描间隔（毫秒）", scanBatchSize: "扫描基础预算", batchSize: "每批处理数量",
-    minDeficitAgeMs: "最短亏空等待时间（毫秒）", maxMarkAgeMs: "标记价格有效时间（毫秒）",
+    maxMarkAgeMs: "标记价格有效时间（毫秒）",
     maxDeleveragesPerDeficit: "单次亏空最大减仓数", candidateMultiplier: "候选账户数量倍数",
     calculationPublishDelayMs: "资金费计算间隔（毫秒）", settleDelayMs: "结算检查间隔（毫秒）", settlementBatchSize: "每批结算数量",
+    maxRateAgeMs: "资金费率有效时间（毫秒）", maxPagesPerRun: "每轮最大页数", leaseDurationMs: "协调租约时长（毫秒）",
+    liquidationFeeRatePpm: "强平费率（ppm）", delayMs: "强平处理间隔（毫秒）",
+    workBatchSize: "每批强平任务数", maxWorkBytes: "每批任务最大字节数",
+  };
+  const bounds: Record<string, [number, number, string]> = {
+    scanDelayMs: [service === "risk" ? 0 : 25, service === "risk" ? Number.MAX_SAFE_INTEGER : 3600000, "两次扫描之间的间隔"],
+    scanBatchSize: [1, 4096, "基础扫描预算，随合约数量自动增加"],
+    batchSize: [1, service === "adl" ? 1000 : 10000, "每批最多处理的亏空数量"],
+    maxRateAgeMs: [1, 600000, "资金费率缓存允许的最大年龄"],
+    maxMarkAgeMs: [1, 600000, "资金费计算允许的标记价格最大年龄，超时不计算"],
+    maxDeleveragesPerDeficit: [1, 1000, "每个亏空最多减仓的账户数"],
+    candidateMultiplier: [1, 1000, "扩大候选账户池；与最大减仓数的乘积不能超过 1000"],
+    calculationPublishDelayMs: [25, 3600000, "资金费率计算与发布间隔"],
+    settleDelayMs: [25, 3600000, "检查到期资金费结算的间隔"],
+    settlementBatchSize: [1, 10000, "每批结算数量"],
+    maxPagesPerRun: [1, 1000, "每轮最多读取的分页数，限制单轮工作量"],
+    leaseDurationMs: [1000, 600000, "资金费协调租约的有效时间"],
+    liquidationFeeRatePpm: [0, 1000000, "百万分比；3000 表示 0.3%"],
+    delayMs: [25, 3600000, "检查强平任务的间隔"],
+    workBatchSize: [1, 1000, "每批获取的强平任务上限"],
+    maxWorkBytes: [256, 1048576, "每批强平任务响应大小上限"],
   };
   async function load() {
     setLoading(true); setError(""); setConfig(null); setDraft({});
@@ -5574,7 +5678,16 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
         const coordination = response.coordination as UnknownRecord;
         setDraft({ calculationEnabled: calculation.enabled, calculationPublishDelayMs: calculation.publishDelayMs,
           settlementEnabled: settlement.enabled, settleDelayMs: settlement.settleDelayMs, settlementBatchSize: settlement.batchSize,
-          coordinationEnabled: coordination.enabled });
+          coordinationEnabled: coordination.enabled, maxMarkAgeMs: calculation.maxMarkAgeMs, maxRateAgeMs: calculation.maxRateAgeMs,
+          maxPagesPerRun: settlement.maxPagesPerRun, leaseDurationMs: coordination.leaseDurationMs });
+        return;
+      }
+      if (service === "liquidation") {
+        const execution = response.execution as UnknownRecord;
+        const coordinator = response.coordinator as UnknownRecord;
+        setDraft({ executionEnabled: execution.enabled, liquidationFeeRatePpm: execution.liquidationFeeRatePpm,
+          delayMs: coordinator.delayMs, workBatchSize: coordinator.workBatchSize,
+          maxPagesPerRun: coordinator.maxPagesPerRun, maxWorkBytes: coordinator.maxWorkBytes });
         return;
       }
       setDraft(Object.fromEntries(Object.entries(settings).filter(([key, value]) =>
@@ -5591,13 +5704,15 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
         if (typeof value === "boolean") continue;
         if (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))) throw new Error(`${labels[key] ?? key}必须为非负整数。`);
         body[key] = Number(value);
+        const range = bounds[key];
+        if (range && (Number(value) < range[0] || Number(value) > range[1])) throw new Error(`${labels[key] ?? key}范围为 ${range[0]} 至 ${range[1]}。`);
       }
-      if (service === "risk") {
-        if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
-        if (Number(body.scanBatchSize) < 1 || Number(body.scanBatchSize) > 4096) throw new Error("扫描基础预算范围为 1 至 4096。");
-        body.expectedVersion = (config.calculation as UnknownRecord).version; body.reason = reason.trim();
-      }
-      if (!window.confirm(`确认更新${title}？保存后立即影响本产品线。`)) return;
+      if (!reason.trim() || reason.length > (service === "risk" ? 500 : 1000)) throw new Error(`请填写 1 至 ${service === "risk" ? 500 : 1000} 字的修改原因。`);
+      body.expectedVersion = service === "risk" ? (config.calculation as UnknownRecord).version : config.version;
+      body.reason = reason.trim();
+      if (service === "adl" && Number(body.maxDeleveragesPerDeficit) * Number(body.candidateMultiplier) > 1000)
+        throw new Error("最大减仓数与候选倍数的乘积不能超过 1000。");
+      if (!window.confirm(`确认更新 ${productLine ?? "当前产品线"} 的${title}？保存后立即生效。`)) return;
       await gatewayPost<UnknownRecord>(service, path, body, { productLine });
       await load();
     } catch (err) { setError(errorMessage(err)); }
@@ -5606,14 +5721,14 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
   useEffect(() => { void load(); }, [service, path, productLine]);
   return <Panel title={title}><div className="stack">
     {error && <div role="alert" className="alert danger">{error}</div>}
-    {service === "liquidation" && config && <><p>强平运行状态由交易核心管理。</p><JsonBlock value={config} /></>}
+    {config && <p>按产品线独立保存，保存后热生效。修改原因会进入审计；版本冲突时请重新读取后再保存。</p>}
     {config && <div className="form-grid">{Object.entries(draft).map(([key, value]) => <label key={key}>{labels[key] ?? key}
       {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
         : <input inputMode="numeric" value={String(value ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
-      {key === "scanBatchSize" && <small>1–4096。实际扫描预算会随合约数量自动提高，此值为基础预算。</small>}
+      {bounds[key] && <small>{bounds[key][2]}。范围 {bounds[key][0]}–{bounds[key][1]}。</small>}
       {key.endsWith("Ms") && <small>单位为毫秒，1000 毫秒等于 1 秒。</small>}
     </label>)}</div>}
-    {service === "risk" && <label>修改原因<input maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>}
+    <label>修改原因<input required maxLength={service === "risk" ? 500 : 1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
     <div className="button-row"><button onClick={() => void load()} disabled={loading}>重新读取</button>
       <button className="primary" onClick={() => void save()} disabled={loading || !config || !Object.keys(draft).length}>保存设置</button></div>
   </div></Panel>;
