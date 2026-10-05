@@ -860,3 +860,16 @@ tr.clickable:hover td {
 .asset-configuration .button-row select { max-width: 420px; }
 .asset-configuration .checkbox-grid label { display: flex; align-items: center; gap: 8px; }
 .asset-configuration .form-grid { grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); }
+
+.instrument-section > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.instrument-section[open] > summary { margin-bottom: 12px; }
+.instrument-section fieldset { min-width: 0; border: 1px solid var(--border, #263646); border-radius: 6px; padding: 12px; margin: 10px 0; }
+.instrument-section small { color: var(--muted, #91a4b6); line-height: 1.5; font-weight: 400; overflow-wrap: anywhere; }
+.instrument-save-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+.instrument-save-actions > label { flex: 1 1 220px; }
+.instrument-save-actions > details { flex: 1 0 100%; min-width: 0; }
+
+.instrument-workspace { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.instrument-summary { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.instrument-summary .metric strong { font-size: 18px; overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .instrument-workspace { grid-template-columns: minmax(0, 1fr); } }

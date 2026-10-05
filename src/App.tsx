@@ -1,3 +1,6 @@
+import { MakerBusinessSettings } from "./MakerBusinessSettings";
+import { InstrumentMakerSettings } from "./InstrumentMakerSettings";
+import { InstrumentConfigurationFields, validateInstrumentForm, immutableInstrumentFields, instrumentFieldHint } from "./InstrumentConfigurationFields";
 import { AssetsPage, type Asset } from "./AssetsPage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -166,7 +169,7 @@ const NAV = [
 const USER_STATUSES = ["NORMAL", "FROZEN", "TRADE_DISABLED", "WITHDRAW_DISABLED"];
 const INSTRUMENT_TYPES = ["SPOT", "PERPETUAL", "DELIVERY", "OPTION"];
 const CONTRACT_TYPES = ["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "VANILLA_OPTION"];
-const INSTRUMENT_STATUSES = ["PRE_TRADING", "TRADING", "HALT", "SETTLING", "CLOSED"];
+const INSTRUMENT_STATUSES = ["DRAFT", "PRE_TRADING", "TRADING", "HALT", "SETTLING", "CLOSED"];
 const OPTION_TYPES = ["CALL", "PUT"];
 const OPTION_EXERCISE_STYLES = ["EUROPEAN", "AMERICAN"];
 const SETTLEMENT_METHODS = ["CASH", "PHYSICAL"];
@@ -439,7 +442,7 @@ export default function App() {
         <header className="topbar">
           <div>
             <h1>{visibleNav.find((item) => item.key === activeRoute)?.label}</h1>
-            <p>后台接口统一走 gateway，当前管理员：{session.user.username}</p>
+            <p>当前管理员：{session.user.username}</p>
           </div>
           <div className="top-actions">
             <span className="role-pill">{session.user.roles.join(", ")}</span>
@@ -1356,9 +1359,10 @@ function MarketsPage() {
       .catch(e => { if (!abort.signal.aborted) setError(errorMessage(e)); });
     return () => abort.abort();
   }, []);
-  const [filters, setFilters] = useState({ productLine: "SPOT", status: "TRADING", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
+  const [filters, setFilters] = useState({ productLine: "", status: "", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
   const [coreSync, setCoreSync] = useState<UnknownRecord | null>(null);
   const [changeReason, setChangeReason] = useState("");
+  const [saving, setSaving] = useState(false);
   const auditRequest = useRef(0);
   const [healthPeriod, setHealthPeriod] = useState("1m");
   const [staleSeconds, setStaleSeconds] = useState("120");
@@ -1378,7 +1382,7 @@ function MarketsPage() {
     setFilters((current) => ({ ...current, ...patch, cursor: "" }));
   }
 
-  async function load(nextCursor = filters.cursor) {
+  async function load(nextCursor = filters.cursor, preferred = selected) {
     setLoading(true);
     setError("");
     try {
@@ -1398,8 +1402,8 @@ function MarketsPage() {
       setPage(cursorInfo(response));
       setFilters((current) => ({ ...current, cursor: nextCursor }));
       setHealth(healthResponse);
-      const nextSelected = selected?.symbol
-        ? rows.find((row) => row.instrumentId === selected.instrumentId && row.contractType === selected.contractType) ?? rows[0] ?? null
+      const nextSelected = preferred?.symbol
+        ? rows.find((row) => row.instrumentId === preferred.instrumentId && row.contractType === preferred.contractType) ?? preferred ?? rows[0] ?? null
         : rows[0] ?? null;
       setSelected(nextSelected);
       if (nextSelected?.symbol) {
@@ -1448,7 +1452,7 @@ function MarketsPage() {
   useEffect(() => { setJson(selected ? JSON.stringify(selected, null, 2) : ""); }, [selected]);
 
   useEffect(() => {
-    if (!selected) { setCoreSync(null); return; }
+    if (!selected?.instrumentId) { setCoreSync(null); return; }
     let active = true;
     const instrumentId = selected.instrumentId;
     const productLine = selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType;
@@ -1465,34 +1469,41 @@ function MarketsPage() {
   }, [selected?.instrumentId, selected?.contractType, selected?.lastChangeId]);
 
   async function changeStatus(next: string) {
-    if (!selected) return;
+    if (!selected || saving) return;
+    setSaving(true);
     try {
+      if (json !== JSON.stringify(selected, null, 2)) throw new Error("请先保存或放弃未保存的配置修改，再切换交易状态。");
+      if (!window.confirm(`确认将 ${selected.symbol} 的状态改为 ${next}？`)) return;
       if (!changeReason.trim()) throw new Error("请填写修改原因");
-      const updated = await updateInstrumentStatus(selected.instrumentId, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim());
+      const updated = await updateInstrumentStatus(selected.instrumentId, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim(), selected.lastChangeId);
       setSelected(updated);
-      await load(filters.cursor);
+      await load(filters.cursor, updated);
     } catch (err) {
       setError(errorMessage(err));
-    }
+    } finally { setSaving(false); }
   }
 
   async function upsert() {
+    if (saving) return;
+    setSaving(true);
     try {
       const parsed = JSON.parse(json) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("产品配置必须是 JSON object。");
       }
       const body = normalizeInstrumentDraft(parsed as UnknownRecord, "instrumentType");
+      validateInstrumentForm(body);
+      if (!body.instrumentId) delete body.instrumentId;
       if (!changeReason.trim()) throw new Error("请填写修改原因");
       delete body.changeId;
       delete body.lastChangeId;
       for (const field of ["baseAsset", "quoteAsset", "settleAsset", "contractValueAsset", "createdAt", "updatedAt"]) delete body[field];
-      const updated = await upsertInstrument(body, changeReason.trim());
+      const updated = await upsertInstrument(body, changeReason.trim(), selected?.lastChangeId ?? 0);
       setSelected(updated);
-      await load("");
+      await load("", updated);
     } catch (err) {
       setError(errorMessage(err));
-    }
+    } finally { setSaving(false); }
   }
 
   function updateDraftField(field: string, value: unknown) {
@@ -1501,9 +1512,10 @@ function MarketsPage() {
   }
 
   return (
-    <Page title="产品与市场" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
+    <Page title="产品与市场" description="在一个页面完成合约配置、上线、交易开关和做市维护。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
       <div className="filters">
         <label>产品线<select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
+          <option value="">全部产品线</option>
           {["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}
         </select></label>
         <label>类型<select value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}>
@@ -1526,8 +1538,10 @@ function MarketsPage() {
         <button onClick={() => void load("")}><Search size={16} />查询</button>
       </div>
       {health && <MarketHealthOverview health={health} />}
-      <TwoColumn>
+      <div className="instrument-workspace">
         <Panel title="交易产品">
+          <button onClick={() => { setSelected({ instrumentId: 0, symbol: "", baseAssetId: 0, quoteAssetId: 0, settleAssetId: 0, contractValueAssetId: 0, instrumentType: "PERPETUAL", contractType: "LINEAR_PERPETUAL", status: "DRAFT", supportedOrderTypes: ["LIMIT"], supportedTimeInForce: ["GTC"], riskLimitBrackets: [], indexSources: [] }); setChanges([]); setChangeReason(""); }}>新增合约</button>
+          <p>保存草稿 → 上线展示 → 开启交易。配置保存后自动同步，交易核心确认后生效。</p>
           <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
           <CursorPager
             page={page}
@@ -1539,20 +1553,27 @@ function MarketsPage() {
         <Panel title="产品配置">
           {selected ? (
             <div className="stack">
-              <div className="metrics">
+              <div className="metrics instrument-summary">
                 <Metric label="当前产品" value={selected.symbol} tone="muted" />
-                <Metric label="Core 同步" value={coreSync?.state === "APPLIED" && String(coreSync.appliedChangeId) === String(selected.lastChangeId) ? "已确认" : coreSync?.state === "BLOCKED" ? "受阻，自动重试" : coreSync?.state === "UNKNOWN" ? "查询失败" : "待确认"} tone="muted" />
+                <Metric label="生效状态" value={coreSync?.state === "APPLIED" && String(coreSync.appliedChangeId) === String(selected.lastChangeId) ? "已确认" : coreSync?.state === "BLOCKED" ? "受阻，自动重试" : coreSync?.state === "UNKNOWN" ? "查询失败" : "待确认"} tone="muted" />
                 <Metric label="状态" value={selected.status ?? "-"} tone={selected.status === "TRADING" ? "ok" : "warn"} />
                 <Metric label="指数源" value={selected.indexSources?.length ?? 0} tone="muted" />
                 <Metric label="到期时间" value={selected.expiryTime ?? "-"} tone="muted" />
                 <Metric label="期权方向" value={selected.optionType ?? "-"} tone="muted" />
               </div>
               <div className="button-row">
-                {INSTRUMENT_STATUSES.map((item) => <button key={item} onClick={() => void changeStatus(item)}>{item}</button>)}
+                {[ ["PRE_TRADING", "上线展示"], ["TRADING", "开启交易"], ["HALT", "暂停交易"] ].map(([status, label]) => <button key={status} disabled={saving || !selected.instrumentId || selected.status === status || selected.status === "CLOSED" || selected.status === "SETTLING"} onClick={() => void changeStatus(status)}>{label}</button>)}
+                <button onClick={() => { setSelected({ ...selected, instrumentId: 0, symbol: "", status: "DRAFT", lastChangeId: undefined, changeId: undefined }); setChanges([]); }}>复制为新合约</button>
+              </div>
+              <div className="instrument-save-actions">
+              <TextFilter label="修改原因（必填）" value={changeReason} onChange={setChangeReason} />
+              <details><summary>本次修改预览</summary><DataTable rows={Object.keys(draft ?? {}).filter(key => JSON.stringify(draft?.[key]) !== JSON.stringify(selected[key])).map(key => ({ 字段: key, 修改前: JSON.stringify(selected[key]) ?? "未设置", 修改后: JSON.stringify(draft?.[key]) ?? "未设置" }))} columns={["字段", "修改前", "修改后"]} /></details>
+              <button className="primary" disabled={saving} onClick={() => void upsert()}>{saving ? "正在保存…" : "保存产品配置"}</button>
+              <button disabled={saving} onClick={() => { if (window.confirm("放弃未保存的修改？")) setJson(JSON.stringify(selected, null, 2)); }}>放弃修改</button>
               </div>
               {draftState.error && <div className="alert danger">{draftState.error}</div>}
               <div className="profile-sections">
-                <ProfileSection title="基础信息">
+                <InstrumentSection title="基础信息">
                   <div className="form-grid">
                     <DraftTextField label="币对 ID" field="symbol" draft={draft} update={updateDraftField} upper />
                     <DraftSelectField label="产品类型" field="instrumentType" draft={draft} update={updateDraftField} options={INSTRUMENT_TYPES} />
@@ -1575,8 +1596,8 @@ function MarketsPage() {
                       {draft?.contractValueAssetId && !assetOptions.some(a => a.assetId === draft.contractValueAssetId) ? <option value={String(draft.contractValueAssetId)}>{String(draft.contractValueAsset ?? draft.contractValueAssetId)}（已停用）</option> : null}
                     </select></label>
                   </div>
-                </ProfileSection>
-                <ProfileSection title="交割与期权">
+                </InstrumentSection>
+                <InstrumentSection title="交割与期权">
                   <div className="form-grid">
                     <DraftOptionalTextField label="到期时间 ISO" field="expiryTime" draft={draft} update={updateDraftField} />
                     <DraftOptionalTextField label="交割时间 ISO" field="deliveryTime" draft={draft} update={updateDraftField} />
@@ -1587,8 +1608,8 @@ function MarketsPage() {
                     <DraftOptionalSelectField label="行权方式" field="optionExerciseStyle" draft={draft} update={updateDraftField} options={OPTION_EXERCISE_STYLES} />
                     <DraftOptionalSelectField label="结算方式" field="settlementMethod" draft={draft} update={updateDraftField} options={SETTLEMENT_METHODS} />
                   </div>
-                </ProfileSection>
-                <ProfileSection title="交易规则">
+                </InstrumentSection>
+                <InstrumentSection title="交易规则">
                   <div className="form-grid">
                     <DraftNumberField label="价格 tick" field="priceTickUnits" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="数量 step" field="quantityStepUnits" draft={draft} update={updateDraftField} />
@@ -1606,8 +1627,8 @@ function MarketsPage() {
                     <DraftCheckboxField label="Reduce only" field="reduceOnlyEnabled" draft={draft} update={updateDraftField} />
                     <DraftCheckboxField label="Market order" field="marketOrderEnabled" draft={draft} update={updateDraftField} />
                   </div>
-                </ProfileSection>
-                <ProfileSection title="风险与资金费">
+                </InstrumentSection>
+                <InstrumentSection title="风险与资金费">
                   <div className="form-grid">
                     <DraftNumberField label="最大杠杆 ppm" field="maxLeveragePpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="初始保证金 ppm" field="initialMarginRatePpm" draft={draft} update={updateDraftField} />
@@ -1622,24 +1643,21 @@ function MarketsPage() {
                     <DraftNumberField label="影响价格 notional" field="impactNotionalUnits" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="最少有效指数源" field="minValidIndexSources" draft={draft} update={updateDraftField} />
                   </div>
-                </ProfileSection>
-                <ProfileSection title="费用与合约面值">
+                </InstrumentSection>
+                <InstrumentSection title="费用与合约面值">
                   <div className="form-grid">
                     <DraftNumberField label="Maker fee ppm" field="makerFeeRatePpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="Taker fee ppm" field="takerFeeRatePpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="合约乘数 ppm" field="contractMultiplierPpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="Notional multiplier" field="notionalMultiplierUnits" draft={draft} update={updateDraftField} />
                   </div>
-                </ProfileSection>
+                </InstrumentSection>
               </div>
-              <details className="raw-toggle">
-                <summary>高级 JSON 配置</summary>
-                <textarea className="json-editor" value={json} onChange={(event) => setJson(event.target.value)} />
-              </details>
-              <TextFilter label="修改原因（必填）" value={changeReason} onChange={setChangeReason} />
-              <button className="primary" onClick={() => void upsert()}>保存产品配置</button>
-              {coreSync?.error != null && <p role="status">Core 同步：{String(coreSync.error)}</p>}
-              <ProfileSection title="配置操作日志" wide>
+              <InstrumentConfigurationFields draft={draft} update={updateDraftField} />
+              <MakerBusinessSettings productLine={selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType} instrumentId={selected.instrumentId} reason={changeReason} />
+              <InstrumentMakerSettings key={`${selected.contractType}:${selected.instrumentId}`} instrument={selected} reason={changeReason} />
+              {coreSync?.error != null && <p role="status">配置同步：{String(coreSync.error)}</p>}
+              <InstrumentSection title="配置操作日志" wide>
                 <button onClick={() => void loadChanges(selected)} disabled={historyLoading}>刷新操作日志</button>
                 {changes.map(change => <details key={change.changeId} className="raw-toggle">
                   <summary>{change.changedAt} · {change.operatorId} · {change.reason}</summary>
@@ -1647,13 +1665,17 @@ function MarketsPage() {
                 </details>)}
                 {!historyLoading && changes.length === 0 && <Empty text="暂无操作日志" />}
                 {changes.length > 0 && changes.length % 50 === 0 && <button disabled={historyLoading} onClick={() => void loadChanges(selected, true)}>加载更早日志</button>}
-              </ProfileSection>
+              </InstrumentSection>
             </div>
           ) : <Empty text="选择一个产品" />}
         </Panel>
-      </TwoColumn>
+      </div>
     </Page>
   );
+}
+
+function InstrumentSection({ title, children }: { title: string; children: React.ReactNode; wide?: boolean }) {
+  return <details className="profile-section instrument-section" open={title === "基础信息"}><summary>{title}</summary>{children}</details>;
 }
 
 function LifecyclePage() {
@@ -1946,9 +1968,11 @@ function DraftTextField({ label, field, draft, update, upper = false }: {
   return (
     <label>{label}
       <input
+        disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)}
         value={value}
         onChange={(event) => update(field, upper ? event.target.value.toUpperCase() : event.target.value)}
       />
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -1964,12 +1988,14 @@ function DraftOptionalTextField({ label, field, draft, update, upper = false }: 
   return (
     <label>{label}
       <input
+        disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)}
         value={value}
         onChange={(event) => {
           const next = upper ? event.target.value.toUpperCase() : event.target.value;
           update(field, next.trim() ? next : null);
         }}
       />
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -1984,13 +2010,15 @@ function DraftNumberField({ label, field, draft, update }: {
   return (
     <label>{label}
       <input
+        disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)}
         inputMode="numeric"
         value={value === undefined || value === null ? "" : String(value)}
         onChange={(event) => {
           const next = event.target.value.trim();
-          update(field, next === "" ? "" : Number(next));
+          update(field, next);
         }}
       />
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -2005,13 +2033,15 @@ function DraftOptionalNumberField({ label, field, draft, update }: {
   return (
     <label>{label}
       <input
+        disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)}
         inputMode="numeric"
         value={value === undefined || value === null ? "" : String(value)}
         onChange={(event) => {
           const next = event.target.value.trim();
-          update(field, next === "" ? null : Number(next));
+          update(field, next === "" ? null : next);
         }}
       />
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -2026,10 +2056,11 @@ function DraftSelectField({ label, field, draft, update, options }: {
   const value = String(draft?.[field] ?? "");
   return (
     <label>{label}
-      <select value={value} onChange={(event) => update(field, event.target.value)}>
+      <select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value)}>
         <option value="">请选择</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -2044,10 +2075,11 @@ function DraftOptionalSelectField({ label, field, draft, update, options }: {
   const value = String(draft?.[field] ?? "");
   return (
     <label>{label}
-      <select value={value} onChange={(event) => update(field, event.target.value || null)}>
+      <select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value || null)}>
         <option value="">请选择</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
+      <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
 }
@@ -5214,8 +5246,6 @@ function MarketMakerPage() {
     logSort: "createdAt.desc"
   });
   const [logPageInfo, setLogPageInfo] = useState(cursorInfo());
-  const [strategyConfig, setStrategyConfig] = useState<UnknownRecord | null>(null);
-  const [configJson, setConfigJson] = useState(JSON.stringify(marketMakerConfigTemplate(), null, 2));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -5261,76 +5291,6 @@ function MarketMakerPage() {
     setError("");
     try {
       await gatewayPost("market-maker", `/strategies/${strategyId}/${op}`, undefined, { productLine: insightFilters.productLine });
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadConfig(strategyId = selectedStrategyId) {
-    if (!strategyId) {
-      setError("请选择策略。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const response = await gatewayGet<UnknownRecord>(
-        "market-maker",
-        `/strategies/${encodeURIComponent(strategyId)}/config`,
-        { productLine: insightFilters.productLine }
-      );
-      setStrategyConfig(response);
-      setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function saveConfig() {
-    if (!selectedStrategyId) {
-      setError("请选择策略。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const response = await gatewayPost<UnknownRecord>(
-        "market-maker",
-        `/strategies/${encodeURIComponent(selectedStrategyId)}/config`,
-        JSON.parse(configJson),
-        { productLine: insightFilters.productLine }
-      );
-      setStrategyConfig(response);
-      setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function clearConfig() {
-    if (!selectedStrategyId) {
-      setError("请选择策略。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const response = await gatewayPost<UnknownRecord>(
-        "market-maker",
-        `/strategies/${encodeURIComponent(selectedStrategyId)}/config`,
-        { ...marketMakerConfigTemplate(), reason: "Reset market-maker strategy override" },
-        { productLine: insightFilters.productLine }
-      );
-      setStrategyConfig(response);
-      setConfigJson(JSON.stringify(marketMakerConfigPayload(response), null, 2));
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -5392,7 +5352,6 @@ function MarketMakerPage() {
         <div className="filters">
           <label>产品线<select value={insightFilters.productLine} onChange={(event) => {
             setSelectedStrategyId("");
-            setStrategyConfig(null);
             updateInsightFilters({ productLine: event.target.value });
           }}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <TextFilter label="Strategy" value={insightFilters.strategyId} onChange={(value) => updateInsightFilters({ strategyId: value })} />
@@ -5430,35 +5389,7 @@ function MarketMakerPage() {
           <DataTable rows={anomalies} columns={["severity", "type", "productLine", "strategyId", "instrumentId", "accountId", "metricValue", "threshold", "summary"]} />
         </Panel>
       </TwoColumn>
-      <Panel title="策略参数编辑">
-        <div className="filters">
-          <label>策略<select value={selectedStrategyId} onChange={(event) => {
-            const value = event.target.value;
-            setSelectedStrategyId(value);
-            void loadConfig(value);
-          }}>
-            <option value="">请选择</option>
-            {strategies.map((strategy) => {
-              const strategyId = String(strategy.strategyId ?? strategy.id ?? "");
-              return <option key={`${strategy.productLine ?? insightFilters.productLine}:${strategyId}`} value={strategyId}>{strategyId}</option>;
-            })}
-          </select></label>
-          <button onClick={() => void loadConfig()}><Search size={16} />读取配置</button>
-          <button className="primary" onClick={() => void saveConfig()}>保存覆盖</button>
-          <button onClick={() => void clearConfig()}>清除覆盖</button>
-        </div>
-        <TwoColumn>
-          <div>
-            <h4>当前配置</h4>
-            <KeyValue data={objectValue(strategyConfig?.effective)} />
-          </div>
-          <div>
-            <h4>基线配置</h4>
-            <KeyValue data={objectValue(strategyConfig?.configured)} />
-          </div>
-        </TwoColumn>
-        <textarea className="json-editor small" value={configJson} onChange={(event) => setConfigJson(event.target.value)} />
-      </Panel>
+      <Panel title="做市配置维护"><p>在合约页面统一维护策略、行情来源和公共报价参数。</p><a href="#markets">进入合约配置</a></Panel>
       <TwoColumn>
         <Panel title="做市收益归因">
           <DataTable
@@ -5606,57 +5537,69 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
 }
 
 function RuntimeConfigPanel({ title, service, path, template, productLine }: {
-  title: string;
-  service: string;
-  path: string;
-  template: UnknownRecord;
-  productLine?: string;
+  title: string; service: string; path: string; template: UnknownRecord; productLine?: string;
 }) {
   const [config, setConfig] = useState<UnknownRecord | null>(null);
-  const [json, setJson] = useState(JSON.stringify(template, null, 2));
+  const [draft, setDraft] = useState<UnknownRecord>({});
+  const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
+  const labels: Record<string, string> = {
+    calculationEnabled: "启用计算", coordinationEnabled: "启用协调", settlementEnabled: "启用结算",
+    executionEnabled: "启用执行", scannerEnabled: "启用扫描", coverageEnabled: "启用保险赔付",
+    scanDelayMs: "扫描间隔（毫秒）", scanBatchSize: "扫描基础预算", batchSize: "每批处理数量",
+    minDeficitAgeMs: "最短亏空等待时间（毫秒）", maxMarkAgeMs: "标记价格有效时间（毫秒）",
+    maxDeleveragesPerDeficit: "单次亏空最大减仓数", candidateMultiplier: "候选账户数量倍数",
+  };
   async function load() {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError(""); setConfig(null); setDraft({});
     try {
-      setConfig(await gatewayGet<UnknownRecord>(service, path, { productLine }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function save() {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await gatewayPost<UnknownRecord>(service, path, JSON.parse(json), { productLine });
+      const response = await gatewayGet<UnknownRecord>(service, path, { productLine });
       setConfig(response);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const settings = (service === "risk" ? response.calculation : response.config && typeof response.config === "object" ? response.config : response) as UnknownRecord;
+      if (service === "risk") {
+        setDraft({ calculationEnabled: settings.enabled, scanDelayMs: settings.scanDelayMs, scanBatchSize: settings.scanBatchSize });
+        return;
+      }
+      setDraft(Object.fromEntries(Object.entries(settings).filter(([key, value]) =>
+        key in template || key in labels || (typeof value === "boolean" && key.endsWith("Enabled")))));
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setLoading(false); }
   }
-
+  async function save() {
+    if (!config) return;
+    setLoading(true); setError("");
+    try {
+      const body: UnknownRecord = { ...draft };
+      for (const [key, value] of Object.entries(body)) {
+        if (typeof value === "boolean") continue;
+        if (!/^\d+$/.test(String(value)) || !Number.isSafeInteger(Number(value))) throw new Error(`${labels[key] ?? key}必须为非负整数。`);
+        body[key] = Number(value);
+      }
+      if (service === "risk") {
+        if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
+        if (Number(body.scanBatchSize) < 1 || Number(body.scanBatchSize) > 4096) throw new Error("扫描基础预算范围为 1 至 4096。");
+        body.expectedVersion = (config.calculation as UnknownRecord).version; body.reason = reason.trim();
+      }
+      if (!window.confirm(`确认更新${title}？保存后立即影响本产品线。`)) return;
+      await gatewayPost<UnknownRecord>(service, path, body, { productLine });
+      await load();
+    } catch (err) { setError(errorMessage(err)); }
+    finally { setLoading(false); }
+  }
   useEffect(() => { void load(); }, [service, path, productLine]);
-
-  return (
-    <Panel title={title}>
-      <div className="stack">
-        {error && <div className="alert danger">{error}</div>}
-        <JsonBlock value={config ?? {}} />
-        <textarea className="json-editor small" value={json} onChange={(event) => setJson(event.target.value)} />
-        <div className="button-row">
-          <button onClick={() => void load()} disabled={loading}>读取</button>
-          <button className="primary" onClick={() => void save()} disabled={loading}>保存</button>
-        </div>
-      </div>
-    </Panel>
-  );
+  return <Panel title={title}><div className="stack">
+    {error && <div role="alert" className="alert danger">{error}</div>}
+    {config && <div className="form-grid">{Object.entries(draft).map(([key, value]) => <label key={key}>{labels[key] ?? key}
+      {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
+        : <input inputMode="numeric" value={String(value ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
+      {key === "scanBatchSize" && <small>1–4096。实际扫描预算会随合约数量自动提高，此值为基础预算。</small>}
+      {key.endsWith("Ms") && <small>单位为毫秒，1000 毫秒等于 1 秒。</small>}
+    </label>)}</div>}
+    {service === "risk" && <label>修改原因<input maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>}
+    <div className="button-row"><button onClick={() => void load()} disabled={loading}>重新读取</button>
+      <button className="primary" onClick={() => void save()} disabled={loading || !config || !Object.keys(draft).length}>保存设置</button></div>
+  </div></Panel>;
 }
 
 function SecurityPage() {
@@ -7021,13 +6964,13 @@ function AuditPage() {
   );
 }
 
-function Page({ title, children, onRefresh, loading, error }: { title: string; children: React.ReactNode; onRefresh?: () => void | Promise<void>; loading?: boolean; error?: string | null }) {
+function Page({ title, children, onRefresh, loading, error, description }: { description?: string; title: string; children: React.ReactNode; onRefresh?: () => void | Promise<void>; loading?: boolean; error?: string | null }) {
   return (
     <div className="page">
       <div className="page-heading">
         <div>
           <h2>{title}</h2>
-          <p>所有写操作都要求后台 gateway 角色校验，并由下游 admin 路径处理。</p>
+          <p>{description ?? "按权限维护业务配置，操作变更留有记录。"}</p>
         </div>
         {onRefresh && <button onClick={() => void onRefresh()} disabled={loading}><RefreshCw size={16} />刷新</button>}
       </div>
@@ -7208,31 +7151,6 @@ function CursorPager({ page, cursor, onNext, onReset }: {
 
 function TwoColumn({ children }: { children: React.ReactNode }) {
   return <div className="two-grid">{children}</div>;
-}
-
-function marketMakerConfigTemplate(): UnknownRecord {
-  return {
-    enabled: null,
-    baseQuantitySteps: null,
-    marginMode: null,
-    spreadTicks: null,
-    levelSpacingTicks: null,
-    maxInventorySteps: null,
-    maxInventorySkewPpm: null,
-    orderLevels: null,
-    reason: ""
-  };
-}
-
-function marketMakerConfigPayload(config: UnknownRecord | null): UnknownRecord {
-  const override = objectValue(config?.override);
-  const payload = marketMakerConfigTemplate();
-  for (const key of Object.keys(payload)) {
-    if (key !== "reason") {
-      payload[key] = override[key] ?? null;
-    }
-  }
-  return payload;
 }
 
 function marketMakerInsightParams(filters: {

@@ -36,3 +36,11 @@ The page uses real admin APIs and existing approvals. Task drafts retain their r
 Inspect Core residuals before considering a task complete; unfilled positions remain visible. Release is explicit, and
 started fixed-price clearance is irreversible. Apply the backend SQL migration and matching Core/provider release first.
 Run `npm run lint` and `npm run build` to validate this application.
+
+## 合约编辑与热上线
+
+合约页面集中配置交易规则、费率、资金费、风险档位、行情来源和做市设置，保存前显示变更并要求原因。已有合约的价格单位、数量单位及结算资产不可变更；保存携带期望版本，冲突时要求重新读取。草稿、上线展示、开启交易与暂停交易分别对应后台状态，页面跟踪 Core 应用版本。
+
+做市参数使用结构化表单，数值保留整数文本以避免大整数精度丢失；公共设置按产品线保存，修改影响该产品线的所有策略。策略账户和合约绑定创建后固定，停用后后端撤销所属挂单。风险扫描页展示基础预算及动态增长含义，不要求操作员维护 JSON。
+
+2026-10-05 验证：TypeScript 检查及生产构建通过；使用线上 BTC 合约的只读回放，在本机浏览器检查不可变字段、超界参数拦截、保存版本、桌面与 390px 手机布局。所有测试写请求均本地拦截，没有对线上执行表单写入。本次验证不代替线上热上线验收。

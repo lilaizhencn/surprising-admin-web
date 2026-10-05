@@ -498,12 +498,12 @@ export function instrumentChanges(instrumentId: number, productLine: string, bef
   return gatewayGet<InstrumentChange[]>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/changes`, { productLine, beforeId, limit });
 }
 
-export function upsertInstrument(body: UnknownRecord, reason = "Admin configuration update") {
-  return gatewayPost<Instrument>("instrument-admin", "/upsert", body, { reason });
+export function upsertInstrument(body: UnknownRecord, reason = "Admin configuration update", expectedChangeId: unknown = 0) {
+  return gatewayPost<Instrument>("instrument-admin", "/upsert", body, { reason, expectedChangeId });
 }
 
-export function updateInstrumentStatus(instrumentId: number, status: string, productLine?: string, reason = "Admin trading status update") {
-  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/status`, undefined, { status, productLine, reason });
+export function updateInstrumentStatus(instrumentId: number, status: string, productLine: string | undefined, reason = "Admin trading status update", expectedChangeId: unknown = 0) {
+  return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/status`, undefined, { status, productLine, reason, expectedChangeId });
 }
 
 export function accountAdjustments(params: {
