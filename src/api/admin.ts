@@ -710,6 +710,13 @@ function requiresApproval(service: string, path: string, method: string) {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return false;
   const normalizedService = service.trim().toLowerCase();
   const normalizedPath = path.trim().toLowerCase();
+  if (method === "POST" && (
+    (normalizedService === "instrument-admin" && (normalizedPath === "/upsert" || /^\/[0-9]+\/status$/.test(normalizedPath)))
+    || (normalizedService === "market-maker" && (["/business-settings", "/strategy-definitions"].includes(normalizedPath)
+      || /^\/strategies\/[a-z0-9_-]+\/(config|pause|resume)$/.test(normalizedPath)))
+    || (normalizedService === "insurance-admin" && normalizedPath === "/runtime-config")
+    || (["risk", "liquidation", "funding", "adl"].includes(normalizedService) && normalizedPath === "/admin/runtime-config")
+  )) return false;
   if (["account", "instrument-admin", "insurance-admin", "trading-fees", "trading-orders", "trading-leverage", "market-maker", "risk-admin", "liquidation-admin", "wallet-admin"]
     .includes(normalizedService)) {
     return true;
