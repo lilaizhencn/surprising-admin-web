@@ -36,10 +36,10 @@ export function InstrumentMakerSettings({ instrument, reason }: { instrument: In
     if (!draft || saving) return;
     setSaving(true); setError("");
     try {
-      if (!reason.trim()) throw new Error("请填写合约页面的修改原因。");
+      if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
       if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(String(draft.strategyId ?? ""))) throw new Error("策略标识须为 1–64 位字母、数字、下划线或连字符。");
       const accounts = Array.isArray(draft.accountIds) ? draft.accountIds : String(draft.accountIds ?? "").split(",").map(value => value.trim());
-      if (!accounts.length || accounts.some(value => !/^[1-9][0-9]*$/.test(String(value)) || BigInt(String(value)) > 9223372036854775807n)) throw new Error("请填写有效做市账户 ID，多个账户用逗号分隔。");
+      if (!accounts.length || accounts.length > 64 || new Set(accounts.map(String)).size !== accounts.length || accounts.some(value => !/^[1-9][0-9]*$/.test(String(value)) || BigInt(String(value)) > 9223372036854775807n)) throw new Error("请填写 1 至 64 个不重复的有效做市账户 ID，多个账户用逗号分隔。");
       for (const [field, label] of fields) {
         const value = String(draft[field] ?? "");
         if (!/^\d+$/.test(value) || BigInt(value) > 9223372036854775807n) throw new Error(`${label}须为有效非负整数。`);

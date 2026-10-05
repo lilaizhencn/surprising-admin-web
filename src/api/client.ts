@@ -1,6 +1,15 @@
 import { config } from "../config";
 import type { AuthSession } from "../types";
 
+/** Preserve financial integers before JavaScript rounds them during JSON parsing. */
+export function parseApiJson<T>(text: string): T {
+  return JSON.parse(text, (_key: string, value: unknown, context?: { source?: string }) => {
+    if (typeof value !== "number" || !Number.isInteger(value) || Number.isSafeInteger(value)) return value;
+    if (context?.source && /^-?\d+$/.test(context.source)) return context.source;
+    throw new Error("浏览器无法无损读取此大整数，请升级浏览器后重新加载；本次数据未载入。");
+  }) as T;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
@@ -76,7 +85,7 @@ export async function request<T>(path: string, init: AdminRequestInit = {}, sess
   }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
-  return text ? JSON.parse(text) as T : undefined as T;
+  return text ? parseApiJson<T>(text) : undefined as T;
 }
 
 export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<Blob> {
