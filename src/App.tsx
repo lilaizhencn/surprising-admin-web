@@ -5550,6 +5550,7 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
     scanDelayMs: "扫描间隔（毫秒）", scanBatchSize: "扫描基础预算", batchSize: "每批处理数量",
     minDeficitAgeMs: "最短亏空等待时间（毫秒）", maxMarkAgeMs: "标记价格有效时间（毫秒）",
     maxDeleveragesPerDeficit: "单次亏空最大减仓数", candidateMultiplier: "候选账户数量倍数",
+    calculationPublishDelayMs: "资金费计算间隔（毫秒）", settleDelayMs: "结算检查间隔（毫秒）", settlementBatchSize: "每批结算数量",
   };
   async function load() {
     setLoading(true); setError(""); setConfig(null); setDraft({});
@@ -5559,6 +5560,21 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
       const settings = (service === "risk" ? response.calculation : response.config && typeof response.config === "object" ? response.config : response) as UnknownRecord;
       if (service === "risk") {
         setDraft({ calculationEnabled: settings.enabled, scanDelayMs: settings.scanDelayMs, scanBatchSize: settings.scanBatchSize });
+        return;
+      }
+      if (service === "adl" || service === "insurance-admin") {
+        const section = response[service === "adl" ? "scanner" : "coverage"] as UnknownRecord;
+        const { enabled, ...parameters } = section;
+        setDraft({ ...parameters, [service === "adl" ? "scannerEnabled" : "coverageEnabled"]: enabled });
+        return;
+      }
+      if (service === "funding") {
+        const calculation = response.calculation as UnknownRecord;
+        const settlement = response.settlement as UnknownRecord;
+        const coordination = response.coordination as UnknownRecord;
+        setDraft({ calculationEnabled: calculation.enabled, calculationPublishDelayMs: calculation.publishDelayMs,
+          settlementEnabled: settlement.enabled, settleDelayMs: settlement.settleDelayMs, settlementBatchSize: settlement.batchSize,
+          coordinationEnabled: coordination.enabled });
         return;
       }
       setDraft(Object.fromEntries(Object.entries(settings).filter(([key, value]) =>
@@ -5590,6 +5606,7 @@ function RuntimeConfigPanel({ title, service, path, template, productLine }: {
   useEffect(() => { void load(); }, [service, path, productLine]);
   return <Panel title={title}><div className="stack">
     {error && <div role="alert" className="alert danger">{error}</div>}
+    {service === "liquidation" && config && <><p>强平运行状态由交易核心管理。</p><JsonBlock value={config} /></>}
     {config && <div className="form-grid">{Object.entries(draft).map(([key, value]) => <label key={key}>{labels[key] ?? key}
       {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
         : <input inputMode="numeric" value={String(value ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
