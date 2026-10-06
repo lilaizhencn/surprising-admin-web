@@ -711,7 +711,7 @@ function requiresApproval(service: string, path: string, method: string) {
   const normalizedService = service.trim().toLowerCase();
   const normalizedPath = path.trim().toLowerCase();
   if (method === "POST" && (
-    (normalizedService === "instrument-admin" && (normalizedPath === "/upsert" || /^\/[0-9]+\/status$/.test(normalizedPath)))
+    (normalizedService === "instrument-admin" && (normalizedPath === "/upsert" || normalizedPath === "/order-settings" || /^\/[0-9]+\/status$/.test(normalizedPath)))
     || (normalizedService === "market-maker" && (["/business-settings", "/strategy-definitions"].includes(normalizedPath)
       || /^\/strategies\/[a-z0-9_-]+\/(config|pause|resume)$/.test(normalizedPath)))
     || (normalizedService === "insurance-admin" && normalizedPath === "/runtime-config")
