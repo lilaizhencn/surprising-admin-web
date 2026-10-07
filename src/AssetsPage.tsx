@@ -11,6 +11,10 @@ interface Network {
   nativeAsset: boolean; chainDecimals: number; depositEnabled: boolean; withdrawalEnabled: boolean;
   minDeposit: string; minWithdrawal: string; withdrawalFee: string; confirmations: number; revision: number;
 }
+interface CustodyChain {
+  chain: string; network: string; nativeSymbol: string; assetSymbols: string[];
+  tokens: { symbol: string; contractAddress: string; decimals: number; minDeposit: string }[];
+}
 type AssetDraft = Omit<Asset, "assetId"> & { assetId?: number; reason: string };
 type NetworkDraft = Omit<Network, "assetId" | "networkId"> & { networkId?: number; reason: string };
 const emptyAsset = (): AssetDraft => ({ asset: "", displayName: "", logoUrl: "", scaleUnits: 100000000,
@@ -21,6 +25,9 @@ const emptyNetwork = (): NetworkDraft => ({ networkCode: "", displayName: "", co
 const errorText = (error: unknown) => error instanceof Error ? error.message : "保存失败，请重试";
 
 export function AssetsPage() {
+  const [custodyChains, setCustodyChains] = useState<CustodyChain[]>([]);
+  const [custodyError, setCustodyError] = useState("");
+  const [custodyReload, setCustodyReload] = useState(0);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [asset, setAsset] = useState<AssetDraft>(emptyAsset);
   const [networks, setNetworks] = useState<Network[]>([]);
@@ -31,6 +38,13 @@ export function AssetsPage() {
   const [notice, setNotice] = useState("");
   const selectedId = asset.assetId;
 
+  useEffect(() => {
+    const abort = new AbortController();
+    setCustodyError("");
+    request<CustodyChain[]>("/api/v1/admin/assets/custody-chains", { signal: abort.signal })
+      .then(setCustodyChains).catch(e => { if (!abort.signal.aborted) setCustodyError(errorText(e)); });
+    return () => abort.abort();
+  }, [custodyReload]);
   useEffect(() => {
     const abort = new AbortController();
     request<Asset[]>("/api/v1/admin/assets", { signal: abort.signal }).then(setAssets).catch(e => {
@@ -102,8 +116,19 @@ export function AssetsPage() {
         onChange={e => { const row=networks.find(n => n.networkId===Number(e.target.value)); setNetwork(row ? { ...row, reason: "" } : emptyNetwork()); }}>
         <option value="">新增网络</option>{networks.map(n => <option key={n.networkId} value={n.networkId}>{n.displayName} · 充 {n.depositEnabled ? "开" : "关"} / 提 {n.withdrawalEnabled ? "开" : "关"}</option>)}
       </select><button disabled={busy} onClick={() => setNetwork(emptyNetwork())}>新增网络</button></div>}
+      {custodyError && <div className="alert danger" role="alert">钱包网络读取失败：{custodyError} <button onClick={() => setCustodyReload(value => value + 1)}>重试</button></div>}
+      <p className="muted">这里只能选择租户钱包已启用且支持该币种的网络。保存充值开关后，用户充值页面重新查询即可生效。</p>
       <form onSubmit={saveNetwork}><fieldset disabled={busy || loadingNetworks}><div className="form-grid">
-        <label>网络标识<input required pattern="[A-Z0-9][A-Z0-9_-]{0,31}" disabled={Boolean(network.networkId)} value={network.networkCode} onChange={e => setNetwork({ ...network, networkCode: e.target.value.toUpperCase() })} /></label>
+        <label>支持的网络<select required disabled={Boolean(network.networkId)} value={network.networkCode} onChange={e => {
+          const selected = custodyChains.find(row => row.chain === e.target.value);
+          const token = selected?.tokens.find(row => row.symbol === asset.asset);
+          setNetwork({ ...network, networkCode: e.target.value, displayName: selected?.network || e.target.value,
+            nativeAsset: selected?.nativeSymbol === asset.asset, contractAddress: token?.contractAddress ?? "",
+            chainDecimals: token?.decimals ?? network.chainDecimals });
+        }}><option value="">请选择钱包已支持的网络</option>
+          {network.networkId && !custodyChains.some(row => row.chain === network.networkCode) ? <option value={network.networkCode}>{network.networkCode}</option> : null}
+          {custodyChains.filter(row => row.assetSymbols.includes(asset.asset)).map(row => <option key={row.chain} value={row.chain}>{row.network} ({row.chain})</option>)}
+        </select></label>
         <label>网络名称<input required maxLength={100} value={network.displayName} onChange={e => setNetwork({ ...network, displayName: e.target.value })} /></label>
         <label>合约地址<input required={!network.nativeAsset} disabled={network.nativeAsset || Boolean(network.networkId)} maxLength={128} value={network.contractAddress} onChange={e => setNetwork({ ...network, contractAddress: e.target.value })} /></label>
         <label>链上小数位<input type="number" required min={0} max={36} disabled={Boolean(network.networkId)} value={network.chainDecimals} onChange={e => setNetwork({ ...network, chainDecimals: Number(e.target.value) })} /></label>
