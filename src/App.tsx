@@ -1,3 +1,4 @@
+import { ProductLineAccess } from "./ProductLineAccess";
 import { OrderBusinessSettings } from "./OrderBusinessSettings";
 import { MakerBusinessSettings } from "./MakerBusinessSettings";
 import { InstrumentMakerSettings } from "./InstrumentMakerSettings";
@@ -1518,6 +1519,7 @@ function MarketsPage() {
 
   return (
     <Page title="产品与市场" description="在一个页面完成合约配置、上线、交易开关和做市维护。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
+      <ProductLineAccess />
       <PriceSettingsPanel key={filters.productLine} productLine={filters.productLine} />
       <OrderBusinessSettings key={filters.productLine} productLine={filters.productLine} />
       <div className="filters">

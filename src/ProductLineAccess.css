@@ -1,0 +1,32 @@
+.product-line-access td {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.product-line-access td small {
+  display: block;
+  margin-top: 6px;
+}
+@media (max-width: 600px) {
+  .product-line-access .table-wrap { overflow: visible; }
+  .product-line-access table { min-width: 0; }
+  .product-line-access thead { display: none; }
+  .product-line-access tbody { display: grid; gap: 12px; }
+  .product-line-access tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    border: 1px solid var(--border, #263646);
+    border-radius: 8px;
+    padding: 8px;
+  }
+  .product-line-access td { display: block; border: 0; padding: 8px; }
+  .product-line-access td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    font-size: 12px;
+    opacity: .7;
+  }
+  .product-line-access td:first-child,
+  .product-line-access td:nth-child(4),
+  .product-line-access td:last-child { grid-column: 1 / -1; }
+}
