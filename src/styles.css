@@ -509,6 +509,56 @@ main {
   font-weight: 600;
 }
 
+.announcement-editor {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 14px;
+}
+.announcement-editor fieldset {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border: 1px solid #2e3a47;
+  border-radius: 6px;
+  padding: 10px;
+}
+.announcement-editor legend {
+  padding: 0 6px;
+  color: #91a4b7;
+  font-size: 12px;
+}
+.announcement-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: auto;
+  color: #dce7f3;
+}
+.announcement-language {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #263746;
+  border-radius: 8px;
+  padding: 12px;
+}
+.announcement-language h4 {
+  margin: 0;
+}
+.announcement-preview-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #c7d3df;
+}
+.announcement-language pre,
+td pre {
+  max-width: min(70vw, 720px);
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .mobile-data-card-action {
   width: 100%;
 }

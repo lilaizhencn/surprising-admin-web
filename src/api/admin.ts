@@ -384,6 +384,16 @@ export function complianceUser(userId: number | string) {
   return request<UnknownRecord>(`/api/v1/admin/compliance/users/${userId}`);
 }
 
+export function complianceMfaRecoveryRequests() {
+  return request<UnknownRecord[]>("/api/v1/admin/compliance/mfa-recovery");
+}
+
+export function decideMfaRecovery(requestId: number | string, approved: boolean, reason: string) {
+  return adminLocalWrite<UnknownRecord>("POST",
+    `/api/v1/admin/compliance/mfa-recovery/${encodeURIComponent(String(requestId))}/decision`,
+    { approved, reason });
+}
+
 export function complianceKycDocument(userId: number | string, documentId: number | string) {
   return requestBlob(
     `/api/v1/admin/compliance/users/${encodeURIComponent(String(userId))}/kyc/documents/${encodeURIComponent(String(documentId))}`

@@ -23,6 +23,7 @@ import {
   LifeBuoy,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   RefreshCw,
   Scale,
   Search,
@@ -50,10 +51,12 @@ import {
   approveApproval,
   confirmMfa,
   complianceAmlCases,
+  complianceMfaRecoveryRequests,
   complianceKycDocument,
   complianceRiskTags,
   complianceUser,
   complianceUsers,
+  decideMfaRecovery,
   archiveExpiredQueryTasks,
   createExportJob,
   createQueryTask,
@@ -129,6 +132,7 @@ import {
 } from "./api/admin";
 import { ApiError, loadSession, saveSession, request } from "./api/client";
 import MaintenancePage from "./MaintenancePage";
+import AnnouncementsPage from "./AnnouncementsPage";
 import { compactNumber, formatDate, formatValue } from "./config";
 import type {
   AuthSession,
@@ -164,6 +168,7 @@ const NAV = [
   { key: "exports", label: "导出中心", icon: Download },
   { key: "queries", label: "查询任务", icon: BookOpen },
   { key: "alerts", label: "告警中心", icon: Bell },
+  { key: "announcements", label: "公告中心", icon: Megaphone },
   { key: "system", label: "系统监控", icon: Server },
   { key: "audit", label: "审计日志", icon: FileText }
 ] satisfies Array<{ key: RouteKey; label: string; icon: typeof LayoutDashboard }>;
@@ -477,6 +482,7 @@ export default function App() {
           {activeRoute === "exports" && <ExportsPage />}
           {activeRoute === "queries" && <QueryTasksPage />}
           {activeRoute === "alerts" && <AlertsPage />}
+          {activeRoute === "announcements" && <AnnouncementsPage />}
           {activeRoute === "system" && <SystemPage />}
           {activeRoute === "audit" && <AuditPage />}
         </section>
@@ -3725,6 +3731,7 @@ function CompliancePage() {
   const [amlCaseFilters, setAmlCaseFilters] = useState({ userId: "", status: "", limit: "100", cursor: "", sort: "updatedAt.desc" });
   const [amlCasePageInfo, setAmlCasePageInfo] = useState(cursorInfo());
   const [globalAmlCases, setGlobalAmlCases] = useState<UnknownRecord[]>([]);
+  const [mfaRecoveryRequests, setMfaRecoveryRequests] = useState<UnknownRecord[]>([]);
   const [detail, setDetail] = useState<UnknownRecord | null>(null);
   const [kycForm, setKycForm] = useState(kycFormTemplate());
   const [riskTagForm, setRiskTagForm] = useState(riskTagFormTemplate());
@@ -3743,6 +3750,21 @@ function CompliancePage() {
   useEffect(() => () => {
     if (kycPreview) URL.revokeObjectURL(kycPreview.url);
   }, [kycPreview]);
+
+  async function reviewMfaRecovery(row: UnknownRecord, approved: boolean) {
+    const reason = window.prompt(approved ? "确认身份资料匹配说明" : "拒绝原因");
+    if (reason === null) return;
+    setLoading(true);
+    setError("");
+    try {
+      await decideMfaRecovery(String(row.requestId), approved, reason.trim());
+      await load();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!kycPreview) return;
@@ -3822,7 +3844,7 @@ function CompliancePage() {
     setLoading(true);
     setError("");
     try {
-      const [response, riskTagResponse, amlCaseResponse] = await Promise.all([
+      const [response, riskTagResponse, amlCaseResponse, recoveryResponse] = await Promise.all([
         complianceUsers({
           userId: filters.userId,
           kycStatus: filters.kycStatus,
@@ -3844,7 +3866,8 @@ function CompliancePage() {
           limit: Number(amlCaseFilters.limit) || 100,
           cursor: nextAmlCaseCursor,
           sort: amlCaseFilters.sort
-        })
+        }),
+        complianceMfaRecoveryRequests()
       ]);
       setUsers(response.users);
       setPageInfo(cursorInfo(response));
@@ -3852,6 +3875,7 @@ function CompliancePage() {
       setRiskTagPageInfo(cursorInfo(riskTagResponse));
       setGlobalAmlCases(amlCaseResponse.cases);
       setAmlCasePageInfo(cursorInfo(amlCaseResponse));
+      setMfaRecoveryRequests(recoveryResponse);
       setFilters((current) => ({ ...current, cursor: nextCursor || "" }));
       setRiskTagFilters((current) => ({ ...current, cursor: nextRiskTagCursor || "" }));
       setAmlCaseFilters((current) => ({ ...current, cursor: nextAmlCaseCursor || "" }));
@@ -4044,6 +4068,20 @@ function CompliancePage() {
         <Metric label="AML Case" value={users.reduce((sum, item) => sum + Number(item.openAmlCases ?? 0), 0)} tone="danger" />
         <Metric label="当前用户" value={detailUserId(detail) || "-"} tone="muted" />
       </div>
+      <Panel title="谷歌验证器丢失申诉">
+        <p className="muted">先打开用户详情检查已通过的 KYC 资料和原始材料，再决定是否解除旧验证器。批准后旧密钥立即失效，提现冻结 24 小时。</p>
+        <DataTable
+          rows={mfaRecoveryRequests}
+          columns={["requestId", "userId", "status", "reason", "submittedAt"]}
+          actions={(row) => (
+            <div className="row-actions">
+              <button onClick={() => void loadDetail(String(row.userId ?? ""))}>查看 KYC</button>
+              <button className="primary" onClick={() => void reviewMfaRecovery(row, true)}>核验通过并解除</button>
+              <button onClick={() => void reviewMfaRecovery(row, false)}>拒绝</button>
+            </div>
+          )}
+        />
+      </Panel>
       <TwoColumn>
         <Panel title="合规用户">
           <div className="stack">
