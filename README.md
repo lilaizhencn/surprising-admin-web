@@ -14,7 +14,13 @@ React / TypeScript 管理后台。开发运行 `npm run dev`；提交前执行 `
 部署前应用后端 `deployment/migrations/20261020-execution-read-projection.sql`，等待历史补齐就绪，
 未就绪或故障会显示明确 503。真实浏览器验证入口为 `scripts/trade-query-fused-live.mjs`，
 使用 `TRADE_QUERY_LIVE_FIXTURE`、`TRADE_QUERY_PLAYWRIGHT_MODULE`、`TRADE_QUERY_CHROMIUM`。
-交易统计接口仍未恢复，页面会分别显示失败原因，成功的订单和成交查询可独立展示。
+交易统计现通过 `trading-orders/metrics` 读取 realtime 完整采样，明确显示采样时间、窗口起点和命令计数口径；
+包含未订阅的做市账户当前委托/持仓，数量按合约列出。不会把跨合约 ticks/steps 的乘积当作统一成交币值。
+统计未初始化、采样超过 180 秒或数据库故障明确报错，不显示假零值；其他订单和成交查询可独立展示。
+部署前需应用后端 `deployment/migrations/20261020-trading-statistics.sql`。
+真实 OPTION 持仓阶段的浏览器验证入口为 `scripts/trading-statistics-fused-live.mjs`，接收
+`TRADING_STATISTICS_LIVE_FIXTURE`、`TRADING_STATISTICS_PLAYWRIGHT_MODULE`、`TRADING_STATISTICS_CHROMIUM`。
+统计持仓、恢复和清理记录见 `docs/validation/trading-statistics-realtime-20261020.json`。
 成交投影与历史补齐的验证记录见 `docs/validation/execution-realtime-queries-20261020.json`。
 
 真实 OPTION FUSED 联调入口为 `scripts/trigger-query-fused-live.mjs`，通过

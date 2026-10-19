@@ -2531,44 +2531,44 @@ function OrdersPage() {
 function TradingMetricsOverview({ metrics }: { metrics: UnknownRecord }) {
   const orders = objectValue(metrics.orders);
   const trades = objectValue(metrics.trades);
-  const matching = objectValue(metrics.matching);
+  const commands = objectValue(metrics.commands);
   const triggerOrders = objectValue(metrics.triggerOrders);
   const positions = objectValue(metrics.positions);
   const symbols = extractRows(metrics.symbols);
-  const orderStatuses = extractRows(orders.statuses);
+  const commandStatuses = extractRows(metrics.commandBreakdown);
   const positionSymbols = extractRows(positions.symbols);
   const warnings = extractRows(metrics.warnings);
 
   return (
     <div className="stack">
+      <p className="muted">产品线 {String(metrics.productLine)} · 采样 {formatDate(metrics.generatedAt)} · 窗口起点 {formatDate(metrics.windowStart)}。账户命令含订单、条件单、算法及余额/持仓设置；批量按一条计，不含网关校验失败。数量按合约分列。</p>
       <div className="metrics">
-        <Metric label="窗口内订单" value={orders.submitted ?? 0} tone="muted" />
-        <Metric label="订单拒绝率" value={ppmPercent(orders.rejectRatePpm)} tone={Number(orders.rejected ?? 0) > 0 ? "warn" : "ok"} />
-        <Metric label="窗口内成交" value={trades.trades ?? 0} tone="ok" />
-        <Metric label="成交名义值" value={trades.notionalTicksSteps ?? 0} tone="muted" />
-        <Metric label="撮合拒绝率" value={ppmPercent(matching.rejectRatePpm)} tone={Number(matching.rejectedCommands ?? 0) > 0 ? "warn" : "ok"} />
-        <Metric label="未完成订单" value={orders.openOrders ?? 0} tone={Number(orders.openOrders ?? 0) > 0 ? "warn" : "muted"} />
-        <Metric label="条件单待触发" value={triggerOrders.pending ?? 0} tone={Number(triggerOrders.expiredPending ?? 0) > 0 ? "danger" : "muted"} />
-        <Metric label="持仓用户" value={positions.usersWithPositions ?? 0} tone="muted" />
+        <Metric label="已提交下单命令" value={orders.submittedCommands} tone="muted" />
+        <Metric label="下单命令拒绝率" value={ppmPercent(orders.rejectRatePpm)} tone={Number(orders.rejectedCommands) > 0 ? "warn" : "ok"} />
+        <Metric label="窗口内成交" value={trades.trades} tone="ok" />
+        <Metric label="当前未完成委托" value={orders.openOrders} tone={Number(orders.openOrders) > 0 ? "warn" : "muted"} />
+        <Metric label="账户命令拒绝率" value={ppmPercent(commands.rejectRatePpm)} tone={Number(commands.rejected) > 0 ? "warn" : "ok"} />
+        <Metric label="条件单待触发" value={triggerOrders.pending} tone={Number(triggerOrders.expiredPending) > 0 ? "danger" : "muted"} />
+        <Metric label="持仓账户" value={positions.usersWithPositions} tone="muted" />
       </div>
       <TwoColumn>
-        <Panel title="Symbol 运营排名">
+        <Panel title="合约成交排名">
           <DataTable
             rows={symbols}
             columns={[
               "instrumentId",
-              "submittedOrders",
               "trades",
-              "notionalTicksSteps",
               "openOrders",
-              "openInterestSteps",
+              "openQuantitySteps",
+              "longQuantitySteps",
+              "shortQuantitySteps",
               "lastTradePriceTicks",
               "lastTradeAt"
             ]}
           />
         </Panel>
-        <Panel title="订单状态分布">
-          <DataTable rows={orderStatuses} columns={["status", "total"]} />
+        <Panel title="账户命令状态">
+          <DataTable rows={commandStatuses} columns={["commandType", "status", "resultCode", "commands"]} />
         </Panel>
       </TwoColumn>
       <TwoColumn>
@@ -2582,8 +2582,7 @@ function TradingMetricsOverview({ metrics }: { metrics: UnknownRecord }) {
               "longPositions",
               "shortPositions",
               "longQuantitySteps",
-              "shortQuantitySteps",
-              "lastUpdatedAt"
+              "shortQuantitySteps"
             ]}
           />
         </Panel>
@@ -2591,16 +2590,17 @@ function TradingMetricsOverview({ metrics }: { metrics: UnknownRecord }) {
           <KeyValue data={{
             generatedAt: metrics.generatedAt,
             windowMinutes: metrics.windowMinutes,
-            uniqueOrderUsers: orders.uniqueUsers,
+            orderCommandAccounts: orders.uniqueUsers,
             uniqueTradeParticipants: trades.uniqueParticipants,
-            matchingCommands: matching.commands,
-            matchingRejectedCommands: matching.rejectedCommands,
+            accountCommands: commands.total,
+            commandAccounts: commands.uniqueAccounts,
+            rejectedAccountCommands: commands.rejected,
             triggerExpiredPending: triggerOrders.expiredPending,
-            openQuantitySteps: orders.openQuantitySteps,
-            longQuantitySteps: positions.longQuantitySteps,
-            shortQuantitySteps: positions.shortQuantitySteps,
+            asOfLogPosition: metrics.asOfLogPosition,
+            dataAgeMs: metrics.dataAgeMs,
+            windowStart: metrics.windowStart,
             lastTradeAt: trades.lastTradeAt,
-            lastOpenOrderUpdatedAt: orders.lastOpenUpdatedAt
+            currentPositionEntries: positions.openPositions
           }} />
         </Panel>
       </TwoColumn>

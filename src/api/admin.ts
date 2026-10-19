@@ -223,7 +223,7 @@ export function systemObservability() {
 }
 
 export function tradingMetrics(params: { windowMinutes?: number; productLine?: string; limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/trading/metrics${queryString(params)}`);
+  return gatewayGet<UnknownRecord>("trading-orders","/metrics",params);
 }
 
 export function accountAssetValuation(params: {
