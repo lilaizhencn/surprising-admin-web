@@ -9,8 +9,13 @@ React / TypeScript 管理后台。开发运行 `npm run dev`；提交前执行 `
 表格展示 OCO 组与实际触发价格来源。大整数 ID 保留原始字符串传入详情地址，避免浮点取整查询到错误订单。
 切换产品、筛选或排序会清除旧列表和详情；迟到的查询结果不会覆盖当前筛选，接口失败明确显示错误。
 统计窗口切换也需要重新查询。
-本轮本机后端的交易统计和后台全局成交查询仍返回 404，尚未恢复该两项能力；页面会分别显示失败原因，
-成功的普通订单和条件单查询可独立展示，不用空数据伪装成功。
+后台全局成交查询现接入后端 realtime 已提交投影，显示产品、双方用户和订单身份，
+与公开行情使用相同 tradeId。用户与订单同时筛选时需要命中同一成交侧；同一撮合只显示一行。
+部署前应用后端 `deployment/migrations/20261020-execution-read-projection.sql`，等待历史补齐就绪，
+未就绪或故障会显示明确 503。真实浏览器验证入口为 `scripts/trade-query-fused-live.mjs`，
+使用 `TRADE_QUERY_LIVE_FIXTURE`、`TRADE_QUERY_PLAYWRIGHT_MODULE`、`TRADE_QUERY_CHROMIUM`。
+交易统计接口仍未恢复，页面会分别显示失败原因，成功的订单和成交查询可独立展示。
+成交投影与历史补齐的验证记录见 `docs/validation/execution-realtime-queries-20261020.json`。
 
 真实 OPTION FUSED 联调入口为 `scripts/trigger-query-fused-live.mjs`，通过
 `TRIGGER_QUERY_LIVE_FIXTURE` 接收后端隔离测试的短期认证 fixture；可指定已有的

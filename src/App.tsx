@@ -2521,7 +2521,7 @@ function OrdersPage() {
         />
         <DataTable
           rows={trades}
-          columns={["tradeId", "instrumentId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+          columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
         />
       </Panel>
     </Page>
@@ -7249,7 +7249,10 @@ function DataTable({ rows, columns, maxColumns = 10, onRowClick, actions, mobile
           <tbody>
             {rows.map((row, index) => (
               <tr key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : ""}>
-                {visibleColumns.map((column) => <td key={column}>{formatValue(row[column])}</td>)}
+                {visibleColumns.map((column) => {
+                  const text = formatValue(row[column]);
+                  return <td key={column} title={text}>{text}</td>;
+                })}
                 {actions && <td onClick={(event) => event.stopPropagation()}>{actions(row)}</td>}
               </tr>
             ))}
