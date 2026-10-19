@@ -2,6 +2,22 @@
 
 React / TypeScript 管理后台。开发运行 `npm run dev`；提交前执行 `npm run lint` 和 `npm run build`。
 
+## 订单审计查询
+
+条件单列表、详情和时间线读取后端 realtime 已提交投影，部署前先应用后端
+`deployment/migrations/20261020-trigger-read-projection.sql`。终态不再因离开活动订阅视图而丢失。
+表格展示 OCO 组与实际触发价格来源。大整数 ID 保留原始字符串传入详情地址，避免浮点取整查询到错误订单。
+切换产品、筛选或排序会清除旧列表和详情；迟到的查询结果不会覆盖当前筛选，接口失败明确显示错误。
+统计窗口切换也需要重新查询。
+本轮本机后端的交易统计和后台全局成交查询仍返回 404，尚未恢复该两项能力；页面会分别显示失败原因，
+成功的普通订单和条件单查询可独立展示，不用空数据伪装成功。
+
+真实 OPTION FUSED 联调入口为 `scripts/trigger-query-fused-live.mjs`，通过
+`TRIGGER_QUERY_LIVE_FIXTURE` 接收后端隔离测试的短期认证 fixture；可指定已有的
+`TRIGGER_QUERY_PLAYWRIGHT_MODULE` 和 `TRIGGER_QUERY_CHROMIUM`。该场景只读取真实订单，
+延迟真实响应验证请求竞态，并注入一次 503 检查错误显示，不创建或撤销后台订单。
+验证记录位于 `docs/validation/trigger-realtime-queries-20261020.json`。
+
 ## 交易维护
 
 侧栏「交易维护」按当前产品线连接真实后端

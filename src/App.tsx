@@ -2238,7 +2238,22 @@ function OrdersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const queryScope = JSON.stringify({ ...filters, orderCursor: "", triggerCursor: "", tradeCursor: "", metricsWindowMinutes });
+  const activeScope = useRef(queryScope);
+  activeScope.current = queryScope;
+  const listRequest = useRef(0);
+  const detailRequest = useRef({ ORDER: 0, TRIGGER: 0 });
+
+  function clearReadResults() {
+    setOrders([]); setTriggerOrders([]); setTrades([]);
+    setOrderPageInfo(cursorInfo()); setTriggerPageInfo(cursorInfo()); setTradePageInfo(cursorInfo());
+    setMetrics(null); setTimeline(null); setTriggerTimeline(null); setCancelPreview(null);
+  }
+
   function updateFilters(patch: Partial<typeof filters>) {
+    ++listRequest.current; ++detailRequest.current.ORDER; ++detailRequest.current.TRIGGER;
+    clearReadResults(); setError(""); setLoading(false);
+
     setFilters((current) => ({
       ...current,
       ...patch,
@@ -2251,12 +2266,16 @@ function OrdersPage() {
   async function load(nextOrderCursor = filters.orderCursor,
                       nextTriggerCursor = filters.triggerCursor,
                       nextTradeCursor = filters.tradeCursor) {
+    if (activeScope.current !== queryScope) return false;
+    const request = ++listRequest.current;
+    ++detailRequest.current.ORDER; ++detailRequest.current.TRIGGER;
+    clearReadResults();
     setLoading(true);
     setError("");
     try {
       const orderStatus = ORDER_STATUSES.includes(filters.status) ? filters.status : "";
       const triggerStatus = TRIGGER_ORDER_STATUSES.includes(filters.status) ? filters.status : "";
-      const [metricsResponse, response, triggerResponse, tradeResponse] = await Promise.all([
+      const [metricsResponse, response, triggerResponse, tradeResponse] = await Promise.allSettled([
         tradingMetrics({ windowMinutes: Number(metricsWindowMinutes) || 1440, productLine: filters.productLine, limit: 20 }),
         gatewayGet<{ orders?: OrderRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-orders", "", {
           userId: filters.userId,
@@ -2288,34 +2307,51 @@ function OrdersPage() {
           sort: filters.tradeSort
         })
       ]);
-      setMetrics(metricsResponse);
-      setOrders(response.orders ?? []);
-      setOrderPageInfo(cursorInfo(response));
-      setTriggerOrders(triggerResponse.orders ?? []);
-      setTriggerPageInfo(cursorInfo(triggerResponse));
-      setTrades(tradeResponse.trades ?? []);
-      setTradePageInfo(cursorInfo(tradeResponse));
+      if (request !== listRequest.current || activeScope.current !== queryScope) return false;
+      if (metricsResponse.status === "fulfilled") setMetrics(metricsResponse.value);
+      if (response.status === "fulfilled") {
+        setOrders(response.value.orders ?? []); setOrderPageInfo(cursorInfo(response.value));
+      }
+      if (triggerResponse.status === "fulfilled") {
+        setTriggerOrders(triggerResponse.value.orders ?? []); setTriggerPageInfo(cursorInfo(triggerResponse.value));
+      }
+      if (tradeResponse.status === "fulfilled") {
+        setTrades(tradeResponse.value.trades ?? []); setTradePageInfo(cursorInfo(tradeResponse.value));
+      }
+      const failures = [
+        ["交易统计", metricsResponse], ["普通订单", response], ["条件单", triggerResponse], ["成交列表", tradeResponse]
+      ] as const;
+      setError(failures.flatMap(([name, result]) => result.status === "rejected" ? [`${name}：${errorMessage(result.reason)}`] : []).join("；"));
       setFilters((current) => ({
         ...current,
-        orderCursor: nextOrderCursor,
-        triggerCursor: nextTriggerCursor,
-        tradeCursor: nextTradeCursor
+        orderCursor: response.status === "fulfilled" ? nextOrderCursor : "",
+        triggerCursor: triggerResponse.status === "fulfilled" ? nextTriggerCursor : "",
+        tradeCursor: tradeResponse.status === "fulfilled" ? nextTradeCursor : ""
       }));
+      return failures.every(([, result]) => result.status === "fulfilled");
     } catch (err) {
-      setError(errorMessage(err));
+      if (request === listRequest.current && activeScope.current === queryScope) setError(errorMessage(err));
+      return false;
     } finally {
-      setLoading(false);
+      if (request === listRequest.current && activeScope.current === queryScope) setLoading(false);
     }
   }
 
-  async function loadTimeline(orderId: number) {
-    const response = await gatewayGet<UnknownRecord>("trading-orders", `/${orderId}/timeline`, { productLine: filters.productLine });
-    setTimeline(response);
-  }
-
-  async function loadTriggerTimeline(triggerOrderId: number) {
-    const response = await gatewayGet<UnknownRecord>("trading-trigger", `/${triggerOrderId}/timeline`, { productLine: filters.productLine });
-    setTriggerTimeline(response);
+  async function loadTimeline(value: unknown, kind: "ORDER" | "TRIGGER" = "ORDER") {
+    if (activeScope.current !== queryScope) return;
+    const request = ++detailRequest.current[kind];
+    const setResult = kind === "TRIGGER" ? setTriggerTimeline : setTimeline;
+    setResult(null);
+    try {
+      const id = String(value ?? "");
+      if (!/^[1-9]\d*$/.test(id) || typeof value === "number" && !Number.isSafeInteger(value))
+        throw new Error("订单 ID 无效，未发起查询。");
+      const response = await gatewayGet<UnknownRecord>(kind === "TRIGGER" ? "trading-trigger" : "trading-orders",
+        `/${encodeURIComponent(id)}/timeline`, { productLine: filters.productLine });
+      if (request === detailRequest.current[kind] && activeScope.current === queryScope) setResult(response);
+    } catch (err) {
+      if (request === detailRequest.current[kind] && activeScope.current === queryScope) setError(errorMessage(err));
+    }
   }
 
   async function cancelOrder(orderId: unknown) {
@@ -2330,7 +2366,7 @@ function OrdersPage() {
     try {
       await gatewayPost("trading-orders", `/${orderId}/cancel`, { reason }, { productLine: filters.productLine });
       await load("", filters.triggerCursor, filters.tradeCursor);
-      await loadTimeline(Number(orderId));
+      await loadTimeline(orderId);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -2408,17 +2444,20 @@ function OrdersPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { ++listRequest.current; ++detailRequest.current.ORDER; ++detailRequest.current.TRIGGER; };
+  }, []);
 
   return (
-    <Page title="订单审计" onRefresh={load} loading={loading} error={error}>
+    <Page title="订单审计" onRefresh={async () => { await load(); }} loading={loading} error={error}>
       <div className="filters">
         <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <TextFilter label="Order / Trigger ID" value={filters.orderId} onChange={(value) => updateFilters({ orderId: value })} />
         <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>{AUDIT_STATUS_FILTERS.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
-        <label>统计窗口<select value={metricsWindowMinutes} onChange={(event) => setMetricsWindowMinutes(event.target.value)}>
+        <label>统计窗口<select value={metricsWindowMinutes} onChange={(event) => { updateFilters({}); setMetricsWindowMinutes(event.target.value); }}>
           <option value="60">1 小时</option>
           <option value="360">6 小时</option>
           <option value="1440">24 小时</option>
@@ -2447,7 +2486,7 @@ function OrdersPage() {
           <DataTable
             rows={orders as unknown as UnknownRecord[]}
             columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
-            onRowClick={(row) => void loadTimeline(Number(row.orderId))}
+            onRowClick={(row) => void loadTimeline(row.orderId)}
             actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
           />
         </Panel>
@@ -2465,8 +2504,8 @@ function OrdersPage() {
           />
           <DataTable
             rows={triggerOrders}
-            columns={["triggerOrderId", "userId", "instrumentId", "side", "positionSide", "triggerType", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
-            onRowClick={(row) => void loadTriggerTimeline(Number(row.triggerOrderId))}
+            columns={["triggerOrderId", "userId", "instrumentId", "ocoGroupId", "side", "positionSide", "triggerType", "priceSource", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+            onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")}
           />
         </Panel>
         <Panel title="条件单时间线">
