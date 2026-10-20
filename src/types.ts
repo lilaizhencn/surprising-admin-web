@@ -1,6 +1,7 @@
 export type RouteKey =
   | "dashboard"
   | "support"
+  | "c2c"
   | "users"
   | "assets"
   | "markets"

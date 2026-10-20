@@ -1,0 +1,66 @@
+{
+  "fixture": "synthetic-auth-controlled-core-real-postgres",
+  "steps": [
+    "admin reads the real C2C order list and its recent audited conversation",
+    "older admin history uses keyset pagination and preserves the current viewport",
+    "private evidence preview is fetched through the audited order endpoint",
+    "an actual support reply is labeled by the server and reaches the customer shared socket",
+    "lost support response recovers from its audited receipt without another POST",
+    "explicit automatic updates show customer messages without granting admin conversation membership",
+    "desktop and narrow admin layouts keep long order and message fields within the viewport",
+    "switching admin identity removes the prior conversation and revokes its private Blob URL"
+  ],
+  "pageErrors": [],
+  "scope": "real PostgreSQL and gateway controllers; synthetic trading/admin auth and controlled Core; filesystem attachments; no server release",
+  "passed": true,
+  "checks": {
+    "bunTestsPassed": 12,
+    "bunTestsFailed": 0,
+    "lintExit": 0,
+    "buildExit": 0,
+    "browserScenarios": 8
+  },
+  "limits": {
+    "realCoreStarted": false,
+    "walletStarted": false,
+    "realR2": false,
+    "auth": "synthetic fixture; production auth/permission entrypoints are invoked",
+    "approval": "browser fixture ordinary approval flag disabled; exact service/body approval verified by Bun and PostgreSQL tests",
+    "serverDeployed": false
+  },
+  "artifacts": [
+    {
+      "path": "docs/validation/c2c-chat-20261020/admin-chat-desktop.png",
+      "bytes": 229341,
+      "sha256": "5c8cba3bc62178eaa21f8e5144792049876b74cb3ef61f191ce67855e2258df4"
+    },
+    {
+      "path": "docs/validation/c2c-chat-20261020/admin-chat-mobile.png",
+      "bytes": 71623,
+      "sha256": "a1518277d8fb412142bbefbc50ab0ab916389777d411631dd65888a915ac2ac8"
+    },
+    {
+      "path": "docs/validation/c2c-chat-20261020/admin-private-image.png",
+      "bytes": 10036,
+      "sha256": "40e324db95826ddb027812117a9396eb7ea1151734e20a801e351040dffc86cd"
+    }
+  ],
+  "logs": [
+    {
+      "originalPath": "/tmp/surprising-c2c-admin-final-tests-20261020.log",
+      "sha256": "1c50e6c3d7f383435bd2d0b15605d895cd3954d7554a0fcb99720cc90b7a0fca"
+    },
+    {
+      "originalPath": "/tmp/surprising-c2c-admin-final-lint-20261020.log",
+      "sha256": "d42c3636f32ef74a518f6843324ee65ae8148aa3ee49633d0e42886017d64845"
+    },
+    {
+      "originalPath": "/tmp/surprising-c2c-admin-final-build-20261020.log",
+      "sha256": "abdf3dc5a3d00f12c1edf94fa2d22b27638dfe868b526962d14236186542f23c"
+    },
+    {
+      "originalPath": "/tmp/surprising-c2c-admin-browser-final-20261020.log",
+      "sha256": "4027bdd3c4f688fa06c9b20feae87f53f455587d5d560ddb3c87a7e049708b64"
+    }
+  ]
+}

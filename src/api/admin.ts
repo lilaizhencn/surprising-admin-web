@@ -185,10 +185,11 @@ export function createApproval(body: {
   queryString?: string;
   requestBodySha256?: string;
   reason: string;
-}) {
+}, expectedUserId?: string) {
   return request<UnknownRecord>("/api/v1/admin/approvals", {
     method: "POST",
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    expectedUserId
   });
 }
 
@@ -677,13 +678,14 @@ export async function adminLocalWrite<T>(
   });
 }
 
-async function attachApproval(
+export async function attachApproval(
   headers: Record<string, string>,
   service: string,
   method: string,
   requestPath: string,
   query: string,
-  serializedBody?: string
+  serializedBody?: string,
+  expectedUserId?: string
 ) {
   if (!approvalRequestHandler) {
     throw new Error("敏感后台写操作需要审批处理器。");
@@ -696,6 +698,8 @@ async function attachApproval(
     query: query ? query.slice(1) : "",
     requestBodySha256
   });
+  if (expectedUserId !== undefined && String(loadSession()?.user.userId ?? "") !== expectedUserId)
+    throw new ApiError(401, "登录账号已变化，未提交此操作。", null);
   if (decision?.approvalId?.trim()) {
     headers["X-Admin-Approval-Id"] = decision.approvalId.trim();
     return;
@@ -711,7 +715,7 @@ async function attachApproval(
     queryString: query ? query.slice(1) : undefined,
     requestBodySha256,
     reason: reason.trim()
-  });
+  }, expectedUserId);
   const id = approval.approvalId ?? approval.id;
   throw new Error(`审批单 ${id} 已创建，等待审批。`);
 }

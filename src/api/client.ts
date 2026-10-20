@@ -36,9 +36,11 @@ export function loadSession(): AuthSession | null {
 export function saveSession(session: AuthSession | null) {
   if (!session) {
     localStorage.removeItem(config.sessionKey);
+    window.dispatchEvent(new Event("surprising-admin.session-changed"));
     return;
   }
   localStorage.setItem(config.sessionKey, JSON.stringify(session));
+  window.dispatchEvent(new Event("surprising-admin.session-changed"));
 }
 
 export function adminGatewayPath(service: string, path = "") {
@@ -58,10 +60,17 @@ export function queryString(params: Record<string, unknown>) {
 
 export interface AdminRequestInit extends RequestInit {
   productLine?: string;
+  expectedUserId?: string;
 }
 
-export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<T> {
-  const { productLine, ...requestInit } = init;
+function requireOwner(expectedUserId?: string) {
+  if (expectedUserId !== undefined && String(loadSession()?.user.userId ?? "") !== expectedUserId)
+    throw new ApiError(401, "登录账号已变化，请重新打开当前页面。", null);
+}
+
+export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<T> {
+  const { productLine, expectedUserId, ...requestInit } = init;
+  requireOwner(expectedUserId);
   const headers = new Headers(requestInit.headers);
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -76,20 +85,23 @@ export async function request<T>(path: string, init: AdminRequestInit = {}, sess
     ...requestInit,
     headers
   });
-  if (response.status === 401 && session?.refreshToken && !path.endsWith("/auth/refresh")) {
+  requireOwner(expectedUserId);
+  if (response.status === 401 && allowRefresh && session?.refreshToken && !path.endsWith("/auth/refresh")) {
     const refreshed = await refreshSession(session.refreshToken);
-    return request<T>(path, init, refreshed);
+    return request<T>(path, init, refreshed, false);
   }
   if (!response.ok) {
     throw await toApiError(response);
   }
   if (response.status === 204) return undefined as T;
   const text = await response.text();
+  requireOwner(expectedUserId);
   return text ? parseApiJson<T>(text) : undefined as T;
 }
 
-export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<Blob> {
-  const { productLine, ...requestInit } = init;
+export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<Blob> {
+  const { productLine, expectedUserId, ...requestInit } = init;
+  requireOwner(expectedUserId);
   const headers = new Headers(requestInit.headers);
   if (productLine) {
     headers.set("X-Product-Line", productLine);
@@ -101,27 +113,42 @@ export async function requestBlob(path: string, init: AdminRequestInit = {}, ses
     ...requestInit,
     headers
   });
-  if (response.status === 401 && session?.refreshToken && !path.endsWith("/auth/refresh")) {
+  requireOwner(expectedUserId);
+  if (response.status === 401 && allowRefresh && session?.refreshToken && !path.endsWith("/auth/refresh")) {
     const refreshed = await refreshSession(session.refreshToken);
-    return requestBlob(path, init, refreshed);
+    return requestBlob(path, init, refreshed, false);
   }
   if (!response.ok) {
     throw await toApiError(response);
   }
-  return response.blob();
+  const blob = await response.blob();
+  requireOwner(expectedUserId);
+  return blob;
 }
 
-async function refreshSession(refreshToken: string): Promise<AuthSession> {
+let refreshInFlight: { token: string; promise: Promise<AuthSession> } | null = null;
+function refreshSession(refreshToken: string): Promise<AuthSession> {
+  if (refreshInFlight?.token === refreshToken) return refreshInFlight.promise;
+  const promise = refreshSessionOnce(refreshToken).finally(() => {
+    if (refreshInFlight?.promise === promise) refreshInFlight = null;
+  });
+  refreshInFlight = { token: refreshToken, promise };
+  return promise;
+}
+async function refreshSessionOnce(refreshToken: string): Promise<AuthSession> {
+  const current = () => loadSession()?.refreshToken === refreshToken;
+  if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
   const response = await fetch(`${config.gatewayBaseUrl}/api/v1/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refreshToken })
   });
   if (!response.ok) {
-    saveSession(null);
+    if (current()) saveSession(null);
     throw await toApiError(response);
   }
-  const next = await response.json() as AuthSession;
+  const next = parseApiJson<AuthSession>(await response.text());
+  if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
   saveSession(next);
   return next;
 }

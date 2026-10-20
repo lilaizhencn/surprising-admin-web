@@ -4,6 +4,7 @@ import { MakerBusinessSettings } from "./MakerBusinessSettings";
 import { InstrumentMakerSettings } from "./InstrumentMakerSettings";
 import { InstrumentConfigurationFields, validateInstrumentForm, immutableInstrumentFields, instrumentFieldHint } from "./InstrumentConfigurationFields";
 import { AssetsPage, type Asset } from "./AssetsPage";
+import { C2cChatPage } from "./C2cChatPage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -24,6 +25,7 @@ import {
   LayoutDashboard,
   LogOut,
   Megaphone,
+  MessageSquare,
   RefreshCw,
   Scale,
   Search,
@@ -150,6 +152,7 @@ import type {
 const NAV = [
   { key: "dashboard", label: "总览", icon: LayoutDashboard },
   { key: "support", label: "客服视图", icon: LifeBuoy },
+  { key: "c2c", label: "C2C 订单会话", icon: MessageSquare },
   { key: "users", label: "用户权限", icon: Users },
   { key: "assets", label: "币种配置", icon: Database },
   { key: "markets", label: "产品市场", icon: BarChart3 },
@@ -391,6 +394,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const changed = () => setSession(loadSession());
+    window.addEventListener("surprising-admin.session-changed", changed);
+    const stored = (event: StorageEvent) => { if (event.key === "surprising-admin.session" || event.key === null) changed(); };
+    window.addEventListener("storage", stored);
+    return () => { window.removeEventListener("surprising-admin.session-changed", changed); window.removeEventListener("storage", stored); };
+  }, []);
+
+  useEffect(() => {
     setApprovalRequestHandler((context) => new Promise((resolve) => {
       setApprovalPrompt((current) => {
         if (current) {
@@ -405,6 +416,9 @@ export default function App() {
 
   const consoleRole = session?.user.roles.some((role) => CONSOLE_ROLES.includes(role)) ?? false;
   const fullAdminRole = session?.user.roles.some((role) => role === "ADMIN" || role === "SUPER_ADMIN") ?? false;
+  useEffect(() => {
+    setApprovalPrompt(current => { current?.resolve(null); return null; });
+  }, [session?.user.userId]);
 
   if (!session) {
     return <LoginScreen onLogin={(next) => {
@@ -420,7 +434,7 @@ export default function App() {
     }} />;
   }
 
-  const visibleNav = fullAdminRole ? NAV : NAV.filter((item) => item.key === "support");
+  const visibleNav = fullAdminRole ? NAV : NAV.filter((item) => item.key === "support" || item.key === "c2c");
   const activeRoute = visibleNav.some((item) => item.key === route) ? route : visibleNav[0].key;
 
   return (
@@ -461,9 +475,10 @@ export default function App() {
             </button>
           </div>
         </header>
-        <section className="content">
+        <section className="content" key={String(session.user.userId)}>
           {activeRoute === "dashboard" && <DashboardPage />}
           {activeRoute === "support" && <SupportPage />}
+          {activeRoute === "c2c" && <C2cChatPage session={session} />}
           {activeRoute === "users" && <UsersPage />}
           {activeRoute === "assets" && <AssetsPage />}
           {activeRoute === "markets" && <MarketsPage />}
