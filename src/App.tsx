@@ -4,7 +4,7 @@ import { MakerBusinessSettings } from "./MakerBusinessSettings";
 import { InstrumentMakerSettings } from "./InstrumentMakerSettings";
 import { InstrumentConfigurationFields, validateInstrumentForm, immutableInstrumentFields, instrumentFieldHint } from "./InstrumentConfigurationFields";
 import { AssetsPage, type Asset } from "./AssetsPage";
-import { C2cChatPage } from "./C2cChatPage";
+import { C2cBusinessPage } from "./C2cBusinessPage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -152,7 +152,7 @@ import type {
 const NAV = [
   { key: "dashboard", label: "总览", icon: LayoutDashboard },
   { key: "support", label: "客服视图", icon: LifeBuoy },
-  { key: "c2c", label: "C2C 订单会话", icon: MessageSquare },
+  { key: "c2c", label: "C2C 运营", icon: MessageSquare },
   { key: "users", label: "用户权限", icon: Users },
   { key: "assets", label: "币种配置", icon: Database },
   { key: "markets", label: "产品市场", icon: BarChart3 },
@@ -478,7 +478,7 @@ export default function App() {
         <section className="content" key={String(session.user.userId)}>
           {activeRoute === "dashboard" && <DashboardPage />}
           {activeRoute === "support" && <SupportPage />}
-          {activeRoute === "c2c" && <C2cChatPage session={session} />}
+          {activeRoute === "c2c" && <C2cBusinessPage session={session} />}
           {activeRoute === "users" && <UsersPage />}
           {activeRoute === "assets" && <AssetsPage />}
           {activeRoute === "markets" && <MarketsPage />}
