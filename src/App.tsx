@@ -107,7 +107,6 @@ import {
   systemMetrics,
   systemObservability,
   systemRoutes,
-  traceTimeline,
   tradingMetrics,
   updateAmlCaseStatus,
   updateAlertRule,
@@ -363,7 +362,6 @@ const QUERY_TASK_PARAM_TEMPLATES: Record<string, Record<string, string>> = {
     tradeId: "",
     instrumentId: "",
     takerSide: "",
-    traceId: "",
     createdAfter: "",
     createdBefore: "",
     limit: "1000"
@@ -5480,7 +5478,7 @@ function MarketMakerPage() {
       </div>
       <TwoColumn>
         <Panel title="策略控制">
-          <DataTable rows={strategies} columns={["productLine", "strategyId", "status", "configuredEnabled", "runtimePaused", "cycleSequence", "submittedOrders", "canceledOrders", "rejectedOrders", "lastTraceId", "lastError"]} actions={(row) => (
+          <DataTable rows={strategies} columns={["productLine", "strategyId", "status", "configuredEnabled", "runtimePaused", "cycleSequence", "submittedOrders", "canceledOrders", "rejectedOrders", "lastError"]} actions={(row) => (
             <div className="button-row compact-row">
               <button onClick={() => void action(row.strategyId ?? row.id, "pause")}>暂停</button>
               <button onClick={() => void action(row.strategyId ?? row.id, "resume")}>恢复</button>
@@ -5533,7 +5531,6 @@ function MarketMakerPage() {
                 "rejectedOrders",
                 "skippedReason",
                 "errorMessage",
-                "traceId"
               ]}
             />
             <CursorPager
@@ -5572,7 +5569,6 @@ function MarketMakerPage() {
             "spreadTicks",
             "spreadPpmText",
             "quoteCoverage",
-            "lastTraceId",
             "error"
           ]}
         />
@@ -7056,13 +7052,10 @@ function SystemPage() {
 function AuditPage() {
   const [loginFilters, setLoginFilters] = useState({ userId: "", result: "", limit: "200", cursor: "", sort: "createdAt.desc" });
   const [operationFilters, setOperationFilters] = useState({ adminUserId: "", service: "", method: "", success: "", limit: "200", cursor: "", sort: "createdAt.desc" });
-  const [traceFilters, setTraceFilters] = useState({ traceId: "", limit: "50" });
   const [loginRows, setLoginRows] = useState<UnknownRecord[]>([]);
   const [operationRows, setOperationRows] = useState<UnknownRecord[]>([]);
   const [loginPageInfo, setLoginPageInfo] = useState(cursorInfo());
   const [operationPageInfo, setOperationPageInfo] = useState(cursorInfo());
-  const [traceResult, setTraceResult] = useState<UnknownRecord | null>(null);
-  const [selectedTraceEvent, setSelectedTraceEvent] = useState<UnknownRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -7094,29 +7087,6 @@ function AuditPage() {
 
   useEffect(() => { void load(); }, []);
 
-  async function findTrace() {
-    const traceId = traceFilters.traceId.trim();
-    if (!traceId) {
-      setError("请输入 TraceId。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const response = await traceTimeline(traceId, { limit: Number(traceFilters.limit) || 50 });
-      setTraceResult(response);
-      setSelectedTraceEvent(null);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const traceSections = records(traceResult?.sections as UnknownRecord[] | undefined);
-  const traceTimelineRows = records(traceResult?.timeline as UnknownRecord[] | undefined);
-  const traceWarnings = records(traceResult?.warnings as UnknownRecord[] | undefined);
-
   return (
     <Page title="审计日志" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
@@ -7130,41 +7100,6 @@ function AuditPage() {
         <SortSelect label="操作排序" value={operationFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => setOperationFilters({ ...operationFilters, sort: value, cursor: "" })} />
         <button onClick={() => void load("", "")}><Search size={16} />查询</button>
       </div>
-      <Panel title="TraceId 全链路查询">
-        <div className="filters">
-          <TextFilter label="TraceId" value={traceFilters.traceId} onChange={(value) => setTraceFilters({ ...traceFilters, traceId: value })} />
-          <TextFilter label="每源 Limit" value={traceFilters.limit} onChange={(value) => setTraceFilters({ ...traceFilters, limit: value })} />
-          <button className="primary" onClick={() => void findTrace()}><Search size={16} />追踪</button>
-        </div>
-        {traceResult && (
-          <>
-            <div className="metrics">
-              <Metric label="TraceId" value={String(traceResult.traceId ?? "")} tone="muted" />
-              <Metric label="事件数" value={traceResult.totalEvents ?? 0} tone={Number(traceResult.totalEvents ?? 0) > 0 ? "ok" : "warn"} />
-              <Metric label="数据源" value={traceSections.filter((section) => Number(section.count ?? 0) > 0).length} tone="ok" />
-              <Metric label="Warnings" value={traceWarnings.length} tone={traceWarnings.length > 0 ? "warn" : "ok"} />
-            </div>
-            {traceWarnings.length > 0 && (
-              <div className="alert danger">
-                <DataTable rows={traceWarnings} columns={["source", "tableName", "message"]} />
-              </div>
-            )}
-            <TwoColumn>
-              <Panel title="数据源命中">
-                <DataTable rows={traceSections} columns={["source", "tableName", "count", "error"]} />
-              </Panel>
-              <Panel title="事件详情">
-                {selectedTraceEvent ? <KeyValue data={objectValue(selectedTraceEvent.data)} /> : <Empty text="选择时间线事件查看原始字段" />}
-              </Panel>
-            </TwoColumn>
-            <DataTable
-              rows={traceTimelineRows}
-              columns={["eventTime", "source", "tableName", "recordId", "subject", "summary"]}
-              onRowClick={(row) => setSelectedTraceEvent(row)}
-            />
-          </>
-        )}
-      </Panel>
       <TwoColumn>
         <Panel title="登录日志">
           <CursorPager
@@ -7184,7 +7119,7 @@ function AuditPage() {
           />
           <DataTable
             rows={operationRows}
-            columns={["createdAt", "adminUsername", "service", "httpMethod", "responseStatus", "durationMs", "success", "requestPath", "traceId", "errorMessage"]}
+            columns={["createdAt", "adminUsername", "service", "httpMethod", "responseStatus", "durationMs", "success", "requestPath", "errorMessage"]}
           />
         </Panel>
       </TwoColumn>

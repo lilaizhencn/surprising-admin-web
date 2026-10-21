@@ -12,7 +12,7 @@
 
 现有 `surprising-ex` 后端已经具备较完整的合约交易核心：产品配置、行情、撮合、订单、条件单、账户、持仓、风控、强平、资金费、保险基金、ADL、做市和统一 gateway。后台管理系统的第一阶段可以直接基于这些接口做“可观测 + 可配置 + 可运营”的管理台。
 
-生产级交易所后台不能只复用普通用户 gateway。本次已经补齐后台安全域、用户/角色、权限点 RBAC、客服只读视图、客服工单和备注时间线、用户详情聚合、合规风控、导出中心、受控长查询任务、订单审计专用长查询、查询任务配额和结果归档、订单/账户导出数据源、交易运营指标聚合、市场健康监控、告警中心、通知渠道和投递 worker、系统指标聚合、后台 API 延迟分位、系统可观测性聚合、TraceId 全链路查询、管理员 TOTP 2FA、审计、审批、订单、账户、资产估值报表、钱包、系统巡检、管理员 IP 白名单和关键运行时开关的第一批接口；外部渠道服务商回执适配仍属于后续增强项。
+生产级交易所后台不能只复用普通用户 gateway。本次已经补齐后台安全域、用户/角色、权限点 RBAC、客服只读视图、客服工单和备注时间线、用户详情聚合、合规风控、导出中心、受控长查询任务、订单审计专用长查询、查询任务配额和结果归档、订单/账户导出数据源、交易运营指标聚合、市场健康监控、告警中心、通知渠道和投递 worker、系统指标聚合、后台 API 延迟分位、系统可观测性聚合、管理员 TOTP 2FA、审计、审批、订单、账户、资产估值报表、钱包、系统巡检、管理员 IP 白名单和关键运行时开关的第一批接口；外部渠道服务商回执适配仍属于后续增强项。
 
 ### 1.1 当前已实现状态
 
@@ -24,7 +24,6 @@
 - `surprising-admin-web` 的“账户资产”页已为账户流水、产品账户流水、产品划转、人工调整追溯、资产估值报表和日终资产快照接入独立游标分页和排序控件，避免大账户历史数据使用 offset 扫表。
 - `surprising-admin-web` 已新增系统监控页面，用于查看 gateway 路由配置、后端 `/actuator/health` 巡检结果、UP/DOWN 汇总、延迟、outbox backlog、后台 API 错误率、登录失败和审批积压。
 - `surprising-admin-web` 系统监控页已接入 gateway `/api/v1/admin/system/observability`，展示 Kafka consumer lag、WebSocket 连接/订阅统计和 Prometheus 抓取状态。
-- `surprising-admin-web` 审计日志页已接入 gateway `/api/v1/admin/traces/{traceId}`，支持 TraceId 全链路排障时间线。
 - `surprising-ex` gateway 已新增后台安全域 `/api/v1/admin/gateway/{service}/...`，后台代理只接受 Bearer Token 后台角色，不使用普通前端的 `X-User-Id` fallback。
 - `surprising-ex` gateway 已新增 `/api/v1/admin/system/routes`、`/api/v1/admin/system/health` 和 `/api/v1/admin/system/metrics`，由 gateway 统一对业务服务做健康巡检，并聚合 outbox backlog、后台 API 错误率、登录失败和审批积压。
 - gateway 已新增管理员用户/角色管理、SUPPORT 客服只读角色、普通用户列表/状态限制、用户详情聚合、refresh session 会话治理/强制下线、登录日志、管理员操作日志、后台代理审计落库、wallet 服务路由、wallet-admin 服务端 Basic Auth 注入。
@@ -43,7 +42,6 @@
 - risk/liquidation/ADL 后台列表已补齐统一游标分页和 admin namespace：高风险账户、爆仓候选、强平订单、ADL 队列和 ADL 事件均支持 `limit/cursor/sort` 或实时排名 cursor，admin-web 已改走 `risk-admin`、`liquidation-admin` 与 `adl/admin` 路径。
 - gateway 已新增账户资产报表接口 `/api/v1/admin/reports/account-assets`，使用 `admin.reports.read/write` 权限点提供当前跨币种估值、日终快照生成和快照查询；快照落在 `gateway_admin_account_asset_snapshots`，并已补齐日终自动调度、上一日差异检测和 `SYSTEM:ACCOUNT_ASSET_SNAPSHOT_DIFF_PPM` 告警。
 - gateway 已新增系统可观测性接口 `GET /api/v1/admin/system/observability`，使用 `admin.system.read` 权限点聚合 Kafka consumer lag、WebSocket admin metrics 和各后端 `/actuator/prometheus` 抓取状态。
-- gateway 已新增 TraceId 全链路查询接口 `GET /api/v1/admin/traces/{traceId}`，使用 `admin.traces.read` 权限点聚合交易、outbox、后台操作和审批消费记录。
 - gateway 已新增市场健康聚合接口 `GET /api/v1/admin/market/health`，使用 `admin.market.read` 权限点聚合 index price、mark price、行情源 component、K 线更新时间、延迟和偏离指标。
 - gateway 已新增告警中心接口 `/api/v1/admin/alerts`，使用 `admin.alerts.read/write` 管理告警规则、通知渠道、告警事件、投递记录、手动评估和事件确认；规则/渠道/事件/投递列表均支持独立游标分页；规则新增、更新、启停默认接入敏感操作审批流；数据落在 `gateway_admin_alert_rules`、`gateway_admin_alert_channels`、`gateway_admin_alert_events` 和 `gateway_admin_alert_deliveries`。
 - gateway 已新增告警通知发送 worker，使用 `FOR UPDATE SKIP LOCKED` 领取 `gateway_admin_alert_deliveries` 投递任务，支持 WEBHOOK/SLACK/PAGERDUTY HTTP POST、失败重试、最大次数终止、禁用/未适配渠道 SKIPPED 和手动 retry。
@@ -81,8 +79,6 @@
 - `pnpm build` 在 admin-web 接入账户人工调整追溯、`ACCOUNT_ADJUSTMENTS` 导出类型、资产估值和日终快照报表后通过。
 - `mvn -pl :surprising-gateway-provider,:surprising-websocket-provider -am test` 在新增系统可观测性聚合和 WebSocket admin metrics 后通过。
 - `pnpm build` 在 admin-web 系统监控页接入 Kafka/WebSocket/Prometheus 可观测性后通过。
-- `mvn -pl :surprising-gateway-provider -am test` 在新增 TraceId 全链路查询后通过。
-- `pnpm build` 在 admin-web 审计页接入 TraceId 查询后通过。
 - `mvn -pl :surprising-gateway-provider -am test` 在新增后台 API 延迟分位、操作日志耗时导出和告警通知发送 worker 后通过，当前 gateway-provider 测试数为 75。
 - `pnpm build` 在 admin-web 系统监控页展示后台 API p50/p95/p99 延迟后通过。
 - `mvn -pl :surprising-gateway-provider -am test` 在新增受控长查询任务 API 后通过，当前 gateway-provider 测试数为 78。
@@ -124,7 +120,7 @@
 - 后台首页应是高密度运营工作台，而不是营销页。
 - 市场、订单、账户、风险、资金、做市、系统监控必须分区明确。
 - 所有写操作必须有权限、二次确认、审计记录；高风险操作需要审批流。
-- 列表页要支持强过滤、排序、分页、导出、复制 ID、追踪 traceId。
+- 列表页要支持强过滤、排序、分页、导出、复制 ID。
 - 风控、强平、保险基金、ADL、资金费应是实时状态优先展示。
 - 产品/交易规则配置要版本化、可回滚、可查看变更历史。
 
@@ -458,7 +454,7 @@ ADL：
 - 做市运行状态查看
 - 做市库存、挂单覆盖率、缺失报价、陈旧报价、偏离目标报价、价差和异常告警聚合
 - 做市收益归因：按配置策略、交易对和账号归集做市订单、成交、手续费、当前已实现盈亏和库存
-- 策略运行日志：记录 cycle success/failure、报价对账、交易提交/拒绝、跳过原因、错误信息和 TraceId
+- 策略运行日志：记录 cycle success/failure、报价对账、交易提交/拒绝、跳过原因、错误信息
 - 策略报价/风险参数在线覆盖：enabled、baseQuantitySteps、marginMode、spreadTicks、levelSpacingTicks、maxInventorySteps、maxInventorySkewPpm、orderLevels
 
 当前已做：
@@ -484,7 +480,7 @@ ADL：
 - 做市策略状态和报价质量异常。
 - 服务健康、gateway 状态、WebSocket 状态、Kafka/outbox 状态。
 
-当前已做：使用现有接口组合展示产品、价格、风险、强平、资金费、保险基金、ADL、做市状态、做市报价质量、做市收益归因和策略运行日志；gateway 已提供路由、`/actuator/health` 巡检、`/api/v1/admin/system/metrics` 指标聚合、`/api/v1/admin/system/observability` 可观测性聚合和 `/api/v1/admin/traces/{traceId}` 全链路查询，覆盖 outbox backlog、后台 API 错误率、登录失败、审批积压、Kafka lag、WebSocket 连接数、Prometheus 抓取状态和 TraceId 排障时间线；`/api/v1/admin/trading/metrics` 已聚合订单、成交、撮合、条件单、持仓和 Symbol 运营指标，`/api/v1/admin/market-maker/metrics` 已聚合做市库存、挂单覆盖率和异常；告警中心已具备通知渠道、投递队列和发送 worker。  
+当前已做：使用现有接口组合展示产品、价格、风险、强平、资金费、保险基金、ADL、做市状态、做市报价质量、做市收益归因和策略运行日志；gateway 已提供路由、`/actuator/health` 巡检、`/api/v1/admin/system/metrics` 指标聚合、`/api/v1/admin/system/observability` 可观测性聚合，覆盖 outbox backlog、后台 API 错误率、登录失败、审批积压、Kafka lag、WebSocket 连接数、Prometheus 抓取状态；`/api/v1/admin/trading/metrics` 已聚合订单、成交、撮合、条件单、持仓和 Symbol 运营指标，`/api/v1/admin/market-maker/metrics` 已聚合做市库存、挂单覆盖率和异常；告警中心已具备通知渠道、投递队列和发送 worker。
 后续增强：外部渠道服务商回执和专用通知模板。
 
 ### 5.2 用户与权限
@@ -633,7 +629,7 @@ MVP 可做：现有 `admin/trading/fees` 接口已经覆盖主要功能。
 
 MVP 可做：列表、详情、暂停/恢复、run-once。  
 当前已做：列表、状态、暂停/恢复、run-once、库存/报价质量指标、异常原因聚合、策略参数在线覆盖、做市收益归因和独立策略运行日志。  
-收益归因通过配置范围和做市订单前缀归集订单、成交、手续费、当前已实现盈亏和库存；策略日志通过 `market_maker_strategy_run_events` 记录执行结果、跳过原因、错误信息和 TraceId。
+收益归因通过配置范围和做市订单前缀归集订单、成交、手续费、当前已实现盈亏和库存；策略日志通过 `market_maker_strategy_run_events` 记录执行结果、跳过原因、错误信息。
 
 ### 5.11 系统运维与审计
 
@@ -646,9 +642,8 @@ MVP 可做：列表、详情、暂停/恢复、run-once。
 - WebSocket 连接数。
 - API 错误率。
 - 管理员操作审计。
-- TraceId 查询。
 
-当前已做：系统监控页已接入健康巡检、路由表、outbox backlog、后台 API 错误率、后台 API p50/p95/p99 延迟、登录失败、审批积压、Kafka lag 查询、WebSocket 连接数和 Prometheus 指标代理；告警中心已支持 `SYSTEM`、`MARKET`、`TRADING` 规则、告警事件、手动评估、确认、通知渠道、投递记录、发送 worker，以及规则/渠道/事件/投递四张表独立游标分页；审计日志页面已接入管理员操作审计、登录日志和 TraceId 全链路查询。  
+当前已做：系统监控页已接入健康巡检、路由表、outbox backlog、后台 API 错误率、后台 API p50/p95/p99 延迟、登录失败、审批积压、Kafka lag 查询、WebSocket 连接数和 Prometheus 指标代理；告警中心已支持 `SYSTEM`、`MARKET`、`TRADING` 规则、告警事件、手动评估、确认、通知渠道、投递记录、发送 worker，以及规则/渠道/事件/投递四张表独立游标分页；审计日志页面已接入管理员操作审计和登录日志。
 后续增强：接入 SMTP、Slack、PagerDuty 官方凭证适配器和外部渠道回执。
 
 ## 6. 推荐 React 技术方案
@@ -663,7 +658,7 @@ MVP 可做：列表、详情、暂停/恢复、run-once。
 - 图表：复用 `lightweight-charts` 展示价格和资金费，运营图表可用 ECharts/Recharts。
 - 图标：`lucide-react`，与现有交易端保持一致。
 - 样式：后台工作台风格，支持暗色/亮色主题。
-- API 层：统一封装 gateway route、鉴权 token、刷新 token、traceId、错误码。
+- API 层：统一封装 gateway route、鉴权 token、刷新 token、错误码。
 - Mock 层：后端未补齐前保留 mock 数据，页面先可跑通。
 
 建议页面结构：
@@ -700,7 +695,7 @@ MVP 可做：列表、详情、暂停/恢复、run-once。
 - 风险相关状态使用明确颜色：正常、警告、危险、暂停、处理中、失败。
 - 操作按钮使用图标 + tooltip；主命令保留文字。
 - 避免卡片堆叠卡片，复杂详情使用分区、tabs、抽屉。
-- 所有列表支持复制 ID、复制 traceId、导出 CSV。
+- 所有列表支持复制 ID、导出 CSV。
 
 ## 8. MVP 实施范围
 

@@ -164,10 +164,6 @@ export function operationLogs(params: {
   return request<CursorPage<UnknownRecord, "logs">>(`/api/v1/admin/audit/operations${queryString(params)}`);
 }
 
-export function traceTimeline(traceId: string, params: { limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/traces/${encodeURIComponent(traceId)}${queryString(params)}`);
-}
-
 export function approvalRequests(params: {
   status?: string;
   requesterUserId?: string;

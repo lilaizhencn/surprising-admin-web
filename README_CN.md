@@ -295,7 +295,7 @@ export SW_WALLET_ADMIN_PASSWORD='your-wallet-admin-password'
 - `GET /api/v1/admin/gateway/market-maker/pnl-attribution`
 - `GET /api/v1/admin/gateway/market-maker/strategy-logs`
 
-页面展示策略运行状态、库存占用、owned live 挂单数量、目标报价数、缺失报价数、陈旧报价数、偏离目标报价数、盘口价差、报价覆盖率、做市收益归因和策略运行日志。异常聚合覆盖无 live 报价、缺失目标报价、陈旧报价、偏离目标报价、库存超限、合约非交易状态和指标采集失败。收益归因可按 strategy、symbol、account 和窗口筛选，展示做市订单数、拒单数、Maker/Taker 成交、成交量、名义金额、净手续费、当前已实现盈亏和库存；策略日志展示执行结果、跳过原因、错误信息和 TraceId，并支持 `createdAt.desc`、`createdAt.asc` 的 `limit/cursor/sort` 游标分页。暂停、恢复和手动运行一次仍属于敏感写操作，需要 gateway 审批流放行。
+页面展示策略运行状态、库存占用、owned live 挂单数量、目标报价数、缺失报价数、陈旧报价数、偏离目标报价数、盘口价差、报价覆盖率、做市收益归因和策略运行日志。异常聚合覆盖无 live 报价、缺失目标报价、陈旧报价、偏离目标报价、库存超限、合约非交易状态和指标采集失败。收益归因可按 strategy、symbol、account 和窗口筛选，展示做市订单数、拒单数、Maker/Taker 成交、成交量、名义金额、净手续费、当前已实现盈亏和库存；策略日志展示执行结果、跳过原因、错误信息，并支持 `createdAt.desc`、`createdAt.asc` 的 `limit/cursor/sort` 游标分页。暂停、恢复和手动运行一次仍属于敏感写操作，需要 gateway 审批流放行。
 
 策略参数编辑会写入 `market_maker_strategy_overrides`，只覆盖可安全热更新的报价/风险参数：`enabled`、`baseQuantitySteps`、`marginMode`、`spreadTicks`、`levelSpacingTicks`、`maxInventorySteps`、`maxInventorySkewPpm`、`orderLevels`。账号和交易对仍由部署配置管理。保存覆盖和清除覆盖都属于敏感写操作，需要审批。
 
@@ -364,13 +364,9 @@ export ADMIN_KAFKA_BOOTSTRAP_SERVERS='kafka-1:9092,kafka-2:9092'
 
 明细查询仍通过 `trading-orders` 后台服务路由查询全量订单、成交、订单事件和撮合时间线，并支持撤单影响预览、后台单笔撤单、按筛选条件批量撤单和按 Symbol 撤单。页面也通过 `trading-trigger` 后台服务路由查询条件单全量审计和触发时间线。订单、条件单和成交审计列表均支持统一 `limit/cursor/sort` 游标分页；订单/条件单支持 `createdAt.desc`、`createdAt.asc`，成交支持 `eventTime.desc`、`eventTime.asc`。撤单写请求会进入敏感操作审批流，通过后才会转发到订单服务的 `/api/v1/admin/trading/orders/...` 接口。
 
-## 审计追踪
+## 操作审计
 
-“审计日志”页面支持 TraceId 全链路查询，调用 gateway 本地后台接口：
-
-- `GET /api/v1/admin/traces/{traceId}?limit=50`
-
-该接口使用 `admin.traces.read` 权限，聚合交易触发单、订单事件、撮合结果、成交、交易/account/risk outbox、后台操作日志和审批消费记录，并按事件时间生成排障时间线。
+“审计日志”页面展示管理员操作与登录记录，保留操作者、服务、路径、请求摘要、结果和耗时。审批记录保留申请人、审批人及消费时间；业务问题使用订单、成交和命令 ID 定位。
 
 ## 构建
 
