@@ -1,6 +1,6 @@
 import type { AuthenticatedUser, AuthSession, Instrument, UnknownRecord } from "../types";
-import { config } from "../config";
-import { adminGatewayPath, ApiError, loadSession, queryString, request, requestBlob } from "./client";
+import { positiveInt64, serializeAdminBody } from "../lib/integers";
+import { adminGatewayPath, ApiError, loadSession, queryString, request, requestBlob, requestFile } from "./client";
 
 type WalletResponse<T> = T | { code?: number; message?: string; data?: T };
 type CursorListParams = {
@@ -63,26 +63,26 @@ export function adminUsers(params: { query?: string; status?: string; limit?: nu
   }>(`/api/v1/admin/users${queryString(params)}`);
 }
 
-export function updateUserStatus(userId: number, status: string) {
-  return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${userId}/status`, { status });
+export function updateUserStatus(userId: number | string, status: string) {
+  return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/status`, { status });
 }
 
-export function replaceUserRoles(userId: number, roles: string[]) {
-  return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${userId}/roles`, { roles });
+export function replaceUserRoles(userId: number | string, roles: string[]) {
+  return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/roles`, { roles });
 }
 
-export function userSessions(userId: number, params: { active?: boolean; limit?: number } & CursorListParams = {}) {
+export function userSessions(userId: number | string, params: { active?: boolean; limit?: number } & CursorListParams = {}) {
   return request<CursorPage<UnknownRecord, "sessions">>(
-    `/api/v1/admin/users/${userId}/sessions${queryString(params)}`
+    `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/sessions${queryString(params)}`
   );
 }
 
-export function userProfile(userId: number, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/users/${userId}/profile${queryString(params)}`);
+export function userProfile(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
+  return request<UnknownRecord>(`/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/profile${queryString(params)}`);
 }
 
 export function supportUserOverview(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/support/users/${userId}/overview${queryString(params)}`);
+  return request<UnknownRecord>(`/api/v1/admin/support/users/${positiveInt64(userId, "用户 ID")}/overview${queryString(params)}`);
 }
 
 export function supportTickets(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}) {
@@ -105,9 +105,9 @@ export function createSupportTicket(userId: number | string, body: {
   assignedAdminUserId?: number;
   initialNote?: string;
 }) {
-  return request<UnknownRecord>(`/api/v1/admin/support/users/${userId}/tickets`, {
+  return request<UnknownRecord>(`/api/v1/admin/support/users/${positiveInt64(userId, "用户 ID")}/tickets`, {
     method: "POST",
-    body: JSON.stringify(body)
+    body: serializeAdminBody(body)
   });
 }
 
@@ -131,14 +131,14 @@ export function addSupportTicketNote(ticketId: number | string, body: {
 }) {
   return request<UnknownRecord>(`/api/v1/admin/support/tickets/${ticketId}/notes`, {
     method: "POST",
-    body: JSON.stringify(body)
+    body: serializeAdminBody(body)
   });
 }
 
 export function updateSupportTicketStatus(ticketId: number | string, body: { status: string; reason: string }) {
   return request<UnknownRecord>(`/api/v1/admin/support/tickets/${ticketId}/status`, {
     method: "POST",
-    body: JSON.stringify(body)
+    body: serializeAdminBody(body)
   });
 }
 
@@ -146,8 +146,8 @@ export function revokeSession(sessionId: number | string) {
   return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/sessions/${sessionId}/revoke`, {});
 }
 
-export function revokeUserSessions(userId: number) {
-  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/users/${userId}/sessions/revoke`, {});
+export function revokeUserSessions(userId: number | string) {
+  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/sessions/revoke`, {});
 }
 
 export function loginLogs(params: { userId?: string; result?: string; limit?: number } & CursorListParams) {
@@ -184,7 +184,7 @@ export function createApproval(body: {
 }, expectedUserId?: string) {
   return request<UnknownRecord>("/api/v1/admin/approvals", {
     method: "POST",
-    body: JSON.stringify(body),
+    body: serializeAdminBody(body),
     expectedUserId
   });
 }
@@ -378,7 +378,7 @@ export function complianceUsers(params: { userId?: string; kycStatus?: string; t
 }
 
 export function complianceUser(userId: number | string) {
-  return request<UnknownRecord>(`/api/v1/admin/compliance/users/${userId}`);
+  return request<UnknownRecord>(`/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}`);
 }
 
 export function complianceMfaRecoveryRequests() {
@@ -406,11 +406,11 @@ export function complianceAmlCases(params: { userId?: string; status?: string; l
 }
 
 export function updateKyc(userId: number | string, body: UnknownRecord) {
-  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${userId}/kyc`, body);
+  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}/kyc`, body);
 }
 
 export function createRiskTag(userId: number | string, body: UnknownRecord) {
-  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${userId}/risk-tags`, body);
+  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}/risk-tags`, body);
 }
 
 export function resolveRiskTag(tagId: number | string) {
@@ -418,7 +418,7 @@ export function resolveRiskTag(tagId: number | string) {
 }
 
 export function createAmlCase(userId: number | string, body: UnknownRecord) {
-  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${userId}/aml-cases`, body);
+  return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}/aml-cases`, body);
 }
 
 export function updateAmlCaseStatus(caseId: number | string, body: UnknownRecord) {
@@ -458,17 +458,9 @@ export function archiveExpiredQueryTasks(body: { olderThanDays?: number; limit?:
 }
 
 export async function downloadExportFile(exportId: number | string) {
-  const session = loadSession();
-  const response = await fetch(`${config.gatewayBaseUrl}/api/v1/admin/exports/${exportId}/download`, {
-    headers: {
-      ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {})
-    }
-  });
-  if (!response.ok) {
-    throw await blobApiError(response);
-  }
-  const blob = await response.blob();
-  const fileName = dispositionFileName(response.headers.get("Content-Disposition")) || `admin-export-${exportId}.csv`;
+  const expectedUserId = String(loadSession()?.user.userId ?? "");
+  const { blob, headers } = await requestFile(`/api/v1/admin/exports/${exportId}/download`, { expectedUserId });
+  const fileName = dispositionFileName(headers.get("Content-Disposition")) || `admin-export-${exportId}.csv`;
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -495,13 +487,13 @@ export function instruments(params: {
   return gatewayGet<CursorPage<Instrument, "instruments"> & { items?: Instrument[] }>("instrument-admin", "/list", params);
 }
 
-export function instrumentLatest(instrumentId: number, productLine?: string) {
+export function instrumentLatest(instrumentId: number | string, productLine?: string) {
   return gatewayGet<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}`, { productLine });
 }
 
 export type InstrumentChange = { changeId: string; operatorId: string; reason: string; changedAt: string; beforeValues: string | null; afterValues: string };
 
-export function instrumentChanges(instrumentId: number, productLine: string, beforeId = "0", limit = 50) {
+export function instrumentChanges(instrumentId: number | string, productLine: string, beforeId = "0", limit = 50) {
   return gatewayGet<InstrumentChange[]>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/changes`, { productLine, beforeId, limit });
 }
 
@@ -509,7 +501,7 @@ export function upsertInstrument(body: UnknownRecord, reason = "Admin configurat
   return gatewayPost<Instrument>("instrument-admin", "/upsert", body, { reason, expectedChangeId });
 }
 
-export function updateInstrumentStatus(instrumentId: number, status: string, productLine: string | undefined, reason = "Admin trading status update", expectedChangeId: unknown = 0) {
+export function updateInstrumentStatus(instrumentId: number | string, status: string, productLine: string | undefined, reason = "Admin trading status update", expectedChangeId: unknown = 0) {
   return gatewayPost<Instrument>("instrument-admin", `/${encodeURIComponent(String(instrumentId))}/status`, undefined, { status, productLine, reason, expectedChangeId });
 }
 
@@ -641,19 +633,21 @@ async function gatewayWrite<T>(
 ) {
   const requestPath = adminGatewayPath(service, path);
   const query = queryString(params);
-  const serializedBody = body === undefined ? undefined : JSON.stringify(body);
+  const serializedBody = serializeAdminBody(body);
+  const expectedUserId = String(loadSession()?.user.userId ?? "");
   const headers: Record<string, string> = {};
   const productLine = productLineParam(params);
 
   if (requiresApproval(service, path, method)) {
-    await attachApproval(headers, service, method, requestPath, query, serializedBody);
+    await attachApproval(headers, service, method, requestPath, query, serializedBody, expectedUserId);
   }
 
   return request<T>(`${requestPath}${query}`, {
     method,
     headers,
     body: serializedBody,
-    productLine
+    productLine,
+    expectedUserId
   });
 }
 
@@ -664,13 +658,15 @@ export async function adminLocalWrite<T>(
   params: Record<string, unknown> = {}
 ) {
   const query = queryString(params);
-  const serializedBody = body === undefined ? undefined : JSON.stringify(body);
+  const serializedBody = serializeAdminBody(body);
+  const expectedUserId = String(loadSession()?.user.userId ?? "");
   const headers: Record<string, string> = {};
-  await attachApproval(headers, "gateway-admin", method, requestPath, query, serializedBody);
+  await attachApproval(headers, "gateway-admin", method, requestPath, query, serializedBody, expectedUserId);
   return request<T>(`${requestPath}${query}`, {
     method,
     headers,
-    body: serializedBody
+    body: serializedBody,
+    expectedUserId
   });
 }
 
@@ -746,20 +742,6 @@ async function sha256Hex(value: string) {
 function productLineParam(params: Record<string, unknown>) {
   const value = params.productLine;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-async function blobApiError(response: Response) {
-  const text = await response.text();
-  let payload: unknown = text;
-  try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
-    payload = text;
-  }
-  const message = typeof payload === "object" && payload && "message" in payload
-    ? String((payload as { message?: unknown }).message)
-    : `${response.status} ${response.statusText}`;
-  return new ApiError(response.status, message, payload);
 }
 
 function dispositionFileName(disposition: string | null) {

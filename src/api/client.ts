@@ -1,5 +1,6 @@
 import { config } from "../config";
 import type { AuthSession } from "../types";
+import { positiveInt64 } from "../lib/integers";
 
 /** Preserve financial integers before JavaScript rounds them during JSON parsing. */
 export function parseApiJson<T>(text: string): T {
@@ -11,35 +12,60 @@ export function parseApiJson<T>(text: string): T {
 }
 
 export class ApiError extends Error {
-  readonly status: number;
-  readonly payload: unknown;
-
-  constructor(status: number, message: string, payload: unknown) {
+  constructor(readonly status: number, message: string, readonly payload: unknown) {
     super(message);
     this.name = "ApiError";
-    this.status = status;
-    this.payload = payload;
   }
 }
 
+function object(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+export function validateSession(value: unknown): AuthSession {
+  const session = object(value);
+  const user = object(session?.user);
+  const text = (value: unknown) => typeof value === "string" && value.trim().length > 0;
+  const optionalText = (value: unknown) => value == null || typeof value === "string";
+  const date = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+  if (!session || !user || !optionalText(user.username) || !optionalText(user.email)
+      || !text(user.status) || !date(user.createdAt)
+      || !Array.isArray(user.roles) || user.roles.length > 100 || !user.roles.every(text)
+      || !text(session.accessToken) || !text(session.refreshToken)
+      || !date(session.accessTokenExpiresAt) || !date(session.refreshTokenExpiresAt)
+      || Date.parse(session.refreshTokenExpiresAt as string) <= Date.now()) {
+    throw new Error("登录会话已失效，请重新登录。");
+  }
+  positiveInt64(user.userId, "登录用户 ID");
+  return session as unknown as AuthSession;
+}
+
+// When browser storage is unavailable, keep only this tab's current session in memory.
+let memorySession: AuthSession | null = null;
+let storageUnavailable = false;
 export function loadSession(): AuthSession | null {
-  const raw = localStorage.getItem(config.sessionKey);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as AuthSession;
-  } catch {
-    localStorage.removeItem(config.sessionKey);
+  if (storageUnavailable) {
+    try { return memorySession ? validateSession(memorySession) : null; } catch { memorySession = null; return null; }
+  }
+  let raw: string | null;
+  try { raw = localStorage.getItem(config.sessionKey); }
+  catch { storageUnavailable = true; return memorySession; }
+  if (!raw) { memorySession = null; return null; }
+  try { return memorySession = validateSession(parseApiJson<unknown>(raw)); }
+  catch {
+    memorySession = null;
+    try { localStorage.removeItem(config.sessionKey); } catch { /* Storage may be read-only. */ }
     return null;
   }
 }
 
 export function saveSession(session: AuthSession | null) {
-  if (!session) {
-    localStorage.removeItem(config.sessionKey);
-    window.dispatchEvent(new Event("surprising-admin.session-changed"));
-    return;
-  }
-  localStorage.setItem(config.sessionKey, JSON.stringify(session));
+  memorySession = session === null ? null : validateSession(session);
+  try {
+    if (memorySession) localStorage.setItem(config.sessionKey, JSON.stringify(memorySession));
+    else localStorage.removeItem(config.sessionKey);
+    storageUnavailable = false;
+  } catch { storageUnavailable = true; }
   window.dispatchEvent(new Event("surprising-admin.session-changed"));
 }
 
@@ -61,6 +87,9 @@ export function queryString(params: Record<string, unknown>) {
 export interface AdminRequestInit extends RequestInit {
   productLine?: string;
   expectedUserId?: string;
+  /** Deadline includes refresh, headers, body and decoding. */
+  timeoutMs?: number;
+  maxResponseBytes?: number;
 }
 
 function requireOwner(expectedUserId?: string) {
@@ -68,62 +97,118 @@ function requireOwner(expectedUserId?: string) {
     throw new ApiError(401, "登录账号已变化，请重新打开当前页面。", null);
 }
 
-export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<T> {
-  const { productLine, expectedUserId, ...requestInit } = init;
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    void promise.catch(() => {});
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function readBody(response: Response, signal: AbortSignal, maximum: number): Promise<Uint8Array<ArrayBuffer>> {
+  const tooLarge = () => new ApiError(413, "响应内容超过大小限制，请缩小查询或导出范围。", null);
+  if (Number(response.headers.get("Content-Length")) > maximum) {
+    void response.body?.cancel().catch(() => {});
+    throw tooLarge();
+  }
+  if (!response.body) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const next = await untilAborted(reader.read(), signal);
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > maximum) throw tooLarge();
+      chunks.push(next.value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    return bytes;
+  } catch (error) {
+    void reader.cancel(error).catch(() => {});
+    throw error;
+  } finally { reader.releaseLock(); }
+}
+
+function apiError(response: Response, text: string) {
+  let payload: unknown = text;
+  try { payload = text ? parseApiJson(text) : null; } catch { /* Preserve non-JSON error bodies. */ }
+  const message = typeof payload === "object" && payload && "message" in payload
+    ? String((payload as { message?: unknown }).message) : `${response.status} ${response.statusText}`;
+  return new ApiError(response.status, message, payload);
+}
+
+async function fetchBody(path: string, init: AdminRequestInit, session: AuthSession | null, signal: AbortSignal, blob: boolean, allowRefresh: boolean): Promise<{ response: Response; bytes: Uint8Array<ArrayBuffer> }> {
+  const { productLine, expectedUserId, timeoutMs: _timeout, maxResponseBytes, ...requestInit } = init;
   requireOwner(expectedUserId);
   const headers = new Headers(requestInit.headers);
-  if (!headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-  if (session?.accessToken) {
-    headers.set("Authorization", `Bearer ${session.accessToken}`);
-  }
-  if (productLine) {
-    headers.set("X-Product-Line", productLine);
-  }
-  const response = await fetch(`${config.gatewayBaseUrl}${path}`, {
-    ...requestInit,
-    headers
-  });
-  requireOwner(expectedUserId);
+  if (!blob && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
+  if (productLine) headers.set("X-Product-Line", productLine);
+  signal.throwIfAborted();
+  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}${path}`, { ...requestInit, headers, signal }), signal);
+  try { requireOwner(expectedUserId); }
+  catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
   if (response.status === 401 && allowRefresh && session?.refreshToken && !path.endsWith("/auth/refresh")) {
-    const refreshed = await refreshSession(session.refreshToken);
-    return request<T>(path, init, refreshed, false);
+    void response.body?.cancel().catch(() => {});
+    const refreshed = await untilAborted(refreshSession(session.refreshToken), signal);
+    return fetchBody(path, init, refreshed, signal, blob, false);
   }
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-  if (response.status === 204) return undefined as T;
-  const text = await response.text();
+  const bytes = await readBody(response, signal, maxResponseBytes ?? (blob ? 64 : 8) * 1024 * 1024);
   requireOwner(expectedUserId);
-  return text ? parseApiJson<T>(text) : undefined as T;
+  if (!response.ok) throw apiError(response, new TextDecoder().decode(bytes));
+  return { response, bytes };
+}
+
+async function withDeadline<T>(init: AdminRequestInit, fallback: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const timeout = init.timeoutMs ?? fallback;
+  if (!Number.isFinite(timeout) || timeout <= 0) throw new Error("请求截止时间必须为正数。");
+  if (init.maxResponseBytes !== undefined && (!Number.isSafeInteger(init.maxResponseBytes) || init.maxResponseBytes <= 0)) throw new Error("响应大小限制必须为正整数。");
+  const controller = new AbortController();
+  const expiresAt = performance.now() + timeout;
+  const abort = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) abort();
+  else init.signal?.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => controller.abort(new ApiError(408, "请求超时。写操作结果可能尚未确认，请先查询状态后再操作。", null)), timeout);
+  try {
+    controller.signal.throwIfAborted();
+    const result = await untilAborted(run(controller.signal), controller.signal);
+    if (performance.now() >= expiresAt && !controller.signal.aborted) controller.abort(new ApiError(408, "请求超时，请先核对操作状态。", null));
+    controller.signal.throwIfAborted();
+    return result;
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", abort);
+  }
+}
+
+export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<T> {
+  init = { ...init, expectedUserId: init.expectedUserId ?? (session ? String(session.user.userId) : undefined) };
+  return withDeadline(init, 15_000, async signal => {
+    const { bytes } = await fetchBody(path, init, session, signal, false, allowRefresh);
+    const text = new TextDecoder().decode(bytes);
+    return text ? parseApiJson<T>(text) : undefined as T;
+  });
+}
+
+/** File downloads share authentication, ownership, size and deadline checks. */
+export async function requestFile(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<{ blob: Blob; headers: Headers }> {
+  init = { ...init, expectedUserId: init.expectedUserId ?? (session ? String(session.user.userId) : undefined) };
+  return withDeadline(init, 120_000, async signal => {
+    const { response, bytes } = await fetchBody(path, init, session, signal, true, allowRefresh);
+    return { blob: new Blob([bytes], { type: response.headers.get("Content-Type") ?? "" }), headers: response.headers };
+  });
 }
 
 export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<Blob> {
-  const { productLine, expectedUserId, ...requestInit } = init;
-  requireOwner(expectedUserId);
-  const headers = new Headers(requestInit.headers);
-  if (productLine) {
-    headers.set("X-Product-Line", productLine);
-  }
-  if (session?.accessToken) {
-    headers.set("Authorization", `Bearer ${session.accessToken}`);
-  }
-  const response = await fetch(`${config.gatewayBaseUrl}${path}`, {
-    ...requestInit,
-    headers
-  });
-  requireOwner(expectedUserId);
-  if (response.status === 401 && allowRefresh && session?.refreshToken && !path.endsWith("/auth/refresh")) {
-    const refreshed = await refreshSession(session.refreshToken);
-    return requestBlob(path, init, refreshed, false);
-  }
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-  const blob = await response.blob();
-  requireOwner(expectedUserId);
-  return blob;
+  return (await requestFile(path, init, session, allowRefresh)).blob;
 }
 
 let refreshInFlight: { token: string; promise: Promise<AuthSession> } | null = null;
@@ -135,34 +220,20 @@ function refreshSession(refreshToken: string): Promise<AuthSession> {
   refreshInFlight = { token: refreshToken, promise };
   return promise;
 }
+
 async function refreshSessionOnce(refreshToken: string): Promise<AuthSession> {
   const current = () => loadSession()?.refreshToken === refreshToken;
   if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
-  const response = await fetch(`${config.gatewayBaseUrl}/api/v1/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken })
-  });
-  if (!response.ok) {
-    if (current()) saveSession(null);
-    throw await toApiError(response);
-  }
-  const next = parseApiJson<AuthSession>(await response.text());
-  if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
-  saveSession(next);
-  return next;
-}
-
-async function toApiError(response: Response) {
-  const text = await response.text();
-  let payload: unknown = text;
   try {
-    payload = text ? JSON.parse(text) : null;
-  } catch {
-    payload = text;
+    const next = validateSession(await request<unknown>("/api/v1/auth/refresh", {
+      method: "POST", body: JSON.stringify({ refreshToken })
+    }, null, false));
+    if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
+    if (String(next.user.userId) !== String(loadSession()?.user.userId)) throw new Error("刷新身份与当前账号不一致，请重新登录。");
+    saveSession(next);
+    return next;
+  } catch (error) {
+    if (error instanceof ApiError && (error.status === 401 || error.status === 403) && current()) saveSession(null);
+    throw error;
   }
-  const message = typeof payload === "object" && payload && "message" in payload
-    ? String((payload as { message?: unknown }).message)
-    : `${response.status} ${response.statusText}`;
-  return new ApiError(response.status, message, payload);
 }

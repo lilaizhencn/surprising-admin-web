@@ -27,9 +27,11 @@ export type RouteKey =
 export type StatusTone = "ok" | "warn" | "danger" | "muted";
 export type ProductLine = "SPOT" | "LINEAR_PERPETUAL" | "INVERSE_PERPETUAL" | "LINEAR_DELIVERY" | "INVERSE_DELIVERY" | "OPTION";
 
+export type IntegerValue = number | string;
+
 export interface AuthenticatedUser {
-  userId: number;
-  username: string;
+  userId: IntegerValue;
+  username?: string | null;
   email?: string | null;
   status: string;
   roles: string[];
@@ -51,14 +53,14 @@ export interface QueryState<T> {
 }
 
 export interface Instrument {
-  instrumentId: number;
-  baseAssetId: number;
-  quoteAssetId: number;
-  settleAssetId: number;
-  contractValueAssetId: number;
+  instrumentId: IntegerValue;
+  baseAssetId: IntegerValue;
+  quoteAssetId: IntegerValue;
+  settleAssetId: IntegerValue;
+  contractValueAssetId: IntegerValue;
   symbol: string;
-  changeId?: number;
-  lastChangeId?: number;
+  changeId?: IntegerValue;
+  lastChangeId?: IntegerValue;
   instrumentType?: string;
   contractType?: string;
   baseAsset?: string;
@@ -73,7 +75,7 @@ export interface Instrument {
   deliveryTime?: string | null;
   underlyingInstrumentId?: string | null;
   underlyingProductLine?: string | null;
-  strikePriceUnits?: number | null;
+  strikePriceUnits?: IntegerValue | null;
   optionType?: string | null;
   optionExerciseStyle?: string | null;
   settlementMethod?: string | null;
@@ -83,17 +85,17 @@ export interface Instrument {
 }
 
 export interface OrderRecord {
-  orderId: number;
-  userId: number;
+  orderId: IntegerValue;
+  userId: IntegerValue;
   clientOrderId?: string;
   instrumentId: string;
   side: string;
   orderType: string;
   timeInForce: string;
-  priceTicks: number;
-  quantitySteps: number;
-  executedQuantitySteps: number;
-  remainingQuantitySteps: number;
+  priceTicks: IntegerValue;
+  quantitySteps: IntegerValue;
+  executedQuantitySteps: IntegerValue;
+  remainingQuantitySteps: IntegerValue;
   marginMode: string;
   positionSide?: string;
   status: string;
@@ -104,25 +106,25 @@ export interface OrderRecord {
 }
 
 export interface BalanceRecord {
-  userId: number;
+  userId: IntegerValue;
   accountType?: string;
   asset: string;
-  availableUnits: number;
-  lockedUnits: number;
-  equityUnits: number;
+  availableUnits: IntegerValue;
+  lockedUnits: IntegerValue;
+  equityUnits: IntegerValue;
   updatedAt: string;
   [key: string]: unknown;
 }
 
 export interface PositionRecord {
-  userId: number;
+  userId: IntegerValue;
   instrumentId: string;
-  instrumentChangeId: number;
+  instrumentChangeId: IntegerValue;
   marginMode: string;
   positionSide: string;
-  signedQuantitySteps: number;
-  entryPriceTicks: number;
-  realizedPnlUnits: number;
+  signedQuantitySteps: IntegerValue;
+  entryPriceTicks: IntegerValue;
+  realizedPnlUnits: IntegerValue;
   updatedAt: string;
   [key: string]: unknown;
 }

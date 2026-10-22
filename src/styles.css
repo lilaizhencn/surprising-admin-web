@@ -140,6 +140,9 @@ p {
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
   padding: 18px 14px;
   border-right: 1px solid #1d2834;
   background: #0e141b;
@@ -814,6 +817,8 @@ tr.clickable:hover td {
     position: static;
     width: 100%;
     height: auto;
+    overflow: visible;
+    overscroll-behavior-y: auto;
     padding: 12px;
     border-right: 0;
     border-bottom: 1px solid #1d2834;

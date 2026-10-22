@@ -77,7 +77,7 @@ function validateSettings(value: UnknownRecord, path = "") {
   }
 }
 
-export function MakerBusinessSettings({ productLine, instrumentId, reason }: { productLine?: string; instrumentId: number; reason: string }) {
+export function MakerBusinessSettings({ productLine, instrumentId, reason }: { productLine?: string; instrumentId: number | string; reason: string }) {
   const [settings, setSettings] = useState<UnknownRecord | null>(null);
   const [version, setVersion] = useState<unknown>(0);
   const [error, setError] = useState("");

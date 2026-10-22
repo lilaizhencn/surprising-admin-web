@@ -1,10 +1,6 @@
+import { installConfigFixture } from "./configFixture";
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
-mock.module("../src/config", () => ({
-  config: {
-    gatewayBaseUrl: "http://qa.invalid",
-    sessionKey: "surprising-admin.session",
-  },
-}));
+installConfigFixture();
 const { c2cReply, c2cReceipt, c2cHistory, c2cUnits, mergeC2cMessages, parseC2cMessage } =
   await import("../src/api/c2c");
 const { saveSession } = await import("../src/api/client");
@@ -44,7 +40,7 @@ beforeEach(() => {
       roles: ["ADMIN"],
       username: "QA",
       status: "NORMAL",
-      createdAt: "",
+      createdAt: "2026-10-20T00:00:00Z",
     },
     accessToken: "qa-9",
     refreshToken: "qa-refresh",

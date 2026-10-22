@@ -1,5 +1,6 @@
+import { installConfigFixture } from "./configFixture";
 import { afterEach, beforeEach, expect, mock, test } from "bun:test";
-mock.module("../src/config", () => ({ config: { gatewayBaseUrl: "http://qa.invalid", sessionKey: "surprising-admin.session" } }));
+installConfigFixture();
 const { c2cBusinessRead, c2cBusinessWrite } = await import("../src/api/c2cBusiness");
 const { saveSession } = await import("../src/api/client");
 const { setApprovalRequestHandler } = await import("../src/api/admin");
@@ -8,7 +9,7 @@ const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{statu
 beforeEach(()=>{
  const values=new Map<string,string>();
  Object.assign(globalThis,{window:new EventTarget(),localStorage:{getItem:(key:string)=>values.get(key)??null,setItem:(key:string,value:string)=>values.set(key,value),removeItem:(key:string)=>values.delete(key)}});
- saveSession({accessToken:"qa-9",refreshToken:"refresh-9",accessTokenExpiresAt:"2099-01-01T00:00:00Z",refreshTokenExpiresAt:"2099-01-01T00:00:00Z",user:{userId:9,roles:["ADMIN"],username:"QA",status:"NORMAL",createdAt:""}});
+ saveSession({accessToken:"qa-9",refreshToken:"refresh-9",accessTokenExpiresAt:"2099-01-01T00:00:00Z",refreshTokenExpiresAt:"2099-01-01T00:00:00Z",user:{userId:9,roles:["ADMIN"],username:"QA",status:"NORMAL",createdAt:"2026-10-20T00:00:00Z"}});
 });
 afterEach(()=>{globalThis.fetch=originalFetch;setApprovalRequestHandler(null);});
 test("C2C policy approval binds the original PUT body and administrator",async()=>{

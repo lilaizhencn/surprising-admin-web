@@ -3,7 +3,7 @@ import { request } from "./api/client";
 import { adminLocalWrite } from "./api/admin";
 
 export interface Asset {
-  assetId: number; asset: string; displayName: string; logoUrl: string; scaleUnits: number;
+  assetId: number; asset: string; displayName: string; logoUrl: string; scaleUnits: number | string;
   listed: boolean; tradingEnabled: boolean; revision: number;
 }
 interface Network {
@@ -103,7 +103,7 @@ export function AssetsPage() {
         <label>币种代码<input required maxLength={20} pattern="[A-Z0-9]{2,20}" disabled={Boolean(selectedId)} value={asset.asset} onChange={e => setAsset({ ...asset, asset: e.target.value.toUpperCase() })} /></label>
         <label>显示名称<input required maxLength={100} value={asset.displayName} onChange={e => setAsset({ ...asset, displayName: e.target.value })} /></label>
         <label>Logo 地址<input maxLength={500} placeholder="/assets/coins/btc.svg 或 HTTPS 地址" value={asset.logoUrl} onChange={e => setAsset({ ...asset, logoUrl: e.target.value })} /></label>
-        <label>账务小数位<select disabled={Boolean(selectedId)} value={Math.round(Math.log10(asset.scaleUnits))} onChange={e => setAsset({ ...asset, scaleUnits: 10 ** Number(e.target.value) })}>{Array.from({ length: 19 }, (_,i) => <option key={i} value={i}>{i}</option>)}</select></label>
+        <label>账务小数位<select disabled={Boolean(selectedId)} value={Math.round(Math.log10(Number(asset.scaleUnits)))} onChange={e => setAsset({ ...asset, scaleUnits: (10n ** BigInt(e.target.value)).toString() })}>{Array.from({ length: 19 }, (_,i) => <option key={i} value={i}>{i}</option>)}</select></label>
       </div><div className="checkbox-grid">
         <label><input type="checkbox" checked={asset.listed} onChange={e => setAsset({ ...asset, listed: e.target.checked, tradingEnabled: e.target.checked && asset.tradingEnabled })} />币种上线</label>
         <label><input type="checkbox" disabled={!asset.listed} checked={asset.tradingEnabled} onChange={e => setAsset({ ...asset, tradingEnabled: e.target.checked })} />允许配置交易市场</label>
