@@ -1,7 +1,8 @@
 import { parseApiJson } from "../api/client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, walletFinanceSummary, walletOperationsOverview, walletOperationAddresses, walletOperationBalances, walletOperationExceptions, walletFinanceDeposits, walletFinanceWithdrawals, walletFinanceWithdrawalReviews, approveWalletWithdrawal, rejectWalletWithdrawal, gatewayPatch } from "../api/admin";
+import { CustodyWithdrawalsPanel } from "../features/CustodyWithdrawalsPanel";
 import { Search } from "lucide-react";
 import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TwoColumn, KeyValue } from "../components/AdminUi";
 import { errorMessage, records, fieldText } from "../lib/adminData";
@@ -35,6 +36,8 @@ const WALLET_OPERATION_EXCEPTION_STATUSES = [
 ];
 
 export default function WalletPage() {
+  const reads = useRef<AbortController | null>(null);
+  const [withdrawalsRevision, setWithdrawalsRevision] = useState(0);
   const [dashboard, setDashboard] = useState<WalletDashboard | null>(null);
   const [admin, setAdmin] = useState<WalletAdminConfig | null>(null);
   const [finance, setFinance] = useState<UnknownRecord | null>(null);
@@ -119,9 +122,13 @@ export default function WalletPage() {
     nextWithdrawalCursor = withdrawalFilters.withdrawalCursor,
     nextReviewCursor = withdrawalFilters.reviewCursor
   ) {
+    reads.current?.abort();
+    const controller = new AbortController();
+    reads.current = controller;
     setLoading(true);
     setError("");
     try {
+      setDashboard(null); setAdmin(null); setFinance(null); setOperations(null);
       const [
         dashboardResponse,
         adminResponse,
@@ -134,20 +141,20 @@ export default function WalletPage() {
         withdrawalResponse,
         reviewResponse
       ] = await Promise.all([
-        gatewayGet<WalletResponse<WalletDashboard>>("wallet", "/dashboard", { limit: 200 }),
-        gatewayGet<WalletResponse<WalletAdminConfig>>("wallet-admin", "/config", { limit: 200 }),
+        gatewayGet<WalletResponse<WalletDashboard>>("wallet", "/dashboard", { limit: 200 }, controller.signal),
+        gatewayGet<WalletResponse<WalletAdminConfig>>("wallet-admin", "/config", { limit: 200 }, controller.signal),
         walletFinanceSummary({
           chain: withdrawalFilters.chain,
           assetSymbol: withdrawalFilters.assetSymbol,
           windowHours: 24,
           limit: 100
-        }),
+        }, controller.signal),
         walletOperationsOverview({
           chain: operationFilters.chain,
           assetSymbol: operationFilters.assetSymbol,
           windowHours: 24,
           limit: Number(operationFilters.limit) || 100
-        }),
+        }, controller.signal),
         walletOperationAddresses({
           chain: operationFilters.chain,
           assetSymbol: operationFilters.assetSymbol,
@@ -157,7 +164,7 @@ export default function WalletPage() {
           limit: Number(operationFilters.limit) || 100,
           cursor: nextAddressCursor,
           sort: operationFilters.sort
-        }),
+        }, controller.signal),
         walletOperationBalances({
           chain: operationFilters.chain,
           assetSymbol: operationFilters.assetSymbol,
@@ -166,7 +173,7 @@ export default function WalletPage() {
           limit: Number(operationFilters.limit) || 100,
           cursor: nextBalanceCursor,
           sort: operationFilters.sort
-        }),
+        }, controller.signal),
         walletOperationExceptions({
           eventType: operationFilters.eventType,
           chain: operationFilters.chain,
@@ -175,7 +182,7 @@ export default function WalletPage() {
           limit: Number(operationFilters.limit) || 100,
           cursor: nextExceptionCursor,
           sort: operationFilters.sort
-        }),
+        }, controller.signal),
         walletFinanceDeposits({
           chain: withdrawalFilters.chain,
           assetSymbol: withdrawalFilters.assetSymbol,
@@ -184,7 +191,7 @@ export default function WalletPage() {
           limit: Number(withdrawalFilters.limit) || 100,
           cursor: nextDepositCursor,
           sort: withdrawalFilters.sort
-        }),
+        }, controller.signal),
         walletFinanceWithdrawals({
           chain: withdrawalFilters.chain,
           assetSymbol: withdrawalFilters.assetSymbol,
@@ -194,7 +201,7 @@ export default function WalletPage() {
           limit: Number(withdrawalFilters.limit) || 100,
           cursor: nextWithdrawalCursor,
           sort: withdrawalFilters.sort
-        }),
+        }, controller.signal),
         walletFinanceWithdrawalReviews({
           chain: withdrawalFilters.chain,
           assetSymbol: withdrawalFilters.assetSymbol,
@@ -205,8 +212,9 @@ export default function WalletPage() {
           limit: Number(withdrawalFilters.limit) || 100,
           cursor: nextReviewCursor,
           sort: withdrawalFilters.reviewSort
-        })
+        }, controller.signal)
       ]);
+      if (controller.signal.aborted) return;
       const nextDashboard = unwrapWallet(dashboardResponse);
       const nextAdmin = unwrapWallet(adminResponse);
       const tableNames = walletTableNames(nextAdmin);
@@ -248,9 +256,9 @@ export default function WalletPage() {
       setSelectedRow(null);
       setUpdateJson("{}");
     } catch (err) {
-      setError(errorMessage(err));
+      if (!controller.signal.aborted) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }
 
@@ -337,7 +345,7 @@ export default function WalletPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => reads.current?.abort(); }, []);
 
   const runtime = (dashboard?.runtime ?? {}) as UnknownRecord;
   const counts = (runtime.counts ?? {}) as UnknownRecord;
@@ -349,27 +357,29 @@ export default function WalletPage() {
   const editableColumns = walletEditableColumns(admin, selectedTable);
 
   return (
-    <Page title="钱包运营" onRefresh={load} loading={loading} error={error}>
+    <Page title="钱包运营" onRefresh={async () => { setWithdrawalsRevision(value => value + 1); await load(); }} loading={loading} error={error}>
+      <CustodyWithdrawalsPanel refreshKey={withdrawalsRevision}/>
+      {loading || !dashboard || !admin || !finance || !operations ? <Panel title="托管钱包连接状态"><p role="status">{loading ? "正在同步托管钱包运营数据…" : "托管钱包运营数据尚未就绪，平台提现申请可在上方独立查询。"}</p></Panel> : <>
       <div className="metrics">
-        <Metric label="启用链" value={counts.enabledChains ?? 0} tone="ok" />
-        <Metric label="启用 Token" value={counts.enabledTokens ?? 0} tone="ok" />
-        <Metric label="RPC 节点" value={counts.enabledRpcNodes ?? 0} tone="warn" />
-        <Metric label="地址数" value={counts.addresses ?? 0} tone="ok" />
-        <Metric label="充值记录" value={counts.deposits ?? 0} tone="ok" />
-        <Metric label="提现记录" value={counts.withdrawals ?? 0} tone="warn" />
+        <Metric label="启用链" value={counts.enabledChains ?? "—"} tone="ok" />
+        <Metric label="启用 Token" value={counts.enabledTokens ?? "—"} tone="ok" />
+        <Metric label="RPC 节点" value={counts.enabledRpcNodes ?? "—"} tone="warn" />
+        <Metric label="地址数" value={counts.addresses ?? "—"} tone="ok" />
+        <Metric label="充值记录" value={counts.deposits ?? "—"} tone="ok" />
+        <Metric label="提现记录" value={counts.withdrawals ?? "—"} tone="warn" />
       </div>
 
       <Panel title="链上运营总览">
         <div className="stack">
           <div className="metrics">
-            <Metric label="启用链" value={operationTotals.enabled_chain_count ?? 0} tone="ok" />
-            <Metric label="活跃资产" value={operationTotals.active_asset_count ?? 0} tone="ok" />
-            <Metric label="RPC 节点" value={operationTotals.enabled_rpc_node_count ?? 0} tone="warn" />
-            <Metric label="用户地址" value={operationTotals.user_address_count ?? 0} tone="ok" />
-            <Metric label="热钱包" value={operationTotals.hot_wallet_count ?? 0} tone="warn" />
-            <Metric label="账本总额" value={operationTotals.total_balance ?? "0"} tone="ok" />
-            <Metric label="未入账充值" value={operationTotals.pending_credit_deposit_count ?? 0} tone="danger" />
-            <Metric label="异常提现" value={operationTotals.exception_withdrawal_count ?? 0} tone="danger" />
+            <Metric label="启用链" value={operationTotals.enabled_chain_count ?? "—"} tone="ok" />
+            <Metric label="活跃资产" value={operationTotals.active_asset_count ?? "—"} tone="ok" />
+            <Metric label="RPC 节点" value={operationTotals.enabled_rpc_node_count ?? "—"} tone="warn" />
+            <Metric label="用户地址" value={operationTotals.user_address_count ?? "—"} tone="ok" />
+            <Metric label="热钱包" value={operationTotals.hot_wallet_count ?? "—"} tone="warn" />
+            <Metric label="账本总额" value={operationTotals.total_balance ?? "—"} tone="ok" />
+            <Metric label="未入账充值" value={operationTotals.pending_credit_deposit_count ?? "—"} tone="danger" />
+            <Metric label="异常提现" value={operationTotals.exception_withdrawal_count ?? "—"} tone="danger" />
           </div>
           <div className="filters compact">
             <TextFilter label="Chain" value={operationFilters.chain} onChange={(value) => updateOperationFilters({ chain: value.toUpperCase() })} />
@@ -421,10 +431,10 @@ export default function WalletPage() {
       <Panel title="资金审核">
         <div className="stack">
           <div className="metrics">
-            <Metric label="24h 充值" value={financeTotals.deposit_amount ?? "0"} tone="ok" />
-            <Metric label="24h 提现" value={financeTotals.withdrawal_amount ?? "0"} tone="warn" />
-            <Metric label="冻结余额" value={financeTotals.locked_balance ?? "0"} tone="warn" />
-            <Metric label="待审提现" value={financeTotals.pending_review_count ?? 0} tone="danger" />
+            <Metric label="24h 充值" value={financeTotals.deposit_amount ?? "—"} tone="ok" />
+            <Metric label="24h 提现" value={financeTotals.withdrawal_amount ?? "—"} tone="warn" />
+            <Metric label="冻结余额" value={financeTotals.locked_balance ?? "—"} tone="warn" />
+            <Metric label="待审提现" value={financeTotals.pending_review_count ?? "—"} tone="danger" />
           </div>
           <div className="filters compact">
             <TextFilter label="Chain" value={withdrawalFilters.chain} onChange={(value) => updateWithdrawalFilters({ chain: value.toUpperCase() })} />
@@ -650,6 +660,7 @@ export default function WalletPage() {
           </div>
         </div>
       </Panel>
+      </> }
     </Page>
   );
 }

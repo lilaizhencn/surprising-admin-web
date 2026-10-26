@@ -4,6 +4,7 @@ const identityFields = [
   "id",
   "orderId",
   "triggerOrderId",
+  "withdrawalId",
   "exportId",
   "queryTaskId",
   "alertEventId",
@@ -19,6 +20,11 @@ const identityFields = [
   "userId",
 ]
 const columnLabels: Readonly<Record<string, string>> = {
+  withdrawalId: "提现申请 ID",
+  assetSymbol: "资产",
+  chain: "网络",
+  amount: "金额",
+  toAddress: "收款地址",
   userId: "用户 ID",
   username: "用户名",
   email: "邮箱",

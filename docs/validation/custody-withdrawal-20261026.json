@@ -1,0 +1,126 @@
+{
+  "browser": "153.0.8010.12",
+  "checks": [
+    "wallet service failure shows no fake metrics; platform withdrawals independently retry, preserve exact IDs/amounts and open focused complete details",
+    "blank reason and cancelled confirmation do not POST; exact target confirmation and existing approval binding are retained; unknown write result requires a fresh read",
+    "approval/rejection/retry use the original UUID and backend state transitions; cancelled stale status reads cannot replace the selected status",
+    "a captured known response refreshes the original status list and clears a request that no longer belongs to the current filter",
+    "completed requests have no mutation controls; scoped search and malformed-response retry preserve honest empty/error states",
+    "1440/390/320px light and dark layouts retain complete request details, readable integer fields and accessible review controls",
+    "complete custody read responses restore the original operations view, with real zero values and independent query controls"
+  ],
+  "errors": [],
+  "samples": [
+    {
+      "second": 0,
+      "Nodes": 1956,
+      "TaskDuration": 1.6e-05,
+      "JSHeapUsedSize": 17021812,
+      "requests": 56
+    },
+    {
+      "second": 10,
+      "Nodes": 1956,
+      "TaskDuration": 0.002172,
+      "JSHeapUsedSize": 17021812,
+      "requests": 56
+    },
+    {
+      "second": 20,
+      "Nodes": 1956,
+      "TaskDuration": 0.002513,
+      "JSHeapUsedSize": 17021812,
+      "requests": 56
+    },
+    {
+      "second": 30,
+      "Nodes": 1894,
+      "TaskDuration": 0.025805,
+      "JSHeapUsedSize": 16793116,
+      "requests": 56
+    },
+    {
+      "second": 40,
+      "Nodes": 1894,
+      "TaskDuration": 0.025918,
+      "JSHeapUsedSize": 16793116,
+      "requests": 56
+    },
+    {
+      "second": 50,
+      "Nodes": 1894,
+      "TaskDuration": 0.026042,
+      "JSHeapUsedSize": 16793116,
+      "requests": 56
+    },
+    {
+      "second": 60,
+      "Nodes": 1894,
+      "TaskDuration": 0.026933,
+      "JSHeapUsedSize": 16793584,
+      "requests": 56
+    }
+  ],
+  "limitations": [
+    "All HTTP responses intercepted; no real approvals, wallet, funds, debit/refund or blockchain recovery executed.",
+    "The legacy custody operations read/write flows were not live-verified."
+  ],
+  "requestCounts": {
+    "GET /api/v1/admin/wallet/withdrawals": 12,
+    "GET /api/v1/admin/gateway/wallet/dashboard": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/config": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/finance/summary": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/operations/overview": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/operations/addresses": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/operations/balances": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/operations/exceptions": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/finance/deposits": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/finance/withdrawals": 4,
+    "GET /api/v1/admin/gateway/wallet-admin/finance/withdrawal-reviews": 4,
+    "POST /api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/approve": 1,
+    "POST /api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/reject": 1,
+    "POST /api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/retry": 2
+  },
+  "writes": [
+    {
+      "path": "/api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/approve",
+      "body": "{\"reason\":\"已核对用户、金额、网络与完整收款地址；本地验收不执行资金操作\"}",
+      "reference": null,
+      "approvalId": "ui-approved-withdrawal"
+    },
+    {
+      "path": "/api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/reject",
+      "body": "{\"reason\":\"第二次仅核对原申请的失败反馈\"}",
+      "reference": null,
+      "approvalId": "ui-approved-reject"
+    },
+    {
+      "path": "/api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/retry",
+      "body": "{\"reason\":\"核对后重试原申请，不创建新的提现\"}",
+      "reference": null,
+      "approvalId": "ui-approved-retry"
+    },
+    {
+      "path": "/api/v1/admin/wallet/withdrawals/11111111-1111-4111-8111-111111111111/retry",
+      "body": "{\"reason\":\"核对成功响应仅刷新原申请状态\"}",
+      "reference": null,
+      "approvalId": "ui-approved-known-response"
+    }
+  ],
+  "commands": {
+    "npm run lint": "exit 0",
+    "bun run test": "114 passed, 0 failed; 10 files",
+    "npm run build": "exit 0",
+    "browser": "7 checks; 0 uncaught/unexpected console errors"
+  },
+  "screenshots": [
+    "platform-with-legacy-read-mobile-dark.png",
+    "platform-withdrawal-approval-mobile-light.png",
+    "platform-withdrawal-desktop-dark.png",
+    "platform-withdrawal-detail-desktop-light.png",
+    "platform-withdrawal-detail-mobile-dark.png",
+    "platform-withdrawal-detail-mobile-light.png",
+    "platform-withdrawal-mobile-320-dark.png"
+  ],
+  "artifactDirectory": "/Users/atomex/.codex/artifacts/surprising-withdrawal-20261026/admin"
+}

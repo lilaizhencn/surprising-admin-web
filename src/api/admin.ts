@@ -522,8 +522,8 @@ export function walletFinanceSummary(params: {
   assetSymbol?: string;
   windowHours?: number;
   limit?: number;
-} = {}) {
-  return gatewayGet<WalletResponse<UnknownRecord>>("wallet-admin", "/finance/summary", params);
+} = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<UnknownRecord>>("wallet-admin", "/finance/summary", params, signal);
 }
 
 export function walletFinanceDeposits(params: {
@@ -532,8 +532,8 @@ export function walletFinanceDeposits(params: {
   status?: string;
   credited?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"deposits">>>("wallet-admin", "/finance/deposits", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"deposits">>>("wallet-admin", "/finance/deposits", params, signal);
 }
 
 export function walletFinanceWithdrawals(params: {
@@ -543,8 +543,8 @@ export function walletFinanceWithdrawals(params: {
   userId?: string;
   orderNo?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"withdrawals">>>("wallet-admin", "/finance/withdrawals", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"withdrawals">>>("wallet-admin", "/finance/withdrawals", params, signal);
 }
 
 export function walletFinanceWithdrawalReviews(params: {
@@ -555,8 +555,8 @@ export function walletFinanceWithdrawalReviews(params: {
   userId?: string;
   orderNo?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"reviews">>>("wallet-admin", "/finance/withdrawal-reviews", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"reviews">>>("wallet-admin", "/finance/withdrawal-reviews", params, signal);
 }
 
 export function walletOperationsOverview(params: {
@@ -564,8 +564,8 @@ export function walletOperationsOverview(params: {
   assetSymbol?: string;
   windowHours?: number;
   limit?: number;
-} = {}) {
-  return gatewayGet<WalletResponse<UnknownRecord>>("wallet-admin", "/operations/overview", params);
+} = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<UnknownRecord>>("wallet-admin", "/operations/overview", params, signal);
 }
 
 export function walletOperationAddresses(params: {
@@ -576,8 +576,8 @@ export function walletOperationAddresses(params: {
   enabled?: string;
   address?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"addresses">>>("wallet-admin", "/operations/addresses", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"addresses">>>("wallet-admin", "/operations/addresses", params, signal);
 }
 
 export function walletOperationBalances(params: {
@@ -586,8 +586,8 @@ export function walletOperationBalances(params: {
   userId?: string;
   nonZeroOnly?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"balances">>>("wallet-admin", "/operations/balances", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"balances">>>("wallet-admin", "/operations/balances", params, signal);
 }
 
 export function walletOperationExceptions(params: {
@@ -596,8 +596,8 @@ export function walletOperationExceptions(params: {
   assetSymbol?: string;
   status?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<WalletResponse<WalletCursorPage<"events">>>("wallet-admin", "/operations/exceptions", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<WalletResponse<WalletCursorPage<"events">>>("wallet-admin", "/operations/exceptions", params, signal);
 }
 
 export function approveWalletWithdrawal(chain: string, orderNo: string, reason: string) {

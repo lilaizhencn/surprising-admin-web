@@ -1,0 +1,147 @@
+.custody-withdrawals {
+  min-width: 0;
+}
+.custody-withdrawals-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 18px;
+  color: var(--color-ink-muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.custody-withdrawals-description > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--color-primary);
+}
+.custody-withdrawals-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.custody-withdrawals-fields .filters {
+  margin: 0;
+}
+.custody-withdrawal-search {
+  flex: 1 1 240px;
+}
+.custody-withdrawal-search > div {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.custody-withdrawal-search svg {
+  position: absolute;
+  left: 10px;
+  pointer-events: none;
+}
+.custody-withdrawal-search input {
+  padding-left: 34px;
+  width: 100%;
+}
+.custody-withdrawals-count {
+  color: var(--color-ink-subtle);
+  font-size: 12px;
+  margin: 0;
+  line-height: 1.7;
+}
+.custody-withdrawal-detail {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--color-surface);
+  min-width: 0;
+  scroll-margin-top: 90px;
+}
+.custody-withdrawal-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.custody-withdrawal-detail-heading h4 {
+  margin: 0;
+  font-size: 15px;
+}
+.custody-withdrawal-detail > p {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  line-height: 1.7;
+}
+.custody-withdrawal-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 16px 0;
+}
+.custody-withdrawal-facts > div {
+  min-width: 0;
+}
+.custody-withdrawal-facts dd {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.custody-withdrawal-review {
+  border-top: 1px solid var(--color-border-soft);
+  padding-top: 16px;
+}
+.custody-withdrawal-review label {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-ink-muted);
+}
+.custody-withdrawal-review textarea {
+  width: 100%;
+  resize: vertical;
+}
+.custody-withdrawal-review p {
+  color: var(--color-ink-subtle);
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 600px) {
+  .custody-withdrawal-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .custody-withdrawal-detail {
+    padding: 14px;
+  }
+  .custody-withdrawal-review .button-row > button {
+    flex: 1;
+    min-height: 44px;
+  }
+}
+
+.custody-withdrawal-facts {
+  display: grid;
+  gap: 14px;
+}
+.custody-withdrawal-facts dt {
+  color: var(--color-ink-subtle);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.custody-withdrawal-facts dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+}
+.custody-withdrawal-facts > div[data-wide] {
+  grid-column: 1 / -1;
+}
+
+.custody-withdrawal-audit {
+  padding: 12px 0;
+  border-top: 1px solid var(--color-border-soft);
+  color: var(--color-ink-muted);
+  font-size: 13px;
+}
+.custody-withdrawal-audit summary {
+  cursor: pointer;
+  padding: 6px 0;
+}
