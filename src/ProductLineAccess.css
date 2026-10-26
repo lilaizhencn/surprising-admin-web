@@ -14,7 +14,7 @@
   .product-line-access tr {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    border: 1px solid var(--border, #263646);
+    border: 1px solid var(--border, var(--color-border-soft));
     border-radius: 8px;
     padding: 8px;
   }

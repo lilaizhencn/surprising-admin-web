@@ -11,7 +11,7 @@ export function Page({ title, children, onRefresh, loading, error, description }
           <h2>{title}</h2>
           <p>{description ?? "按权限维护业务配置，操作变更留有记录。"}</p>
         </div>
-        {onRefresh && <button onClick={() => void onRefresh()} disabled={loading}><RefreshCw size={16} />刷新</button>}
+        {onRefresh && <button onClick={() => void onRefresh()} disabled={loading} aria-busy={loading}><RefreshCw size={16} className={loading ? "spin" : undefined} aria-hidden="true" />{loading ? "刷新中…" : "刷新"}</button>}
       </div>
       {error && <div className="alert danger state-alert" role="alert"><span>{error}</span>{onRefresh && <button onClick={() => void onRefresh()} disabled={loading}>重新加载</button>}</div>}
       {loading && <div className="alert state-alert" role="status">正在同步数据，请稍候…</div>}

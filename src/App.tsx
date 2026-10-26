@@ -1,4 +1,4 @@
-import { LayoutDashboard, LifeBuoy, MessageSquare, Users, Database, BarChart3, Clock3, ClipboardList, SlidersHorizontal, WalletCards, Scale, Gauge, CircleDollarSign, Activity, BadgeCheck, CheckCircle2, Download, BookOpen, Bell, Megaphone, Server, FileText, Shield, LogOut } from "lucide-react";
+import { LayoutDashboard, LifeBuoy, MessageSquare, Users, Database, BarChart3, Clock3, ClipboardList, SlidersHorizontal, WalletCards, Scale, Gauge, CircleDollarSign, Activity, BadgeCheck, CheckCircle2, Download, BookOpen, Bell, Megaphone, Server, FileText, Shield } from "lucide-react";
 import { type RouteKey, type AuthSession } from "./types";
 import { type AdminApprovalRequestContext, type AdminApprovalDecision, setApprovalRequestHandler, login } from "./api/admin";
 import { useState, useEffect, useRef } from "react";
@@ -7,6 +7,7 @@ import { KeyValue, StatusBadge } from "./components/AdminUi";
 import { errorMessage } from "./lib/adminData";
 import { lazy, Suspense } from "react";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
+import { ConsoleShell } from "./components/ConsoleShell";
 const AssetsPage = lazy(() => import("./AssetsPage").then(module => ({ default: module.AssetsPage })));
 const C2cBusinessPage = lazy(() => import("./C2cBusinessPage").then(module => ({ default: module.C2cBusinessPage })));
 const MaintenancePage = lazy(() => import("./MaintenancePage"));
@@ -125,44 +126,11 @@ export default function App() {
   const activeRoute = visibleNav.some((item) => item.key === route) ? route : visibleNav[0].key;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <Shield size={24} />
-          <div>
-            <strong>Surprising Admin</strong>
-            <span>Exchange Ops Console</span>
-          </div>
-        </div>
-        <nav>
-          {visibleNav.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.key} className={activeRoute === item.key ? "active" : ""} onClick={() => navigate(item.key)}>
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
-      <main>
-        <header className="topbar">
-          <div>
-            <h1>{visibleNav.find((item) => item.key === activeRoute)?.label}</h1>
-            <p>当前管理员：{session.user.username || session.user.email || `用户 ${session.user.userId}`}</p>
-          </div>
-          <div className="top-actions">
-            <span className="role-pill">{session.user.roles.join(", ")}</span>
-            <button className="icon-button" title="退出登录" onClick={() => {
-              saveSession(null);
-              setSession(null);
-            }}>
-              <LogOut size={18} />
-            </button>
-          </div>
-        </header>
-        <section className="content" key={String(session.user.userId)}>
+    <ConsoleShell items={visibleNav} route={activeRoute} session={session} onNavigate={navigate} onLogout={() => {
+      saveSession(null);
+      setSession(null);
+    }}>
+        <div key={String(session.user.userId)}>
           <PageErrorBoundary key={activeRoute}>
           <Suspense fallback={<p role="status">正在加载页面…</p>}>
           {activeRoute === "dashboard" && <DashboardPage />}
@@ -191,10 +159,9 @@ export default function App() {
           {activeRoute === "audit" && <AuditPage />}
           </Suspense>
           </PageErrorBoundary>
-        </section>
-      </main>
+        </div>
       {approvalPrompt && <ApprovalRequestDialog prompt={approvalPrompt} setPrompt={setApprovalPrompt} />}
-    </div>
+    </ConsoleShell>
   );
 }
 
@@ -298,6 +265,7 @@ function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (loading) return;
     setLoading(true);
       setError("");
     try {
@@ -325,17 +293,17 @@ function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
         </div>
         <label>
           管理员账号
-          <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+          <input required value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
         </label>
         <label>
           密码
-          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+          <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
         </label>
         <label>
           2FA 动态码
           <input value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" />
         </label>
-        {error && <div className="alert danger">{error}</div>}
+        {error && <div className="alert danger" role="alert">{error}</div>}
         <button className="primary" disabled={loading}>{loading ? "登录中..." : "登录后台"}</button>
       </form>
     </div>

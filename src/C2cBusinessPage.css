@@ -9,7 +9,7 @@
 }
 .c2c-business .panel {
 	padding: 20px;
-	border: 1px solid var(--border, #263043);
+	border: 1px solid var(--border, var(--color-border-soft));
 	border-radius: 12px;
 	margin-block: 16px;
 }
@@ -40,7 +40,7 @@
 	max-width: 360px;
 }
 .c2c-business .error {
-	color: #ff8d8d;
+	color: var(--color-negative);
 }
 .c2c-business button {
 	margin: 4px;

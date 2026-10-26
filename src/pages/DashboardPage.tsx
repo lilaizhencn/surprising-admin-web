@@ -1,5 +1,5 @@
 import { positiveInt32 } from "../lib/integers";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { instruments as instrumentList, gatewayGet } from "../api/admin";
 import { type UnknownRecord, type Instrument } from "../types";
 import { formatValue } from "../config";
@@ -7,18 +7,24 @@ import { RefreshCw } from "lucide-react";
 import { productLineForInstrument } from "../lib/products";
 import { ADL_QUEUE_SORT } from "../lib/queryOptions";
 import { errorMessage, records } from "../lib/adminData";
-import { Page, Metric, TwoColumn, Panel, DataTable } from "../components/AdminUi";
+import { Page, Metric, TwoColumn, Panel, DataTable, Empty } from "../components/AdminUi";
 
 export default function DashboardPage() {
   const [state, setState] = useState(loadable<DashboardData>());
   const [instrumentId, setInstrumentId] = useState("");
   const [asset, setAsset] = useState("USDT");
+  const requestVersion = useRef(0);
+  const pending = useRef(false);
 
   async function load() {
-    setState({ loading: true, error: null, data: state.data });
+    if (pending.current) return;
+    pending.current = true;
+    const version = ++requestVersion.current;
+    setState({ loading: true, error: null, data: null });
     try {
       const selectedId = instrumentId.trim() ? positiveInt32(instrumentId) : "";
       const instruments = await instrumentList({ limit: 200, sort: "symbol.asc" });
+      if (version !== requestVersion.current) return;
       const instrumentRows = instruments.instruments ?? instruments.items ?? [];
       const selectedInstrument = instrumentRows.find((item) => String(item.instrumentId) === selectedId);
       if (selectedId && !selectedInstrument) throw new Error("当前合约目录未找到此 ID，请在产品市场确认合约及产品线。");
@@ -35,6 +41,7 @@ export default function DashboardPage() {
         gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies", { productLine }),
         fundingRequest
       ]);
+      if (version !== requestVersion.current) return;
       setState({
         loading: false,
         error: null,
@@ -49,11 +56,16 @@ export default function DashboardPage() {
         }
       });
     } catch (err) {
-      setState({ loading: false, error: errorMessage(err), data: state.data });
+      if (version === requestVersion.current) setState({ loading: false, error: errorMessage(err), data: null });
+    } finally {
+      if (version === requestVersion.current) pending.current = false;
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { requestVersion.current++; pending.current = false; };
+  }, []);
 
   const data = state.data;
   const selectedInstrument = data?.instruments.find((item) => String(item.instrumentId) === instrumentId);
@@ -61,26 +73,26 @@ export default function DashboardPage() {
     ? "非永续"
     : formatValue(data?.funding?.fundingRatePpm ?? data?.funding?.fundingRate);
   return (
-    <Page title="运营总览" onRefresh={load} loading={state.loading} error={state.error}>
+    <Page title="运营总览" description="查看当前查询范围内的产品、资金与风险状态。未成功载入的数据以横线显示。" onRefresh={load} loading={state.loading} error={state.error}>
       <div className="filters compact">
         <label>合约 ID<input inputMode="numeric" placeholder="永久合约 ID，可留空" value={instrumentId} onChange={(event) => setInstrumentId(event.target.value.toUpperCase())} /></label>
         <label>Asset<input value={asset} onChange={(event) => setAsset(event.target.value.toUpperCase())} /></label>
-        <button onClick={load}><RefreshCw size={16} />刷新</button>
+        <button onClick={load} disabled={state.loading}><RefreshCw size={16} />刷新</button>
       </div>
       <div className="metrics">
-        <Metric label="上线产品" value={data?.instruments.filter((item) => item.status === "TRADING").length ?? 0} tone="ok" />
-        <Metric label="爆仓候选" value={data?.candidates.length ?? 0} tone={(data?.candidates.length ?? 0) > 0 ? "danger" : "ok"} />
-        <Metric label="强平订单" value={data?.liquidations.length ?? 0} tone={(data?.liquidations.length ?? 0) > 0 ? "warn" : "ok"} />
-        <Metric label="ADL 队列" value={data?.adl.length ?? 0} tone={(data?.adl.length ?? 0) > 0 ? "warn" : "ok"} />
-        <Metric label="做市策略" value={data?.makers.length ?? 0} tone="muted" />
+        <Metric label="上线产品" value={data?.instruments.filter((item) => item.status === "TRADING").length ?? "—"} tone={data ? "ok" : "muted"} />
+        <Metric label="爆仓候选" value={data?.candidates.length ?? "—"} tone={!data ? "muted" : data.candidates.length > 0 ? "danger" : "ok"} />
+        <Metric label="强平订单" value={data?.liquidations.length ?? "—"} tone={!data ? "muted" : data.liquidations.length > 0 ? "warn" : "ok"} />
+        <Metric label="ADL 队列" value={data?.adl.length ?? "—"} tone={!data ? "muted" : data.adl.length > 0 ? "warn" : "ok"} />
+        <Metric label="做市策略" value={data?.makers.length ?? "—"} tone="muted" />
         <Metric label="资金费率" value={fundingMetric} tone="muted" />
       </div>
       <TwoColumn>
         <Panel title="保险基金">
-          <DataTable rows={records(data?.insurance)} maxColumns={8} />
+          {data ? <DataTable rows={records(data.insurance)} maxColumns={8} /> : <Empty text={state.loading ? "正在加载保险基金…" : "保险基金尚未载入，请重新加载。"} />}
         </Panel>
         <Panel title="风险候选">
-          <DataTable rows={records(data?.candidates)} maxColumns={8} />
+          {data ? <DataTable rows={records(data.candidates)} maxColumns={8} /> : <Empty text={state.loading ? "正在加载风险候选…" : "风险候选尚未载入，请重新加载。"} />}
         </Panel>
       </TwoColumn>
     </Page>

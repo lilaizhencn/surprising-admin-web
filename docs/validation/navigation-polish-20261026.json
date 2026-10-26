@@ -1,0 +1,54 @@
+{
+  "browser": "156.0.8078.47",
+  "checks": [
+    "initial error uses unavailable metrics and explicit panel errors instead of zero/empty",
+    "pending refresh prevents duplicate requests; recovery displays genuine zero and exact long integer",
+    "failed refresh clears previous financial values",
+    "navigation search, empty search feedback, Escape clear, selection and browser Back",
+    "dark theme persists after reload",
+    "320/390/768px fit viewport; drawer traps focus, restores focus and scrolling",
+    "mobile search and navigation selection close drawer",
+    "backdrop close, reduced motion and resize to desktop",
+    "support role only sees permitted navigation",
+    "navigation lifecycle: 30 open/close cycles over 61383ms; scrolling restored each time"
+  ],
+  "errors": [],
+  "lifecycle": [
+    {
+      "elapsedMs": 25,
+      "JSEventListeners": 172,
+      "Nodes": 184,
+      "TaskDuration": 0.023634,
+      "JSHeapUsedSize": 13059512
+    },
+    {
+      "elapsedMs": 20496,
+      "JSEventListeners": 172,
+      "Nodes": 189,
+      "TaskDuration": 0.322315,
+      "JSHeapUsedSize": 13545004
+    },
+    {
+      "elapsedMs": 40857,
+      "JSEventListeners": 172,
+      "Nodes": 189,
+      "TaskDuration": 0.552399,
+      "JSHeapUsedSize": 13604468
+    },
+    {
+      "elapsedMs": 61362,
+      "JSEventListeners": 172,
+      "Nodes": 189,
+      "TaskDuration": 0.8168,
+      "JSHeapUsedSize": 13642728
+    },
+    {
+      "elapsedMs": 61383,
+      "JSEventListeners": 172,
+      "Nodes": 189,
+      "TaskDuration": 0.836304,
+      "JSHeapUsedSize": 13642728
+    }
+  ],
+  "limitation": "Controlled HTTP/session fixtures; no live backend or financial operations."
+}
