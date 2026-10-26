@@ -373,16 +373,16 @@ export function replaceRolePermissions(roleCode: string, permissions: string[]) 
   );
 }
 
-export function complianceUsers(params: { userId?: string; kycStatus?: string; tagCode?: string; limit?: number } & CursorListParams) {
-  return request<CursorPage<UnknownRecord, "users">>(`/api/v1/admin/compliance/users${queryString(params)}`);
+export function complianceUsers(params: { userId?: string; kycStatus?: string; tagCode?: string; limit?: number } & CursorListParams, signal?: AbortSignal) {
+  return request<CursorPage<UnknownRecord, "users">>(`/api/v1/admin/compliance/users${queryString(params)}`, { signal });
 }
 
-export function complianceUser(userId: number | string) {
-  return request<UnknownRecord>(`/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}`);
+export function complianceUser(userId: number | string, signal?: AbortSignal) {
+  return request<UnknownRecord>(`/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}`, { signal });
 }
 
-export function complianceMfaRecoveryRequests() {
-  return request<UnknownRecord[]>("/api/v1/admin/compliance/mfa-recovery");
+export function complianceMfaRecoveryRequests(signal?: AbortSignal) {
+  return request<UnknownRecord[]>("/api/v1/admin/compliance/mfa-recovery", { signal });
 }
 
 export function decideMfaRecovery(requestId: number | string, approved: boolean, reason: string) {
@@ -391,18 +391,18 @@ export function decideMfaRecovery(requestId: number | string, approved: boolean,
     { approved, reason });
 }
 
-export function complianceKycDocument(userId: number | string, documentId: number | string) {
+export function complianceKycDocument(userId: number | string, documentId: number | string, signal?: AbortSignal) {
   return requestBlob(
-    `/api/v1/admin/compliance/users/${encodeURIComponent(String(userId))}/kyc/documents/${encodeURIComponent(String(documentId))}`
+    `/api/v1/admin/compliance/users/${positiveInt64(userId, "用户 ID")}/kyc/documents/${positiveInt64(documentId, "材料 ID")}`, { signal }
   );
 }
 
-export function complianceRiskTags(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}) {
-  return request<CursorPage<UnknownRecord, "tags">>(`/api/v1/admin/compliance/risk-tags${queryString(params)}`);
+export function complianceRiskTags(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
+  return request<CursorPage<UnknownRecord, "tags">>(`/api/v1/admin/compliance/risk-tags${queryString(params)}`, { signal });
 }
 
-export function complianceAmlCases(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}) {
-  return request<CursorPage<UnknownRecord, "cases">>(`/api/v1/admin/compliance/aml-cases${queryString(params)}`);
+export function complianceAmlCases(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
+  return request<CursorPage<UnknownRecord, "cases">>(`/api/v1/admin/compliance/aml-cases${queryString(params)}`, { signal });
 }
 
 export function updateKyc(userId: number | string, body: UnknownRecord) {

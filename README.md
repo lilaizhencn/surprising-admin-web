@@ -160,3 +160,11 @@ Playwright 模块，可用 `QA_CHROMIUM` 指定浏览器，再执行 `node scrip
 验证入口为 `scripts/custody-withdrawal-qa.mjs`，使用 `QA_PLAYWRIGHT_MODULE`、`QA_CHROMIUM`、`QA_OUTPUT`，
 开发页为 `http://127.0.0.1:5184`。脚本全部拦截 HTTP，不执行真实审批或资金动作。
 详见 [平台提现验收记录](docs/validation/custody-withdrawal-20261026.md)。
+
+## 合规审核体验（2026-10-26）
+
+合规页独立呈现用户、风险标签、AML 与验证器申诉的读取结果，故障不显示假零统计。
+切换用户立即移除旧审核资料并取消旧请求；详情、KYC 和材料必须属于同一用户。认证级别与后端 STANDARD / ENHANCED 保持一致。
+原件以可关闭、可取消的模态窗口预览，窄屏支持长文件名；敏感审核显示明确目标确认，并保留原有审批和审计要求。
+验证器申诉审核说明遵循 8–500 字限制；写入失败后清空旧审核记录，重新查询后才能继续。
+隔离浏览器脚本为 `scripts/compliance-experience-qa.mjs`，不执行真实审批或认证决定，详见 [合规审核验收记录](docs/validation/compliance-experience-20261026.md)。

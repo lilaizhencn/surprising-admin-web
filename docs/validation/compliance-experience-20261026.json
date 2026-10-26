@@ -1,0 +1,109 @@
+{
+  "checks": [
+    "risk-tag failure remains local; users load with exact IDs, selected detail focuses and backend STANDARD level remains selected",
+    "switching users immediately removes old writable review; MFA approval cannot target another selected identity",
+    "cancelled slow identity response cannot replace the newer selected user",
+    "mismatched detail fails closed; synthetic original preview shows user, modal focus/Escape work, cancelled preview cannot reopen",
+    "review confirmation identifies exact user/state; cancel sends nothing; existing approval binding is retained; failed decision clears writable snapshot",
+    "MFA decision includes exact request/user, review reason and 24-hour restriction; successful response refreshes pending list",
+    "1440/390/320 light/dark layouts; user-list failure shows unavailable metrics and recovers on refresh"
+  ],
+  "errors": [],
+  "samples": [
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15571508
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15573268
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15573268
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15566060
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15566060
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15566060
+    },
+    {
+      "JSEventListeners": 263,
+      "Nodes": 1459,
+      "JSHeapUsedSize": 15566480
+    }
+  ],
+  "retained": [
+    {
+      "name": "JSEventListeners",
+      "value": 263
+    },
+    {
+      "name": "Nodes",
+      "value": 1459
+    },
+    {
+      "name": "JSHeapUsedSize",
+      "value": 15566060
+    }
+  ],
+  "browser": "153.0.8010.12",
+  "fixtureOnly": true,
+  "date": "2026-10-26",
+  "scope": "admin compliance identity review",
+  "commands": {
+    "npm run lint": "passed",
+    "npm test": "116 passed across 11 files",
+    "npm run build": "passed",
+    "git diff --check": "passed"
+  },
+  "observationSeconds": 60,
+  "viewports": [
+    [
+      1440,
+      1000
+    ],
+    [
+      390,
+      844
+    ],
+    [
+      320,
+      844
+    ]
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "screenshots": [
+    "admin-compliance-desktop-light.png",
+    "admin-compliance-mobile-320.png",
+    "admin-compliance-mobile-390.png",
+    "admin-compliance-mobile-dark.png",
+    "admin-kyc-original-desktop.png",
+    "admin-kyc-original-mobile-320.png",
+    "admin-kyc-original-mobile-390.png"
+  ],
+  "artifactRoot": "/Users/atomex/.codex/artifacts/surprising-kyc-20261026/admin",
+  "limits": [
+    "Isolated synthetic HTTP/identity/approval fixtures; no real decisions or security changes",
+    "No real provider camera/identity/PDF/storage or dual-operator approval validation",
+    "No risk tag or AML mutation browser validation",
+    "60 seconds is not production-duration reliability or performance evidence"
+  ],
+  "overallGoal": "active"
+}

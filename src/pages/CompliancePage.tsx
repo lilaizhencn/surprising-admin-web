@@ -1,4 +1,4 @@
-import { safeInteger } from "../lib/integers";
+import { positiveInt64, safeInteger } from "../lib/integers";
 import { useState, useRef, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { decideMfaRecovery, complianceUsers, complianceRiskTags, complianceAmlCases, complianceMfaRecoveryRequests, complianceUser, updateKyc, createRiskTag, resolveRiskTag, createAmlCase, updateAmlCaseStatus, complianceKycDocument } from "../api/admin";
@@ -10,9 +10,7 @@ import { errorMessage, fieldText, objectValue, records } from "../lib/adminData"
 import { enumOrDefault, jsonObject, textOrNull } from "../lib/formValues";
 import { UPDATED_AT_SORTS } from "../lib/queryOptions";
 
-const KYC_LEVELS = ["NONE", "BASIC", "ADVANCED", "INSTITUTIONAL"];
-
-const KYC_STATUSES = ["UNVERIFIED", "PENDING", "VERIFIED", "REJECTED", "EXPIRED"];
+import { KYC_LEVELS, KYC_STATUSES, complianceDetail, complianceRows } from "../lib/compliance";
 
 const RISK_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
@@ -31,6 +29,19 @@ export default function CompliancePage() {
   const [amlCasePageInfo, setAmlCasePageInfo] = useState(cursorInfo());
   const [globalAmlCases, setGlobalAmlCases] = useState<UnknownRecord[]>([]);
   const [mfaRecoveryRequests, setMfaRecoveryRequests] = useState<UnknownRecord[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [usersReady, setUsersReady] = useState(false);
+  const [readErrors, setReadErrors] = useState({ users: "", tags: "", cases: "", recovery: "" });
+  const listRequest = useRef<AbortController | null>(null);
+  const detailRequest = useRef<AbortController | null>(null);
+  const previewRequest = useRef<AbortController | null>(null);
+  const writeBusy = useRef(false);
+  const mounted = useRef(true);
   const [detail, setDetail] = useState<UnknownRecord | null>(null);
   const [kycForm, setKycForm] = useState(kycFormTemplate());
   const [riskTagForm, setRiskTagForm] = useState(riskTagFormTemplate());
@@ -43,61 +54,46 @@ export default function CompliancePage() {
   const [error, setError] = useState("");
   const [kycPreview, setKycPreview] = useState<{ url: string; contentType: string; filename: string } | null>(null);
   const kycPreviewCloseRef = useRef<HTMLButtonElement>(null);
-  const kycPreviewRef = useRef<HTMLDivElement>(null);
+  const kycPreviewRef = useRef<HTMLDialogElement>(null);
   const kycRequestVersionRef = useRef(0);
+  const detailFocus = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!detail) return;
+    detailFocus.current?.focus({ preventScroll: true });
+    if (window.innerWidth < 760) detailFocus.current?.scrollIntoView({ block: "start" });
+  }, [detail]);
 
   useEffect(() => () => {
     if (kycPreview) URL.revokeObjectURL(kycPreview.url);
   }, [kycPreview]);
 
   async function reviewMfaRecovery(row: UnknownRecord, approved: boolean) {
-    const reason = window.prompt(approved ? "确认身份资料匹配说明" : "拒绝原因");
+    if (writeBusy.current || row.status !== "PENDING") return;
+    const userId = positiveInt64(row.userId, "申诉用户 ID");
+    const requestId = positiveInt64(row.requestId, "申诉 ID");
+    const reason = window.prompt(`用户 ${userId} · 申诉 ${requestId}\n${approved ? "确认身份资料匹配说明" : "拒绝原因"}（8–500 字）`);
     if (reason === null) return;
-    setLoading(true);
-    setError("");
-    try {
-      await decideMfaRecovery(String(row.requestId), approved, reason.trim());
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    if (reason.trim().length < 8 || reason.trim().length > 500) { setError("请填写 8–500 字审核说明。"); return; }
+    await runWrite(
+      `${approved ? "核验通过并解除旧验证器" : "拒绝验证器申诉"}\n用户：${userId}\n申诉：${requestId}\n说明：${reason.trim()}${approved ? "\n批准后旧密钥立即失效，提现冻结 24 小时。" : ""}`,
+      () => decideMfaRecovery(requestId, approved, reason.trim()),
+    );
   }
 
   useEffect(() => {
     if (!kycPreview) return;
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = kycPreviewRef.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog?.showModal();
     kycPreviewCloseRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setKycPreview(null);
-        return;
-      }
-      if (event.key === "Tab") {
-        const focusable = Array.from(kycPreviewRef.current?.querySelectorAll<HTMLElement>("button, [href], [tabindex]:not([tabindex='-1'])") ?? [])
-          .filter((element) => !element.hasAttribute("disabled"));
-        if (focusable.length === 0) return;
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      previousFocus?.focus();
-    };
+    return () => { dialog?.close(); document.body.style.overflow = previousOverflow; previous?.focus(); };
   }, [kycPreview]);
 
   function updateFilters(patch: Partial<typeof filters>) {
+    detailRequest.current?.abort(); previewRequest.current?.abort();
+    setSelectedUserId(""); setDetail(null); setDetailError(""); setDetailLoading(false); setKycPreview(null); setPreviewLoading(false);
     setFilters((current) => ({ ...current, ...patch, cursor: "" }));
   }
 
@@ -140,196 +136,164 @@ export default function CompliancePage() {
     nextRiskTagCursor = riskTagFilters.cursor,
     nextAmlCaseCursor = amlCaseFilters.cursor
   ) {
+    listRequest.current?.abort();
+    const abort = new AbortController();
+    listRequest.current = abort;
     setLoading(true);
+    setError(""); setNotice("");
+    setReadErrors({ users: "", tags: "", cases: "", recovery: "" });
+    setUsersReady(false);
+    setUsers([]); setGlobalRiskTags([]); setGlobalAmlCases([]); setMfaRecoveryRequests([]);
+    const responses = await Promise.allSettled([
+      complianceUsers({ ...filters, limit: Number(filters.limit) || 100, cursor: nextCursor }, abort.signal),
+      complianceRiskTags({ ...riskTagFilters, limit: Number(riskTagFilters.limit) || 100, cursor: nextRiskTagCursor }, abort.signal),
+      complianceAmlCases({ ...amlCaseFilters, limit: Number(amlCaseFilters.limit) || 100, cursor: nextAmlCaseCursor }, abort.signal),
+      complianceMfaRecoveryRequests(abort.signal)
+    ]);
+    if (abort.signal.aborted) return;
+    const errors = { users: "", tags: "", cases: "", recovery: "" };
+    const keys = ["users", "tags", "cases", "recovery"] as const;
+    responses.forEach((result, index) => {
+      const key = keys[index];
+      try {
+        if (result.status === "rejected") throw result.reason;
+        const response = result.value;
+        if (key === "recovery") setMfaRecoveryRequests(complianceRows(response));
+        else {
+          const page = objectValue(response);
+          const rows = complianceRows(page[key]);
+          if (key === "users") { setUsers(rows); setPageInfo(cursorInfo(page)); setUsersReady(true); setFilters(current => ({ ...current, cursor: nextCursor || "" })); }
+          if (key === "tags") { setGlobalRiskTags(rows); setRiskTagPageInfo(cursorInfo(page)); setRiskTagFilters(current => ({ ...current, cursor: nextRiskTagCursor || "" })); }
+          if (key === "cases") { setGlobalAmlCases(rows); setAmlCasePageInfo(cursorInfo(page)); setAmlCaseFilters(current => ({ ...current, cursor: nextAmlCaseCursor || "" })); }
+        }
+      } catch (reason) { errors[key] = errorMessage(reason); }
+    });
+    setReadErrors(errors);
+    setLoading(false);
+  }
+
+  async function loadDetail(value: number | string, afterWrite = false) {
+    if (writeBusy.current && !afterWrite) return;
+    let userId: string;
+    try { userId = positiveInt64(value, "用户 ID"); }
+    catch (reason) { setError(errorMessage(reason)); return; }
+    detailRequest.current?.abort();
+    previewRequest.current?.abort();
+    const abort = new AbortController();
+    detailRequest.current = abort;
+    kycRequestVersionRef.current += 1;
+    setKycPreview(null);
+    setPreviewLoading(false);
+    setSelectedUserId(userId);
+    setDetail(null);
+    setDetailLoading(true);
+    setDetailError("");
     setError("");
+    setNotice("");
+    setRiskTagForm(riskTagFormTemplate()); setTagJson(JSON.stringify(riskTagPayload(riskTagFormTemplate()), null, 2));
+    setAmlCaseForm(amlCaseFormTemplate()); setAmlJson(JSON.stringify(amlCasePayload(amlCaseFormTemplate()), null, 2));
+    setAmlStatusForm(amlStatusFormTemplate());
     try {
-      const [response, riskTagResponse, amlCaseResponse, recoveryResponse] = await Promise.all([
-        complianceUsers({
-          userId: filters.userId,
-          kycStatus: filters.kycStatus,
-          tagCode: filters.tagCode,
-          limit: Number(filters.limit) || 100,
-          cursor: nextCursor,
-          sort: filters.sort
-        }),
-        complianceRiskTags({
-          userId: riskTagFilters.userId,
-          status: riskTagFilters.status,
-          limit: Number(riskTagFilters.limit) || 100,
-          cursor: nextRiskTagCursor,
-          sort: riskTagFilters.sort
-        }),
-        complianceAmlCases({
-          userId: amlCaseFilters.userId,
-          status: amlCaseFilters.status,
-          limit: Number(amlCaseFilters.limit) || 100,
-          cursor: nextAmlCaseCursor,
-          sort: amlCaseFilters.sort
-        }),
-        complianceMfaRecoveryRequests()
-      ]);
-      setUsers(response.users);
-      setPageInfo(cursorInfo(response));
-      setGlobalRiskTags(riskTagResponse.tags);
-      setRiskTagPageInfo(cursorInfo(riskTagResponse));
-      setGlobalAmlCases(amlCaseResponse.cases);
-      setAmlCasePageInfo(cursorInfo(amlCaseResponse));
-      setMfaRecoveryRequests(recoveryResponse);
-      setFilters((current) => ({ ...current, cursor: nextCursor || "" }));
-      setRiskTagFilters((current) => ({ ...current, cursor: nextRiskTagCursor || "" }));
-      setAmlCaseFilters((current) => ({ ...current, cursor: nextAmlCaseCursor || "" }));
-      if (detail?.user && "userId" in (detail.user as UnknownRecord)) {
-        await loadDetail(String((detail.user as UnknownRecord).userId));
-      }
-    } catch (err) {
-      setError(errorMessage(err));
+      const response = complianceDetail(await complianceUser(userId, abort.signal), userId);
+      if (abort.signal.aborted) return;
+      setDetail(response);
+      const nextKycForm = kycFormFromRecord(objectValue(response.kyc));
+      setKycForm(nextKycForm);
+      setKycJson(JSON.stringify(kycPayload(nextKycForm), null, 2));
+    } catch (reason) {
+      if (!abort.signal.aborted) setDetailError(errorMessage(reason));
     } finally {
-      setLoading(false);
+      if (!abort.signal.aborted) setDetailLoading(false);
     }
   }
 
-  async function loadDetail(userId: number | string) {
-    const requestVersion = kycRequestVersionRef.current + 1;
-    kycRequestVersionRef.current = requestVersion;
-    setKycPreview(null);
-    setLoading(true);
-    setError("");
+  async function runWrite(confirmation: string, operation: () => Promise<unknown>) {
+    if (writeBusy.current || !window.confirm(confirmation)) return;
+    writeBusy.current = true;
+    setWriting(true); setError(""); setNotice("");
+    listRequest.current?.abort(); previewRequest.current?.abort();
+    setLoading(false);
+    setKycPreview(null); setPreviewLoading(false);
     try {
-      const response = await complianceUser(userId);
-      if (kycRequestVersionRef.current !== requestVersion) return;
-      setDetail(response);
-      const nextKycForm = kycFormFromRecord(objectValue(response.kyc) || { kycLevel: "BASIC", status: "PENDING" });
-      setKycForm(nextKycForm);
-      setKycJson(JSON.stringify(kycPayload(nextKycForm), null, 2));
-    } catch (err) {
-      if (kycRequestVersionRef.current === requestVersion) {
-        setError(errorMessage(err));
+      await operation();
+      if (!mounted.current) return;
+      // Read again before another decision; never preserve a writable pre-decision snapshot.
+      setDetail(null); setKycPreview(null);
+      await Promise.all([load(), selectedUserId ? loadDetail(selectedUserId, true) : Promise.resolve()]);
+      if (mounted.current) setNotice("操作已提交；请核对刷新后的状态。");
+    } catch (reason) {
+      if (mounted.current) {
+        setError(errorMessage(reason));
+        setDetail(null); setKycPreview(null);
+        setUsersReady(false);
+        setUsers([]); setGlobalRiskTags([]); setGlobalAmlCases([]); setMfaRecoveryRequests([]);
+        const unavailable = "操作后记录需要重新查询，请使用页面刷新核对状态。";
+        setReadErrors({ users: unavailable, tags: unavailable, cases: unavailable, recovery: unavailable });
+        setDetailError("操作结果需要重新核对，请重新加载当前用户后再处理。");
       }
     } finally {
-      if (kycRequestVersionRef.current === requestVersion) {
-        setLoading(false);
-      }
+      writeBusy.current = false;
+      if (mounted.current) setWriting(false);
     }
   }
 
   async function saveKyc() {
     const userId = detailUserId(detail);
-    if (!userId) return;
-    setLoading(true);
-    setError("");
+    if (!userId || detailLoading || writeBusy.current) return;
     try {
-      await updateKyc(userId, jsonObject(kycJson));
-      await loadDetail(userId);
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const body = jsonObject(kycJson);
+      await runWrite(`保存用户 ${userId} 的 KYC 审核\n级别：${fieldText(body.kycLevel)}\n状态：${fieldText(body.status)}\n拒绝原因：${fieldText(body.rejectionReason) || "—"}\n有效期：${fieldText(body.expiresAt) || "未设置"}\n此次操作影响用户认证状态，并沿用后台审批要求。`, () => updateKyc(userId, body));
+    } catch (reason) { setError(errorMessage(reason)); }
   }
-
   async function addRiskTag() {
     const userId = detailUserId(detail);
-    if (!userId) return;
-    setLoading(true);
-    setError("");
+    if (!userId || writeBusy.current) return;
     try {
-      await createRiskTag(userId, jsonObject(tagJson));
-      await loadDetail(userId);
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const body = jsonObject(tagJson);
+      await runWrite(`为用户 ${userId} 新增风险标签\n标签：${fieldText(body.tagCode)}\n严重度：${fieldText(body.severity)}`, () => createRiskTag(userId, body));
+    } catch (reason) { setError(errorMessage(reason)); }
   }
-
   async function closeRiskTag(tagId: unknown) {
-    const userId = detailUserId(detail);
-    if (!tagId) return;
-    setLoading(true);
-    setError("");
-    try {
-      await resolveRiskTag(String(tagId));
-      if (userId) await loadDetail(userId);
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    if (!tagId || writeBusy.current) return;
+    await runWrite(`解除风险标签 ${fieldText(tagId)}？\n此操作将改变该标签的有效状态。`, () => resolveRiskTag(String(tagId)));
   }
-
   async function addAmlCase() {
     const userId = detailUserId(detail);
-    if (!userId) return;
-    setLoading(true);
-    setError("");
+    if (!userId || writeBusy.current) return;
     try {
       const draft = jsonObject(amlJson);
       const form = { ...amlCaseFormTemplate(), ...Object.fromEntries(Object.entries(draft).map(([key, value]) => [key, fieldText(value)])) };
-      await createAmlCase(userId, amlCasePayload(form));
-      await loadDetail(userId);
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const body = amlCasePayload(form);
+      await runWrite(`为用户 ${userId} 新增 AML Case\n状态：${fieldText(body.status)}\n风险分：${fieldText(body.riskScore)}`, () => createAmlCase(userId, body));
+    } catch (reason) { setError(errorMessage(reason)); }
   }
-
   async function submitAmlStatus(caseId: unknown = amlStatusForm.caseId) {
-    const userId = detailUserId(detail);
-    if (!caseId) return;
-    setLoading(true);
-    setError("");
+    if (!caseId || !detail || writeBusy.current) return;
     try {
-      await updateAmlCaseStatus(String(caseId), {
-        status: amlStatusForm.status,
-        riskScore: amlStatusForm.riskScore.trim() ? safeInteger(amlStatusForm.riskScore, "风险分") : undefined
-      });
-      if (userId) await loadDetail(userId);
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const body = { status: amlStatusForm.status, riskScore: amlStatusForm.riskScore.trim() ? safeInteger(amlStatusForm.riskScore, "风险分") : undefined };
+      await runWrite(`更新 AML Case ${fieldText(caseId)}\n状态：${body.status}\n风险分：${body.riskScore ?? "保持不变"}`, () => updateAmlCaseStatus(String(caseId), body));
+    } catch (reason) { setError(errorMessage(reason)); }
   }
-
   async function openKycDocument(documentRecord: UnknownRecord) {
     const userId = detailUserId(detail);
     const normalizedDocumentId = fieldText(documentRecord.documentId);
-    if (!userId || !normalizedDocumentId) return;
-    const requestVersion = kycRequestVersionRef.current + 1;
-    kycRequestVersionRef.current = requestVersion;
-    setLoading(true);
+    if (!userId || !normalizedDocumentId || writing) return;
+    previewRequest.current?.abort();
+    const abort = new AbortController();
+    previewRequest.current = abort;
+    const requestVersion = ++kycRequestVersionRef.current;
     setError("");
+    setKycPreview(null);
+    setPreviewLoading(true);
     try {
-      const blob = await complianceKycDocument(userId, normalizedDocumentId);
+      const blob = await complianceKycDocument(userId, normalizedDocumentId, abort.signal);
+      if (abort.signal.aborted || kycRequestVersionRef.current !== requestVersion) return;
+      const contentType = blob.type.split(";", 1)[0].trim().toLowerCase();
+      if (!["image/png", "image/jpeg", "application/pdf"].includes(contentType)) throw new Error("材料格式不支持安全预览，请重新核对原件。");
       const url = URL.createObjectURL(blob);
-      if (kycRequestVersionRef.current !== requestVersion) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      const contentType = (blob.type || fieldText(documentRecord.contentType))
-        .split(";", 1)[0]
-        .trim()
-        .toLowerCase();
-      setKycPreview({
-        url,
-        contentType,
-        filename: fieldText(documentRecord.originalFilename) || "KYC 原件"
-      });
-    } catch (err) {
-      if (kycRequestVersionRef.current === requestVersion) {
-        setError(errorMessage(err));
-      }
-    } finally {
-      if (kycRequestVersionRef.current === requestVersion) {
-        setLoading(false);
-      }
-    }
+      setKycPreview({ url, contentType, filename: fieldText(documentRecord.originalFilename) || "KYC 原件" });
+    } catch (reason) { if (!abort.signal.aborted) setError(errorMessage(reason)); }
+    finally { if (!abort.signal.aborted) setPreviewLoading(false); }
   }
 
   function downloadKycPreview() {
@@ -342,14 +306,24 @@ export default function CompliancePage() {
     link.remove();
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void load();
+    return () => {
+      mounted.current = false;
+      listRequest.current?.abort(); detailRequest.current?.abort(); previewRequest.current?.abort();
+      kycRequestVersionRef.current += 1;
+    };
+  }, []);
 
   const riskTags = records(detail?.riskTags as UnknownRecord[] | undefined);
   const amlCases = records(detail?.amlCases as UnknownRecord[] | undefined);
   const kycDocuments = records(detail?.kycDocuments as UnknownRecord[] | undefined);
 
   return (
-    <Page title="合规风控" onRefresh={load} loading={loading} error={error}>
+    <Page title="合规风控" description="按用户核对认证、原始材料与风险记录。审核操作保留审批要求和审计信息。" onRefresh={() => { if (!writing) void Promise.all([load(), selectedUserId ? loadDetail(selectedUserId) : Promise.resolve()]); }} loading={loading || writing} error={error}>
+      {notice && <div role="status" className="alert">{notice}</div>}
+      <fieldset className="compliance-workspace" disabled={writing}>
       <div className="filters">
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <label>KYC 状态<select value={filters.kycStatus} onChange={(event) => updateFilters({ kycStatus: event.target.value })}>
@@ -361,24 +335,26 @@ export default function CompliancePage() {
         <SortSelect value={filters.sort} options={UPDATED_AT_SORTS} onChange={(value) => updateFilters({ sort: value })} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
       </div>
+      <p className="compliance-scope-note">下方统计仅覆盖当前页用户，不代表全平台总量。风险标签与 AML Case 可在独立审计列表中继续筛选。</p>
       <div className="metrics">
-        <Metric label="用户数" value={users.length} tone="ok" />
-        <Metric label="已认证" value={users.filter((item) => item.kycStatus === "VERIFIED").length} tone="ok" />
-        <Metric label="待审核" value={users.filter((item) => item.kycStatus === "PENDING").length} tone="warn" />
-        <Metric label="风险标签" value={users.reduce((sum, item) => sum + Number(item.activeRiskTags ?? 0), 0)} tone="warn" />
-        <Metric label="AML Case" value={users.reduce((sum, item) => sum + Number(item.openAmlCases ?? 0), 0)} tone="danger" />
-        <Metric label="当前用户" value={detailUserId(detail) || "-"} tone="muted" />
+        <Metric label="用户数" value={usersReady ? users.length : "—"} tone="ok" />
+        <Metric label="已认证" value={usersReady ? users.filter((item) => item.kycStatus === "VERIFIED").length : "—"} tone="ok" />
+        <Metric label="待审核" value={usersReady ? users.filter((item) => item.kycStatus === "PENDING").length : "—"} tone="warn" />
+        <Metric label="风险标签" value={usersReady && users.every(row => Number.isSafeInteger(Number(row.activeRiskTags)) && row.activeRiskTags != null) ? users.reduce((sum, item) => sum + Number(item.activeRiskTags), 0) : "—"} tone="warn" />
+        <Metric label="AML Case" value={usersReady && users.every(row => Number.isSafeInteger(Number(row.openAmlCases)) && row.openAmlCases != null) ? users.reduce((sum, item) => sum + Number(item.openAmlCases), 0) : "—"} tone="danger" />
+        <Metric label="当前用户" value={selectedUserId || "—"} tone="muted" />
       </div>
       <Panel title="谷歌验证器丢失申诉">
         <p className="muted">先打开用户详情检查已通过的 KYC 资料和原始材料，再决定是否解除旧验证器。批准后旧密钥立即失效，提现冻结 24 小时。</p>
         <DataTable
           rows={mfaRecoveryRequests}
+          loading={loading} error={readErrors.recovery} emptyText="当前没有待审核的验证器申诉"
           columns={["requestId", "userId", "status", "reason", "submittedAt"]}
           actions={(row) => (
             <div className="row-actions">
               <button onClick={() => void loadDetail(String(row.userId ?? ""))}>查看 KYC</button>
-              <button className="primary" onClick={() => void reviewMfaRecovery(row, true)}>核验通过并解除</button>
-              <button onClick={() => void reviewMfaRecovery(row, false)}>拒绝</button>
+              <button className="primary" disabled={row.status !== "PENDING" || detailUserId(detail) !== String(row.userId) || objectValue(detail?.kyc).status !== "VERIFIED" || !kycDocuments.length} title="请先打开同一用户已通过的 KYC 资料并核对原件" onClick={() => void reviewMfaRecovery(row, true)}>核验通过并解除</button>
+              <button disabled={row.status !== "PENDING"} onClick={() => void reviewMfaRecovery(row, false)}>拒绝</button>
             </div>
           )}
         />
@@ -388,6 +364,9 @@ export default function CompliancePage() {
           <div className="stack">
             <DataTable
               rows={users}
+              loading={loading} error={readErrors.users} emptyText="当前条件下没有合规用户"
+              rowActionLabel="查看用户合规详情"
+              isSelected={row => String(row.userId) === selectedUserId}
               columns={["userId", "username", "userStatus", "kycLevel", "kycStatus", "country", "activeRiskTags", "openAmlCases", "updatedAt"]}
               onRowClick={(row) => void loadDetail(String(row.userId ?? ""))}
               mobileAction={{
@@ -397,17 +376,20 @@ export default function CompliancePage() {
             />
             <CursorPager
               page={pageInfo}
+              loading={loading || Boolean(readErrors.users)}
               cursor={filters.cursor}
               onNext={() => void load(pageInfo.nextCursor || "")}
               onReset={() => void load("")}
             />
           </div>
         </Panel>
-        <Panel title="用户合规详情">
-          {detail ? (
-            <div className="stack">
+        <Panel title={selectedUserId ? `用户合规详情 · ${selectedUserId}` : "用户合规详情"}>
+          {detailLoading ? <div className="empty" role="status" aria-busy="true">正在加载用户 {selectedUserId} 的资料…</div>
+          : detailError ? <div className="alert danger" role="alert">{detailError}<button onClick={() => void loadDetail(selectedUserId)}>重新加载当前用户</button></div>
+          : detail ? (
+            <div className="stack" ref={detailFocus} tabIndex={-1} aria-label={`用户 ${selectedUserId} 合规资料`}>
               <KeyValue data={(detail.user as UnknownRecord) ?? {}} />
-              <KeyValue data={(detail.kyc as UnknownRecord) ?? { status: "UNVERIFIED" }} />
+              {detail.kyc ? <KeyValue data={detail.kyc as UnknownRecord} /> : <Empty text="该用户尚无 KYC 认证档案" />}
             </div>
           ) : <Empty text="选择用户" />}
         </Panel>
@@ -429,12 +411,14 @@ export default function CompliancePage() {
             </div>
             <CursorPager
               page={riskTagPageInfo}
+              loading={loading || Boolean(readErrors.tags)}
               cursor={riskTagFilters.cursor}
               onNext={() => void load(filters.cursor, riskTagPageInfo.nextCursor || "", amlCaseFilters.cursor)}
               onReset={() => void load(filters.cursor, "", amlCaseFilters.cursor)}
             />
             <DataTable
               rows={globalRiskTags}
+              loading={loading} error={readErrors.tags}
               columns={["tagId", "userId", "tagCode", "severity", "status", "source", "createdByUserId", "resolvedByUserId", "createdAt", "updatedAt"]}
               maxColumns={10}
               actions={(row) => row.status === "ACTIVE" ? <button onClick={() => void closeRiskTag(row.tagId)}>解除</button> : <StatusBadge value="RESOLVED" />}
@@ -457,12 +441,14 @@ export default function CompliancePage() {
             </div>
             <CursorPager
               page={amlCasePageInfo}
+              loading={loading || Boolean(readErrors.cases)}
               cursor={amlCaseFilters.cursor}
               onNext={() => void load(filters.cursor, riskTagFilters.cursor, amlCasePageInfo.nextCursor || "")}
               onReset={() => void load(filters.cursor, riskTagFilters.cursor, "")}
             />
             <DataTable
 	              rows={globalAmlCases}
+              loading={loading} error={readErrors.cases}
 	              columns={["caseId", "userId", "status", "riskScore", "source", "assignedAdminUserId", "createdByUserId", "reviewedByUserId", "createdAt", "updatedAt"]}
 	              maxColumns={10}
 	              actions={(row) => <button onClick={() => fillAmlStatus(row)}>填充状态</button>}
@@ -473,7 +459,7 @@ export default function CompliancePage() {
       {detail && (
         <>
           <TwoColumn>
-            <Panel title="KYC 审核">
+            <Panel title={`KYC 审核 · 用户 ${selectedUserId}`}>
               <div className="stack">
                 <div className="form-grid">
                   <label>KYC Level<select value={kycForm.kycLevel} onChange={(event) => updateKycForm({ kycLevel: event.target.value })}>{KYC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -508,6 +494,7 @@ export default function CompliancePage() {
               </div>
             </Panel>
             <Panel title={`材料证据 (${kycDocuments.length})`}>
+              {previewLoading && <div className="alert" role="status">正在读取原件…<button onClick={() => { previewRequest.current?.abort(); setPreviewLoading(false); }}>取消读取</button></div>}
               {kycDocuments.length === 0 ? <Empty text="当前用户尚未上传材料" /> : (
                 <div className="stack kyc-document-list">
                   {kycDocuments.map((document) => (
@@ -517,13 +504,13 @@ export default function CompliancePage() {
                         <span>{fieldText(document.documentType)} · {fieldText(document.contentType)} · {compactNumber(document.fileSize)} bytes</span>
                         <span>状态：{fieldText(document.status)} · SHA-256：{fieldText(document.sha256).slice(0, 16)}…</span>
                       </div>
-                      <button disabled={loading} onClick={() => void openKycDocument(document)}><Eye size={15} />查看原件</button>
+                      <button disabled={previewLoading} onClick={() => void openKycDocument(document)}><Eye size={15} />查看原件</button>
                     </div>
                   ))}
                 </div>
               )}
               {kycPreview && (
-                <div ref={kycPreviewRef} className="kyc-document-preview" role="dialog" aria-label={`原件预览：${kycPreview.filename}`}>
+                <dialog ref={kycPreviewRef} className="kyc-document-preview" aria-label={`原件预览：${kycPreview.filename}`} onCancel={() => setKycPreview(null)}>
                   <div className="kyc-document-preview-heading">
                     <div>
                       <strong>{kycPreview.filename}</strong>
@@ -534,12 +521,13 @@ export default function CompliancePage() {
                       <button ref={kycPreviewCloseRef} onClick={() => setKycPreview(null)}>关闭预览</button>
                     </div>
                   </div>
+                  <p className="muted">用户 {selectedUserId} · 仅供本次合规审核，请妥善处理原始材料。</p>
                   {kycPreview.contentType.startsWith("application/pdf") ? (
                     <iframe tabIndex={-1} title={`KYC 原件：${kycPreview.filename}`} src={kycPreview.url} />
                   ) : (
                     <img src={kycPreview.url} alt={`KYC 原件：${kycPreview.filename}`} />
                   )}
-                </div>
+                </dialog>
               )}
             </Panel>
           </TwoColumn>
@@ -587,6 +575,7 @@ export default function CompliancePage() {
           </Panel>
         </>
       )}
+      </fieldset>
     </Page>
   );
 }
@@ -597,7 +586,7 @@ function kycFormTemplate() {
     status: "PENDING",
     country: "",
     documentType: "",
-    provider: "manual",
+    provider: "SELF",
     providerReference: "",
     rejectionReason: "",
     expiresAt: ""
@@ -637,7 +626,7 @@ function kycFormFromRecord(row: UnknownRecord) {
     status: enumOrDefault(row.status, KYC_STATUSES, "PENDING"),
     country: fieldText(row.country),
     documentType: fieldText(row.documentType),
-    provider: fieldText(row.provider) || "manual",
+    provider: fieldText(row.provider) || "SELF",
     providerReference: fieldText(row.providerReference),
     rejectionReason: fieldText(row.rejectionReason),
     expiresAt: fieldText(row.expiresAt)
