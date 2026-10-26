@@ -1,0 +1,473 @@
+{
+  "browser": "153.0.8010.12",
+  "checks": [
+    "no arbitrary user auto-query; loading/error reports do not show fake zero metrics",
+    "balances remain available when positions and global valuation fail; all account reads explicitly carry the selected product line and preserve large integer strings",
+    "report query independently retries without reloading user account data",
+    "editing the user clears stale results immediately; cancelled older responses cannot overwrite the newer user",
+    "funding account requires a visible product scope and does not issue mismatched product-only reads",
+    "manual adjustment retains native confirmation, exact target/product/units, approval binding and write-error feedback; fields cannot switch target while approval is pending",
+    "desktop and 320/390px layouts in both themes retain filters, exact fields, horizontal table scrolling and complete adjustment controls"
+  ],
+  "errors": [],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-balances",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/positions",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-ledger",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/transfers",
+      "query": "?userId=9223372036854775807&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-balances",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/positions",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-ledger",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/transfers",
+      "query": "?userId=11&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/positions",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/transfers",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=22&productLine=OPTION"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=22&productLine=OPTION&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=22&productLine=OPTION&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/admin/gateway/account/product-balance-adjustments",
+      "query": "?productLine=LINEAR_PERPETUAL",
+      "body": "{\"userId\":\"22\",\"accountType\":\"USDT_PERPETUAL\",\"asset\":\"USDT\",\"amountUnits\":\"1\",\"referenceId\":\"ui-contract-only\",\"reason\":\"仅校验界面与审批绑定，不执行资金变更\"}"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/positions",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/transfers",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/adjustments",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-balances",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/positions",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/product-ledger",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/gateway/account/transfers",
+      "query": "?userId=22&productLine=LINEAR_PERPETUAL&asset=USDT&limit=100&sort=createdAt.desc&accountType=USDT_PERPETUAL"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    }
+  ],
+  "samples": [
+    {
+      "second": 0,
+      "Nodes": 1732,
+      "TaskDuration": 1.7e-05,
+      "JSHeapUsedSize": 21039412,
+      "requests": 48
+    },
+    {
+      "second": 10,
+      "Nodes": 1732,
+      "TaskDuration": 0.00064,
+      "JSHeapUsedSize": 21039412,
+      "requests": 48
+    },
+    {
+      "second": 20,
+      "Nodes": 1732,
+      "TaskDuration": 0.000742,
+      "JSHeapUsedSize": 21039412,
+      "requests": 48
+    },
+    {
+      "second": 30,
+      "Nodes": 1045,
+      "TaskDuration": 0.032731,
+      "JSHeapUsedSize": 16179040,
+      "requests": 48
+    },
+    {
+      "second": 40,
+      "Nodes": 1045,
+      "TaskDuration": 0.032876,
+      "JSHeapUsedSize": 16179040,
+      "requests": 48
+    },
+    {
+      "second": 50,
+      "Nodes": 1045,
+      "TaskDuration": 0.032982,
+      "JSHeapUsedSize": 16179040,
+      "requests": 48
+    },
+    {
+      "second": 60,
+      "Nodes": 1045,
+      "TaskDuration": 0.033852,
+      "JSHeapUsedSize": 16179420,
+      "requests": 48
+    }
+  ],
+  "limitations": [
+    "All requests intercepted. No real account balances, adjustments, approvals, snapshots or recovery verified."
+  ],
+  "commands": {
+    "bun run test": "111 pass, 0 fail, 9 files",
+    "browser": "7 checks, 0 page errors",
+    "npm run lint": "exit 0",
+    "npm run build": "exit 0"
+  },
+  "screenshots": [
+    "accounts-desktop-dark.png",
+    "accounts-desktop-error-light.png",
+    "accounts-mobile-dark.png",
+    "accounts-mobile-light.png"
+  ],
+  "artifactDirectory": "/Users/atomex/.codex/artifacts/surprising-assets-20261026/admin"
+}

@@ -6,6 +6,9 @@ import { tableColumnLabel, tableRowKeys, tableRowLabel } from "../lib/tableRows"
 import "./AdminDataTable.css"
 
 type Props = {
+  loading?: boolean
+  error?: string
+  emptyText?: string
   rows: UnknownRecord[]
   columns?: string[]
   maxColumns?: number
@@ -20,6 +23,9 @@ type Props = {
 
 export function DataTable({
   rows,
+  loading = false,
+  error = "",
+  emptyText = "暂无数据",
   columns,
   maxColumns = 10,
   onRowClick,
@@ -60,11 +66,13 @@ export function DataTable({
     )
   }
 
+  if (loading) return <div className="empty admin-table-empty" role="status" aria-busy="true">正在加载…</div>
+  if (error) return <div className="alert danger" role="alert">{error}</div>
   if (!rows.length)
     return (
       <div className="empty admin-table-empty" role="status">
         <Inbox size={24} strokeWidth={1.5} aria-hidden="true" />
-        <p>暂无数据</p>
+        <p>{emptyText}</p>
       </div>
     )
   return (

@@ -1,19 +1,26 @@
 import { assetCode } from "../lib/formValues";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { gatewayGet, accountAdjustments, accountAssetValuation, accountAssetSnapshots, alertEvents, gatewayPost, createAccountAssetSnapshot } from "../api/admin";
-import { type BalanceRecord, type PositionRecord, type UnknownRecord } from "../types";
+import { type UnknownRecord } from "../types";
 import { positiveInt64, int64String } from "../lib/integers";
 import { Search } from "lucide-react";
 import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, Metric, CursorPager } from "../components/AdminUi";
 import { productLineForAccountType, ACCOUNT_TYPES } from "../lib/products";
 import { records, errorMessage, objectValue } from "../lib/adminData";
+import { accountReadPage, readAccountSections, type AccountRead } from "../lib/accountReads";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
 
 export default function AccountsPage() {
-  const [userId, setUserId] = useState("1001");
+  const [userId, setUserId] = useState("");
   const [accountType, setAccountType] = useState("USDT_PERPETUAL");
   const [asset, setAsset] = useState("USDT");
-  const [data, setData] = useState<AccountData | null>(null);
+  const [fundingProductLine, setFundingProductLine] = useState("SPOT");
+  const productLine = productLineForAccountType(accountType) || fundingProductLine;
+  const [accountRead, setAccountRead] = useState<{ scope: string; sections: Record<string, AccountRead> } | null>(null);
+  const [reportRead, setReportRead] = useState<{ scope: string; sections: Record<string, AccountRead> } | null>(null);
+  const accountAbort = useRef<AbortController | null>(null);
+  const reportAbort = useRef<AbortController | null>(null);
+  const writing = useRef(false);
   const [adjust, setAdjust] = useState({ amountUnits: "", referenceId: "", reason: "" });
   const [adjustmentFilters, setAdjustmentFilters] = useState({
     adminUserId: "",
@@ -48,7 +55,35 @@ export default function AccountsPage() {
   });
   const [valuationPageInfo, setValuationPageInfo] = useState(cursorInfo());
   const [snapshotPageInfo, setSnapshotPageInfo] = useState(cursorInfo());
-  const [loading, setLoading] = useState(false);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [writeLoading, setLoading] = useState(false);
+  const loading = accountLoading || reportLoading || writeLoading;
+  const accountScope = JSON.stringify([userId, accountType, productLine, asset, ledgerFilters.limit, ledgerFilters.sort, adjustmentFilters.adminUserId, adjustmentFilters.adjustmentKind, adjustmentFilters.referenceId, adjustmentFilters.limit, adjustmentFilters.sort]);
+  const reportScope = JSON.stringify([reportFilters.valuationAsset, reportFilters.userId, reportFilters.accountType, reportFilters.asset, reportFilters.snapshotDate, reportFilters.limit, reportFilters.valuationSort, reportFilters.snapshotSort]);
+  const accountSections = accountRead?.scope === accountScope ? accountRead.sections : {};
+  const reportSections = reportRead?.scope === reportScope ? reportRead.sections : {};
+  const data = {
+    balances: accountSections.balances?.response?.balances,
+    productBalances: accountSections.productBalances?.response?.balances,
+    positions: accountSections.positions?.response?.positions,
+    ledger: accountSections.ledger?.response?.entries,
+    productLedger: accountSections.productLedger?.response?.entries,
+    transfers: accountSections.transfers?.response?.transfers,
+    adjustments: accountSections.adjustments?.response?.adjustments,
+    assetValuation: reportSections.assetValuation?.response,
+    assetSnapshots: reportSections.assetSnapshots?.response?.snapshots,
+    assetSnapshotAlerts: records(reportSections.assetSnapshotAlerts?.response?.events as UnknownRecord[] | undefined).filter(row => row.metricKey === "ACCOUNT_ASSET_SNAPSHOT_DIFF_PPM")
+  };
+  function sectionState(key: string, report = false) {
+    const sections = report ? reportSections : accountSections;
+    const skipped = !report && ["productBalances", "positions", "productLedger", "transfers"].includes(key) && accountType === "FUNDING";
+    return {
+      loading: (report ? reportLoading : accountLoading) && !skipped,
+      error: sections[key]?.error || "",
+      emptyText: skipped ? "请选择产品账户查看该产品数据。" : sections[key]?.response ? "暂无数据" : report ? "请查询以加载报表。" : "请输入用户 ID 并查询。"
+    };
+  }
   const [error, setError] = useState("");
 
   function resetListCursors() {
@@ -91,141 +126,77 @@ export default function AccountsPage() {
   async function load(nextLedgerCursor = ledgerFilters.ledgerCursor,
                       nextProductLedgerCursor = ledgerFilters.productLedgerCursor,
                       nextTransferCursor = ledgerFilters.transferCursor,
-                      nextAdjustmentCursor = adjustmentFilters.cursor,
-                      nextValuationCursor = reportFilters.valuationCursor,
-                      nextSnapshotCursor = reportFilters.snapshotCursor) {
-    if (!userId) return;
-    setLoading(true);
+                      nextAdjustmentCursor = adjustmentFilters.cursor) {
+    accountAbort.current?.abort();
+    const controller = new AbortController();
+    accountAbort.current = controller;
     setError("");
     try {
-      const productLine = productLineForAccountType(accountType);
-      const adjustmentParams = {
-        userId,
-        asset,
-        adminUserId: adjustmentFilters.adminUserId || undefined,
-        adjustmentKind: adjustmentFilters.adjustmentKind || undefined,
-        referenceId: adjustmentFilters.referenceId || undefined,
-        limit: Number(adjustmentFilters.limit) || 100,
-        cursor: nextAdjustmentCursor,
-        sort: adjustmentFilters.sort,
-        ...(adjustmentFilters.adjustmentKind === "PRODUCT" ? { accountType, productLine } : {})
+      const owner = positiveInt64(userId, "用户 ID");
+      const selectedAsset = asset ? assetCode(asset) : undefined;
+      const query = { userId: owner, productLine };
+      const list = { ...query, asset: selectedAsset, limit: Number(ledgerFilters.limit) || 100, sort: ledgerFilters.sort };
+      setAccountRead(null);
+      setAccountLoading(true);
+      const reads = {
+        balances: { request: gatewayGet("account", "/balances", query, controller.signal), array: "balances" },
+        ledger: { request: gatewayGet("account", "/ledger", { ...list, cursor: nextLedgerCursor }, controller.signal), array: "entries" },
+        adjustments: { request: accountAdjustments({
+          ...query, asset: selectedAsset, adminUserId: adjustmentFilters.adminUserId || undefined,
+          adjustmentKind: adjustmentFilters.adjustmentKind || undefined, referenceId: adjustmentFilters.referenceId || undefined,
+          limit: Number(adjustmentFilters.limit) || 100, cursor: nextAdjustmentCursor, sort: adjustmentFilters.sort,
+          ...(adjustmentFilters.adjustmentKind === "PRODUCT" ? { accountType } : {})
+        }, controller.signal), array: "adjustments" },
+        ...(accountType !== "FUNDING" ? {
+          productBalances: { request: gatewayGet("account", "/product-balances", { ...query, accountType }, controller.signal), array: "balances" },
+          positions: { request: gatewayGet("account", "/positions", query, controller.signal), array: "positions" },
+          productLedger: { request: gatewayGet("account", "/product-ledger", { ...list, accountType, cursor: nextProductLedgerCursor }, controller.signal), array: "entries" },
+          transfers: { request: gatewayGet("account", "/transfers", { ...list, accountType, cursor: nextTransferCursor }, controller.signal), array: "transfers" }
+        } : {})
       };
-      const reportParams = {
-        valuationAsset: reportFilters.valuationAsset || "USDT",
-        userId: reportFilters.userId || undefined,
-        accountType: reportFilters.accountType || undefined,
-        asset: reportFilters.asset || undefined,
-        nonZeroOnly: "true",
-        limit: Number(reportFilters.limit) || 100,
-        cursor: nextValuationCursor,
-        sort: reportFilters.valuationSort
-      };
-      const snapshotParams = {
-        snapshotDate: reportFilters.snapshotDate || undefined,
-        valuationAsset: reportFilters.valuationAsset || "USDT",
-        accountType: reportFilters.accountType || undefined,
-        asset: reportFilters.asset || undefined,
-        limit: Number(reportFilters.limit) || 100,
-        cursor: nextSnapshotCursor,
-        sort: reportFilters.snapshotSort
-      };
-      const [
-        balances,
-        productBalances,
-        positions,
-        ledger,
-        productLedger,
-        transfers,
-        adjustments,
-        assetValuation,
-        assetSnapshots,
-        snapshotAlerts
-      ] = await Promise.all([
-        gatewayGet<{ balances?: BalanceRecord[] }>("account", "/balances", { userId }),
-        gatewayGet<{ balances?: BalanceRecord[] }>("account", "/product-balances", { userId, accountType, productLine }),
-        gatewayGet<{ positions?: PositionRecord[] }>("account", "/positions", { userId, productLine }),
-        gatewayGet<{ entries?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>(
-          "account",
-          "/ledger",
-          {
-            userId,
-            asset,
-            limit: Number(ledgerFilters.limit) || 100,
-            cursor: nextLedgerCursor,
-            sort: ledgerFilters.sort
-          }
-        ),
-        gatewayGet<{ entries?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>(
-          "account",
-          "/product-ledger",
-          {
-            userId,
-            accountType,
-            asset,
-            productLine,
-            limit: Number(ledgerFilters.limit) || 100,
-            cursor: nextProductLedgerCursor,
-            sort: ledgerFilters.sort
-          }
-        ),
-        gatewayGet<{ transfers?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>(
-          "account",
-          "/transfers",
-          {
-            userId,
-            accountType,
-            asset,
-            productLine,
-            limit: Number(ledgerFilters.limit) || 100,
-            cursor: nextTransferCursor,
-            sort: ledgerFilters.sort
-          }
-        ),
-        accountAdjustments(adjustmentParams),
-        accountAssetValuation(reportParams),
-        accountAssetSnapshots(snapshotParams),
-        alertEvents({ status: "OPEN", domain: "SYSTEM", limit: 100 })
-      ]);
-      setData({
-        balances: balances.balances ?? [],
-        productBalances: productBalances.balances ?? [],
-        positions: positions.positions ?? [],
-        ledger: ledger.entries ?? [],
-        productLedger: productLedger.entries ?? [],
-        transfers: transfers.transfers ?? [],
-        adjustments: adjustments.adjustments ?? [],
-        assetValuation,
-        assetSnapshots: assetSnapshots.snapshots ?? [],
-        assetSnapshotAlerts: records(snapshotAlerts.events)
-          .filter((row) => row.metricKey === "ACCOUNT_ASSET_SNAPSHOT_DIFF_PPM")
-      });
-      setLedgerPageInfo(cursorInfo(ledger));
-      setProductLedgerPageInfo(cursorInfo(productLedger));
-      setTransferPageInfo(cursorInfo(transfers));
-      setAdjustmentPageInfo(cursorInfo(adjustments));
-      setValuationPageInfo(cursorInfo(assetValuation));
-      setSnapshotPageInfo(cursorInfo(assetSnapshots));
-      setLedgerFilters((current) => ({
-        ...current,
-        ledgerCursor: nextLedgerCursor,
-        productLedgerCursor: nextProductLedgerCursor,
-        transferCursor: nextTransferCursor
-      }));
-      setAdjustmentFilters((current) => ({ ...current, cursor: nextAdjustmentCursor }));
-      setReportFilters((current) => ({
-        ...current,
-        valuationCursor: nextValuationCursor,
-        snapshotCursor: nextSnapshotCursor
-      }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      const sections = await readAccountSections(Object.fromEntries(Object.entries(reads).map(([key, read]) => [key, { ...read, expected: { userId: owner, productLine } }])));
+      if (controller.signal.aborted) return;
+      setAccountRead({ scope: accountScope, sections });
+      setLedgerPageInfo(accountReadPage(sections.ledger));
+      setProductLedgerPageInfo(accountReadPage(sections.productLedger));
+      setTransferPageInfo(accountReadPage(sections.transfers));
+      setAdjustmentPageInfo(accountReadPage(sections.adjustments));
+      setLedgerFilters(current => ({ ...current, ledgerCursor: nextLedgerCursor, productLedgerCursor: nextProductLedgerCursor, transferCursor: nextTransferCursor }));
+      setAdjustmentFilters(current => ({ ...current, cursor: nextAdjustmentCursor }));
+    } catch (err) { if (!controller.signal.aborted) setError(errorMessage(err)); }
+    finally { if (!controller.signal.aborted) setAccountLoading(false); }
+  }
+
+  async function loadReports(nextValuationCursor = reportFilters.valuationCursor, nextSnapshotCursor = reportFilters.snapshotCursor) {
+    reportAbort.current?.abort();
+    const controller = new AbortController();
+    reportAbort.current = controller;
+    setReportLoading(true);
+    setReportRead(null);
+    const common = {
+      valuationAsset: reportFilters.valuationAsset || "USDT", accountType: reportFilters.accountType || undefined,
+      asset: reportFilters.asset || undefined, limit: Number(reportFilters.limit) || 100
+    };
+    const sections = await readAccountSections({
+      assetValuation: { request: accountAssetValuation({ ...common, userId: reportFilters.userId || undefined, nonZeroOnly: "true", cursor: nextValuationCursor, sort: reportFilters.valuationSort }, controller.signal), array: "rows", optionalArrays: ["warnings"] },
+      assetSnapshots: { request: accountAssetSnapshots({ ...common, snapshotDate: reportFilters.snapshotDate || undefined, cursor: nextSnapshotCursor, sort: reportFilters.snapshotSort }, controller.signal), array: "snapshots" },
+      assetSnapshotAlerts: { request: alertEvents({ status: "OPEN", domain: "SYSTEM", limit: 100 }, controller.signal), array: "events" }
+    });
+    if (controller.signal.aborted) return;
+    setReportRead({ scope: reportScope, sections });
+    setValuationPageInfo(accountReadPage(sections.assetValuation));
+    setSnapshotPageInfo(accountReadPage(sections.assetSnapshots));
+    setReportFilters(current => ({ ...current, valuationCursor: nextValuationCursor, snapshotCursor: nextSnapshotCursor }));
+    setReportLoading(false);
+  }
+
+  async function refresh() {
+    await Promise.all([userId.trim() ? load() : Promise.resolve(), loadReports()]);
   }
 
   async function adjustBalance(product: boolean) {
-    if (loading) return;
+    if (writing.current) return;
+    writing.current = true;
     setLoading(true); setError("");
     try {
       const body = {
@@ -237,17 +208,18 @@ export default function AccountsPage() {
         reason: adjust.reason.trim()
       };
       if (!body.referenceId || !body.reason) throw new Error("请填写唯一业务编号和调整原因。");
-      const productLine = product ? productLineForAccountType(accountType) : "";
-      if (product && !productLine) throw new Error("请选择产品账户类型。");
-      if (!window.confirm(`确认调整用户 ${body.userId} 的 ${product ? accountType : "基础账户"} ${body.asset} 余额 ${body.amountUnits} 最小单位？`)) return;
+      if (product && !productLineForAccountType(accountType)) throw new Error("请选择产品账户类型。");
+      if (!window.confirm(`确认调整用户 ${body.userId} 的 ${productLine} / ${product ? accountType : "基础账户"} ${body.asset} 余额 ${body.amountUnits} 最小单位？`)) return;
       await gatewayPost("account", product ? "/product-balance-adjustments" : "/balance-adjustments", body, productLine ? { productLine } : {});
       setAdjust({ amountUnits: "", referenceId: "", reason: "" });
-      await load("", "", "", "", "", "");
+      await Promise.all([load("", "", "", ""), loadReports("", "")]);
     } catch (err) { setError(errorMessage(err)); }
-    finally { setLoading(false); }
+    finally { writing.current = false; setLoading(false); }
   }
 
   async function generateAssetSnapshot() {
+    if (writing.current) return;
+    writing.current = true;
     setLoading(true);
     setError("");
     try {
@@ -255,14 +227,16 @@ export default function AccountsPage() {
         valuationAsset: reportFilters.valuationAsset || "USDT",
         snapshotDate: reportFilters.snapshotDate || undefined
       });
-      await load("", "", "", "", "", "");
+      await loadReports("", "");
     } catch (err) {
       setError(errorMessage(err));
-      setLoading(false);
-    }
+    } finally { writing.current = false; setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { accountAbort.current?.abort(); setAccountLoading(false); return () => accountAbort.current?.abort(); }, [accountScope]);
+  useEffect(() => { reportAbort.current?.abort(); setReportLoading(false); return () => reportAbort.current?.abort(); }, [reportScope]);
+  useEffect(() => { setAdjust({ amountUnits: "", referenceId: "", reason: "" }); }, [userId, accountType, asset, productLine]);
+  useEffect(() => { void loadReports(); return () => { accountAbort.current?.abort(); reportAbort.current?.abort(); }; }, []);
 
   const valuationRows = records(data?.assetValuation?.rows as UnknownRecord[] | undefined);
   const valuationTotals = objectValue(data?.assetValuation?.totals);
@@ -270,19 +244,22 @@ export default function AccountsPage() {
   const snapshotAlerts = records(data?.assetSnapshotAlerts);
 
   return (
-    <Page title="账户资产" onRefresh={load} loading={loading} error={error}>
+    <Page title="账户资产" onRefresh={refresh} description="按用户与产品线核对余额、流水和人工调整；全局估值报表独立查询。" loading={loading} error={error}>
+      <fieldset className="account-fields" disabled={writeLoading}>
       <div className="filters">
         <TextFilter label="User ID" value={userId} onChange={(value) => { setUserId(value); resetListCursors(); }} />
-        <label>账户类型<select value={accountType} onChange={(event) => { setAccountType(event.target.value); resetListCursors(); }}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>账户类型<select aria-label="账户类型" value={accountType} onChange={(event) => { setAccountType(event.target.value); resetListCursors(); }}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
+        {accountType === "FUNDING" && <label>资金账户产品线<select aria-label="资金账户产品线" value={fundingProductLine} onChange={event => { setFundingProductLine(event.target.value); resetListCursors(); }}>{["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}</select></label>}
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetListCursors(); }} />
         <TextFilter label="流水 Limit" value={ledgerFilters.limit} onChange={(value) => updateLedgerFilters({ limit: value })} />
         <SortSelect label="流水排序" value={ledgerFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateLedgerFilters({ sort: value })} />
-        <button onClick={() => void load("", "", "", "", reportFilters.valuationCursor, reportFilters.snapshotCursor)}><Search size={16} />查询</button>
+        <button onClick={() => void load("", "", "", "")}><Search size={16} />查询</button>
       </div>
+      <p className="muted">当前产品线：{productLine}。基础余额与流水也按此产品线查询。</p>
       <div className="three-grid">
-        <Panel title="基础余额"><DataTable rows={records(data?.balances)} /></Panel>
-        <Panel title="产品余额"><DataTable rows={records(data?.productBalances)} /></Panel>
-        <Panel title="持仓"><DataTable rows={records(data?.positions)} maxColumns={8} /></Panel>
+        <Panel title="基础余额"><DataTable {...sectionState("balances")} rows={records(data?.balances as UnknownRecord[] | undefined)} /></Panel>
+        <Panel title="产品余额"><DataTable {...sectionState("productBalances")} rows={records(data?.productBalances as UnknownRecord[] | undefined)} /></Panel>
+        <Panel title="持仓"><DataTable {...sectionState("positions")} rows={records(data?.positions as UnknownRecord[] | undefined)} maxColumns={8} /></Panel>
       </div>
       <Panel title="资产估值报表">
         <div className="filters">
@@ -331,42 +308,29 @@ export default function AccountsPage() {
             options={ACCOUNT_SNAPSHOT_SORTS}
             onChange={(value) => updateReportFilters({ snapshotSort: value })}
           />
-          <button onClick={() => void load("", "", "", "", "", "")}><Search size={16} />查询</button>
+          <button onClick={() => void loadReports("", "")}><Search size={16} />查询</button>
           <button className="primary" onClick={() => void generateAssetSnapshot()}>生成快照</button>
         </div>
         <div className="metrics">
-          <Metric label="估值合计" value={valuationTotals.totalValue ?? "0"} tone="ok" />
-          <Metric label="账户行" value={valuationTotals.rows ?? 0} tone="muted" />
-          <Metric label="用户数" value={valuationTotals.uniqueUsers ?? 0} tone="muted" />
-          <Metric label="已计价" value={valuationTotals.pricedRows ?? 0} tone="ok" />
-          <Metric label="缺汇率" value={valuationTotals.missingRateRows ?? 0} tone={Number(valuationTotals.missingRateRows ?? 0) > 0 ? "warn" : "ok"} />
-          <Metric label="快照差异告警" value={snapshotAlerts.length} tone={snapshotAlerts.length ? "danger" : "ok"} />
+          <Metric label="估值合计" value={valuationTotals.totalValue ?? "—"} tone={valuationTotals.totalValue == null ? "muted" : "ok"} />
+          <Metric label="账户行" value={valuationTotals.rows ?? "—"} tone="muted" />
+          <Metric label="用户数" value={valuationTotals.uniqueUsers ?? "—"} tone="muted" />
+          <Metric label="已计价" value={valuationTotals.pricedRows ?? "—"} tone={valuationTotals.pricedRows == null ? "muted" : "ok"} />
+          <Metric label="缺汇率" value={valuationTotals.missingRateRows ?? "—"} tone={valuationTotals.missingRateRows == null ? "muted" : Number(valuationTotals.missingRateRows) > 0 ? "warn" : "ok"} />
+          <Metric label="快照差异告警" value={reportSections.assetSnapshotAlerts?.response ? snapshotAlerts.length : "—"} tone={!reportSections.assetSnapshotAlerts?.response ? "muted" : snapshotAlerts.length ? "danger" : "ok"} />
         </div>
         {valuationWarnings.length > 0 && (
           <DataTable rows={valuationWarnings} columns={["area", "message"]} />
         )}
         <CursorPager
+          loading={loading}
           page={valuationPageInfo}
           cursor={reportFilters.valuationCursor}
-          onNext={() => void load(
-            ledgerFilters.ledgerCursor,
-            ledgerFilters.productLedgerCursor,
-            ledgerFilters.transferCursor,
-            adjustmentFilters.cursor,
-            valuationPageInfo.nextCursor || "",
-            reportFilters.snapshotCursor
-          )}
-          onReset={() => void load(
-            ledgerFilters.ledgerCursor,
-            ledgerFilters.productLedgerCursor,
-            ledgerFilters.transferCursor,
-            adjustmentFilters.cursor,
-            "",
-            reportFilters.snapshotCursor
-          )}
+          onNext={() => void loadReports(valuationPageInfo.nextCursor || "", reportFilters.snapshotCursor)}
+          onReset={() => void loadReports("", reportFilters.snapshotCursor)}
         />
         <DataTable
-          rows={valuationRows}
+          {...sectionState("assetValuation", true)} rows={valuationRows}
           columns={[
             "accountType",
             "userId",
@@ -385,6 +349,7 @@ export default function AccountsPage() {
         />
       </Panel>
       <Panel title="日终资产快照">
+        {reportSections.assetSnapshotAlerts?.error && <div className="alert danger" role="alert">快照告警读取失败：{reportSections.assetSnapshotAlerts.error}</div>}
         {snapshotAlerts.length > 0 && (
           <DataTable
             rows={snapshotAlerts}
@@ -392,27 +357,14 @@ export default function AccountsPage() {
           />
         )}
         <CursorPager
+          loading={loading}
           page={snapshotPageInfo}
           cursor={reportFilters.snapshotCursor}
-          onNext={() => void load(
-            ledgerFilters.ledgerCursor,
-            ledgerFilters.productLedgerCursor,
-            ledgerFilters.transferCursor,
-            adjustmentFilters.cursor,
-            reportFilters.valuationCursor,
-            snapshotPageInfo.nextCursor || ""
-          )}
-          onReset={() => void load(
-            ledgerFilters.ledgerCursor,
-            ledgerFilters.productLedgerCursor,
-            ledgerFilters.transferCursor,
-            adjustmentFilters.cursor,
-            reportFilters.valuationCursor,
-            ""
-          )}
+          onNext={() => void loadReports(reportFilters.valuationCursor, snapshotPageInfo.nextCursor || "")}
+          onReset={() => void loadReports(reportFilters.valuationCursor, "")}
         />
         <DataTable
-          rows={records(data?.assetSnapshots)}
+          {...sectionState("assetSnapshots", true)} rows={records(data?.assetSnapshots as UnknownRecord[] | undefined)}
           columns={[
             "snapshotDate",
             "valuationAsset",
@@ -470,6 +422,7 @@ export default function AccountsPage() {
           <button onClick={() => void load(ledgerFilters.ledgerCursor, ledgerFilters.productLedgerCursor, ledgerFilters.transferCursor, "")}><Search size={16} />查询</button>
         </div>
         <CursorPager
+          loading={loading}
           page={adjustmentPageInfo}
           cursor={adjustmentFilters.cursor}
           onNext={() => void load(
@@ -481,7 +434,7 @@ export default function AccountsPage() {
           onReset={() => void load(ledgerFilters.ledgerCursor, ledgerFilters.productLedgerCursor, ledgerFilters.transferCursor, "")}
         />
         <DataTable
-          rows={records(data?.adjustments)}
+          {...sectionState("adjustments")} rows={records(data?.adjustments as UnknownRecord[] | undefined)}
           columns={[
             "adjustmentId",
             "adjustmentKind",
@@ -502,32 +455,36 @@ export default function AccountsPage() {
       <div className="three-grid">
         <Panel title="基础流水">
           <CursorPager
+            loading={loading}
             page={ledgerPageInfo}
             cursor={ledgerFilters.ledgerCursor}
             onNext={() => void load(ledgerPageInfo.nextCursor || "", ledgerFilters.productLedgerCursor, ledgerFilters.transferCursor, adjustmentFilters.cursor)}
             onReset={() => void load("", ledgerFilters.productLedgerCursor, ledgerFilters.transferCursor, adjustmentFilters.cursor)}
           />
-          <DataTable rows={records(data?.ledger)} maxColumns={9} />
+          <DataTable {...sectionState("ledger")} rows={records(data?.ledger as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
         <Panel title="产品流水">
           <CursorPager
+            loading={loading}
             page={productLedgerPageInfo}
             cursor={ledgerFilters.productLedgerCursor}
             onNext={() => void load(ledgerFilters.ledgerCursor, productLedgerPageInfo.nextCursor || "", ledgerFilters.transferCursor, adjustmentFilters.cursor)}
             onReset={() => void load(ledgerFilters.ledgerCursor, "", ledgerFilters.transferCursor, adjustmentFilters.cursor)}
           />
-          <DataTable rows={records(data?.productLedger)} maxColumns={9} />
+          <DataTable {...sectionState("productLedger")} rows={records(data?.productLedger as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
         <Panel title="划转记录">
           <CursorPager
+            loading={loading}
             page={transferPageInfo}
             cursor={ledgerFilters.transferCursor}
             onNext={() => void load(ledgerFilters.ledgerCursor, ledgerFilters.productLedgerCursor, transferPageInfo.nextCursor || "", adjustmentFilters.cursor)}
             onReset={() => void load(ledgerFilters.ledgerCursor, ledgerFilters.productLedgerCursor, "", adjustmentFilters.cursor)}
           />
-          <DataTable rows={records(data?.transfers)} maxColumns={9} />
+          <DataTable {...sectionState("transfers")} rows={records(data?.transfers as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
       </div>
+      </fieldset>
     </Page>
   );
 }
@@ -535,16 +492,3 @@ export default function AccountsPage() {
 const ACCOUNT_VALUATION_SORTS = ["valuationValue.desc", "valuationValue.asc"];
 
 const ACCOUNT_SNAPSHOT_SORTS = ["snapshotDate.desc", "snapshotDate.asc"];
-
-interface AccountData {
-  balances: BalanceRecord[];
-  productBalances: BalanceRecord[];
-  positions: PositionRecord[];
-  ledger: UnknownRecord[];
-  productLedger: UnknownRecord[];
-  transfers: UnknownRecord[];
-  adjustments: UnknownRecord[];
-  assetValuation: UnknownRecord | null;
-  assetSnapshots: UnknownRecord[];
-  assetSnapshotAlerts: UnknownRecord[];
-}

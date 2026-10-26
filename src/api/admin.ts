@@ -230,8 +230,8 @@ export function accountAssetValuation(params: {
   asset?: string;
   nonZeroOnly?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/reports/account-assets/valuation${queryString(params)}`);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return request<UnknownRecord>(`/api/v1/admin/reports/account-assets/valuation${queryString(params)}`, { signal });
 }
 
 export function accountAssetSnapshots(params: {
@@ -240,9 +240,9 @@ export function accountAssetSnapshots(params: {
   accountType?: string;
   asset?: string;
   limit?: number;
-} & CursorListParams = {}) {
+} & CursorListParams = {}, signal?: AbortSignal) {
   return request<CursorPage<UnknownRecord, "snapshots">>(
-    `/api/v1/admin/reports/account-assets/snapshots${queryString(params)}`
+    `/api/v1/admin/reports/account-assets/snapshots${queryString(params)}`, { signal }
   );
 }
 
@@ -280,8 +280,8 @@ export function disableAlertRule(ruleId: number | string) {
   return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/alerts/rules/${ruleId}/disable`, {});
 }
 
-export function alertEvents(params: { status?: string; severity?: string; domain?: string; limit?: number } & CursorListParams = {}) {
-  return request<CursorPage<UnknownRecord, "events">>(`/api/v1/admin/alerts/events${queryString(params)}`);
+export function alertEvents(params: { status?: string; severity?: string; domain?: string; limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
+  return request<CursorPage<UnknownRecord, "events">>(`/api/v1/admin/alerts/events${queryString(params)}`, { signal });
 }
 
 export function alertChannels(params: { domain?: string; enabled?: string; limit?: number } & CursorListParams = {}) {
@@ -472,9 +472,9 @@ export async function downloadExportFile(exportId: number | string) {
   return fileName;
 }
 
-export function gatewayGet<T>(service: string, path: string, params: Record<string, unknown> = {}) {
+export function gatewayGet<T>(service: string, path: string, params: Record<string, unknown> = {}, signal?: AbortSignal) {
   return request<T>(`${adminGatewayPath(service, path)}${queryString(params)}`, {
-    productLine: productLineParam(params)
+    productLine: productLineParam(params), signal
   });
 }
 
@@ -513,8 +513,8 @@ export function accountAdjustments(params: {
   asset?: string;
   referenceId?: string;
   limit?: number;
-} & CursorListParams = {}) {
-  return gatewayGet<CursorPage<UnknownRecord, "adjustments">>("account", "/adjustments", params);
+} & CursorListParams = {}, signal?: AbortSignal) {
+  return gatewayGet<CursorPage<UnknownRecord, "adjustments">>("account", "/adjustments", params, signal);
 }
 
 export function walletFinanceSummary(params: {

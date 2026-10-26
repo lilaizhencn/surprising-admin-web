@@ -929,3 +929,5 @@ tr.clickable:hover td {
 .instrument-summary { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
 .instrument-summary .metric strong { font-size: 18px; overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .instrument-workspace { grid-template-columns: minmax(0, 1fr); } }
+
+.account-fields { border: 0; padding: 0; margin: 0; min-inline-size: 0; display: grid; gap: 20px; }
