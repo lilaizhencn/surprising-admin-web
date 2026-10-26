@@ -538,6 +538,18 @@ main {
 .announcement-user-preview .button-row { margin: 8px 0 16px; }
 .announcement-user-preview [aria-pressed="true"] { background: var(--color-ink); color: var(--color-surface); }
 .announcement-audit-snapshot pre { max-width: min(70vw, 700px); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
+.security-review-workspace { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 20px; }
+.security-review-workspace:disabled { opacity: .72; }
+.security-review-detail { scroll-margin-top: 96px; }
+.security-review-workspace .metric:nth-child(3) strong { font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.role-permission-options { display: grid; gap: 8px; max-height: 440px; overflow-y: auto; }
+.role-permission-options label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--color-border-soft); border-radius: 6px; }
+.role-permission-options input { margin-top: 3px; flex: 0 0 auto; }
+.role-permission-options label > span { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.role-permission-options small { color: var(--color-ink-subtle); }
+.permission-difference { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.permission-difference > div { display: grid; align-content: start; gap: 8px; padding: 12px; border: 1px solid var(--color-border-soft); border-radius: 6px; overflow-wrap: anywhere; font-size: 12px; }
+@media (max-width: 600px) { .permission-difference { grid-template-columns: minmax(0, 1fr); } }
 .announcement-editor legend {
   padding: 0 6px;
   color: var(--color-ink-muted);

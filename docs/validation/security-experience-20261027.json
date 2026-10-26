@@ -1,0 +1,140 @@
+{
+  "recordedAt": "2026-10-26T16:15:04.457389+00:00",
+  "localDate": "2026-10-27",
+  "baseCommit": "732a798ac55973190b19f839640c732c64b5686e",
+  "fixtureOnly": true,
+  "artifacts": "/Users/atomex/.codex/artifacts/surprising-security-20261026/admin",
+  "commands": [
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "unitTests": {
+    "passed": 126,
+    "failed": 0,
+    "files": 13
+  },
+  "browser": {
+    "checks": [
+      "catalog errors use unknown counts and disable writes; slow and mismatched role responses cannot cross targets; SUPER_ADMIN is read-only",
+      "dirty edits and save have explicit confirmation; diff retains unlisted permissions; original approval header remains exact; pending write locks target; uncertain result requires re-read",
+      "malformed approval pages fail closed; self/expired requests are view-only; full path/query/hash/long ID are reviewable; reason and target confirmation required; double click sends one decision",
+      "failed decision clears stale details and requires fresh read/new reason; reject works; open request expires without reload; filtered late list cannot replace current filter",
+      "1440/390/320 light/dark layouts, owner transition clears selection, repeated navigation and 60-second runtime observation"
+    ],
+    "errors": [],
+    "nativeMessages": [
+      "当前角色有未保存的权限修改，确定切换并放弃修改？",
+      "替换角色 OPERATOR 的权限\n新增 1 项：USER_WRITE\n移除 0 项：无\n保存将替换该角色的完整权限集合，并沿用敏感操作审批。",
+      "替换角色 OPERATOR 的权限\n新增 1 项：USER_WRITE\n移除 0 项：无\n保存将替换该角色的完整权限集合，并沿用敏感操作审批。",
+      "替换角色 OPERATOR 的权限\n新增 0 项：无\n移除 1 项：USER_WRITE\n保存将替换该角色的完整权限集合，并沿用敏感操作审批。",
+      "批准审批 9007199254740993\n申请人：合成申请人 (9007199254740994)\n目标：auth · POST /api/v1/admin/roles/OPERATOR/permissions\n查询：scope=USER_READ&owner=9007199254740994\n正文 SHA-256：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n意见：已核对合成请求与原始变更\n本决定不自动执行业务操作，是否继续？",
+      "批准审批 9007199254740993\n申请人：合成申请人 (9007199254740994)\n目标：auth · POST /api/v1/admin/roles/OPERATOR/permissions\n查询：scope=USER_READ&owner=9007199254740994\n正文 SHA-256：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n意见：已核对合成请求与原始变更\n本决定不自动执行业务操作，是否继续？",
+      "驳回审批 24\n申请人：合成申请人 (9007199254740994)\n目标：auth · POST /api/v1/admin/roles/OPERATOR/permissions\n查询：scope=USER_READ&owner=9007199254740994\n正文 SHA-256：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n意见：合成驳回原因\n本决定不自动执行业务操作，是否继续？",
+      "驳回审批 24\n申请人：合成申请人 (9007199254740994)\n目标：auth · POST /api/v1/admin/roles/OPERATOR/permissions\n查询：scope=USER_READ&owner=9007199254740994\n正文 SHA-256：aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n意见：重新核对后的驳回原因\n本决定不自动执行业务操作，是否继续？"
+    ],
+    "samples": [
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0,
+        "TaskDuration": 0.03345,
+        "JSHeapUsedSize": 15704368
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000109,
+        "TaskDuration": 0.038917,
+        "JSHeapUsedSize": 15706368
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000109,
+        "TaskDuration": 0.039029,
+        "JSHeapUsedSize": 15706368
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000278,
+        "TaskDuration": 0.056734,
+        "JSHeapUsedSize": 15704640
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000278,
+        "TaskDuration": 0.056866,
+        "JSHeapUsedSize": 15704640
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000278,
+        "TaskDuration": 0.056987,
+        "JSHeapUsedSize": 15704640
+      },
+      {
+        "JSEventListeners": 225,
+        "Nodes": 791,
+        "ScriptDuration": 0.000406,
+        "TaskDuration": 0.057954,
+        "JSHeapUsedSize": 15704996
+      }
+    ],
+    "retained": {
+      "JSEventListeners": 225,
+      "Nodes": 791,
+      "ScriptDuration": 0.000406,
+      "TaskDuration": 0.072527,
+      "JSHeapUsedSize": 15704576
+    },
+    "browser": "153.0.8010.12",
+    "fixtureOnly": true
+  },
+  "observation": {
+    "durationSeconds": 60,
+    "sampleIntervalSeconds": 10,
+    "taskDurationDeltaMs": 24.504,
+    "scriptDurationDeltaMs": 0.406,
+    "nodesBefore": 791,
+    "nodesAfterGc": 791,
+    "listenersBefore": 225,
+    "listenersAfterGc": 225,
+    "heapBeforeBytes": 15704368,
+    "heapAfterGcBytes": 15704576,
+    "limitation": "Short local observation; not a production performance or long-term leak conclusion."
+  },
+  "screenshots": [
+    "approval-details-desktop-dark.png",
+    "approval-details-desktop-light.png",
+    "approvals-mobile-320.png",
+    "approvals-mobile-390.png",
+    "approvals-mobile-dark.png",
+    "role-permissions-desktop-dark.png",
+    "role-permissions-desktop-light.png",
+    "roles-mobile-320.png",
+    "roles-mobile-390.png",
+    "roles-mobile-dark.png"
+  ],
+  "scriptSha256": "3cd1ecb7444c22bd23c3146add159cfef987735847d9152ab0fc2ef7429a5216",
+  "limits": [
+    "No real credentials, account security changes, roles or approval decisions.",
+    "No backend financial or six-product contract changes; real integration and recovery were not rerun."
+  ]
+}

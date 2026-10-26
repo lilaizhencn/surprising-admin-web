@@ -170,8 +170,8 @@ export function approvalRequests(params: {
   approverUserId?: string;
   service?: string;
   limit?: number;
-} & CursorListParams) {
-  return request<CursorPage<UnknownRecord, "approvals">>(`/api/v1/admin/approvals${queryString(params)}`);
+} & CursorListParams, signal?: AbortSignal) {
+  return request<CursorPage<UnknownRecord, "approvals">>(`/api/v1/admin/approvals${queryString(params)}`, { signal, expectedUserId: String(loadSession()?.user.userId ?? "") });
 }
 
 export function createApproval(body: {
@@ -190,16 +190,18 @@ export function createApproval(body: {
 }
 
 export function approveApproval(approvalId: number | string, reason?: string) {
-  return request<UnknownRecord>(`/api/v1/admin/approvals/${approvalId}/approve`, {
+  return request<UnknownRecord>(`/api/v1/admin/approvals/${positiveInt64(approvalId, "审批 ID")}/approve`, {
     method: "POST",
-    body: JSON.stringify({ reason: reason || "" })
+    body: JSON.stringify({ reason: reason || "" }),
+    expectedUserId: String(loadSession()?.user.userId ?? "")
   });
 }
 
 export function rejectApproval(approvalId: number | string, reason?: string) {
-  return request<UnknownRecord>(`/api/v1/admin/approvals/${approvalId}/reject`, {
+  return request<UnknownRecord>(`/api/v1/admin/approvals/${positiveInt64(approvalId, "审批 ID")}/reject`, {
     method: "POST",
-    body: JSON.stringify({ reason: reason || "" })
+    body: JSON.stringify({ reason: reason || "" }),
+    expectedUserId: String(loadSession()?.user.userId ?? "")
   });
 }
 
@@ -351,17 +353,17 @@ export function disableMfa(totpCode: string) {
   });
 }
 
-export function adminRoles() {
-  return request<{ count: number; roles: UnknownRecord[] }>("/api/v1/admin/roles");
+export function adminRoles(signal?: AbortSignal) {
+  return request<{ count: number; roles: UnknownRecord[] }>("/api/v1/admin/roles", { signal, expectedUserId: String(loadSession()?.user.userId ?? "") });
 }
 
-export function adminPermissions() {
-  return request<{ count: number; permissions: UnknownRecord[] }>("/api/v1/admin/permissions");
+export function adminPermissions(signal?: AbortSignal) {
+  return request<{ count: number; permissions: UnknownRecord[] }>("/api/v1/admin/permissions", { signal, expectedUserId: String(loadSession()?.user.userId ?? "") });
 }
 
-export function getRolePermissions(roleCode: string) {
+export function getRolePermissions(roleCode: string, signal?: AbortSignal) {
   return request<{ roleCode: string; permissions: string[] }>(
-    `/api/v1/admin/roles/${encodeURIComponent(roleCode)}/permissions`
+    `/api/v1/admin/roles/${encodeURIComponent(roleCode)}/permissions`, { signal, expectedUserId: String(loadSession()?.user.userId ?? "") }
   );
 }
 

@@ -22,6 +22,12 @@ const identityFields = [
   "userId",
 ]
 const columnLabels: Readonly<Record<string, string>> = {
+  approvalId: "审批 ID",
+  requesterUserId: "申请人 ID",
+  requesterUsername: "申请人",
+  httpMethod: "请求方法",
+  requestPath: "请求路径",
+  service: "服务",
   announcementId: "公告 ID",
   auditId: "审计 ID",
   title: "标题",
@@ -83,6 +89,9 @@ const columnLabels: Readonly<Record<string, string>> = {
   roleCode: "角色代码",
   roleName: "角色名称",
   permissionCount: "权限数",
+  permissionCode: "权限代码",
+  permissionName: "权限名称",
+  description: "说明",
   enabled: "是否启用",
   reason: "原因",
 }
