@@ -35,6 +35,7 @@ await context.addInitScript(() =>
 const requests = [],
 	errors = [],
 	checks = [];
+let malformedQuery = true;
 let reportError = true,
 	holdUser = "",
 	releaseOld;
@@ -112,6 +113,19 @@ await context.route(
 			data = { transfers: [], hasMore: false, limit: 100 };
 		else if (endpoint === "adjustments")
 			data = { adjustments: [], hasMore: false, limit: 100 };
+		if (endpoint === "query-tasks")
+			data = malformedQuery
+				? {}
+				: { tasks: [], count: 0, hasMore: false, limit: 100 };
+		if (url.pathname === "/api/v1/admin/query-tasks/limits")
+			data = {
+				activeTasksForUser: 0,
+				maxActiveTasksPerUser: 5,
+				activeTasksGlobal: 0,
+				maxActiveTasksGlobal: 20,
+				expiredTasksReadyToArchive: 0,
+				retainedResultBytes: 0,
+			};
 		try {
 			await route.fulfill({
 				status,
@@ -125,6 +139,15 @@ await context.route(
 );
 const page = await context.newPage();
 page.on("pageerror", (error) => errors.push(error.message));
+page.on("console", (message) => {
+	if (
+		message.type() === "error" &&
+		!/^Failed to load resource: the server responded with a status of 503\b/.test(
+			message.text(),
+		)
+	)
+		errors.push(message.text());
+});
 const panel = (title) =>
 	page
 		.locator("section.panel")
@@ -370,14 +393,35 @@ try {
 		});
 		if (index < 6) await page.waitForTimeout(10000);
 	}
+	await page.evaluate(() => (location.hash = "queries"));
+	await page
+		.getByText("查询任务数据格式异常，请重新加载。", { exact: true })
+		.waitFor();
+	assert(
+		await page
+			.getByRole("heading", { name: "查询任务", level: 2, exact: true })
+			.isVisible(),
+	);
+	malformedQuery = false;
+	await page.getByRole("button", { name: "重新加载", exact: true }).click();
+	await page.getByText("暂无数据", { exact: true }).first().waitFor();
+	checks.push(
+		"malformed query task records show a retryable error without crashing the page; a valid response recovers",
+	);
 	for (let i = 0; i < 4; i++) {
 		await page.evaluate(() => (location.hash = "accounts"));
 		await page
 			.getByRole("heading", { name: "账户资产", exact: true, level: 2 })
 			.waitFor();
 		await page.evaluate(() => (location.hash = "queries"));
-		await page.waitForTimeout(60);
+		await page
+			.getByRole("heading", { name: "查询任务", exact: true, level: 2 })
+			.waitFor();
+		await page.getByText("暂无数据", { exact: true }).first().waitFor();
 	}
+	checks.push(
+		"four account/query-task round trips complete with valid query fixtures and no uncaught or unexpected console errors",
+	);
 	assert.equal(errors.length, 0, errors.join("\n"));
 	await fs.writeFile(
 		path.join(out, "results.json"),

@@ -141,3 +141,6 @@ Playwright 模块，可用 `QA_CHROMIUM` 指定浏览器，再执行 `node scrip
 使用 `QA_PLAYWRIGHT_MODULE`、`QA_CHROMIUM`、`QA_OUTPUT` 指定浏览器和证据目录。
 全部 API 均为隔离契约夹具，写操作固定返回失败，不执行真实人工调整或生成快照。
 详见 [账户资产验收记录](docs/validation/account-experience-20261026.md)。
+
+查询任务页校验任务数组和配额响应格式；坏格式响应显示可重试错误，避免进入整页错误边界。
+账户验收脚本同时检查未捕获异常和非预期控制台错误，并覆盖坏响应恢复与反复切页。

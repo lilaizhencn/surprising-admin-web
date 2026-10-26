@@ -7,7 +7,7 @@
 - `npm run lint`：退出 0（TypeScript 检查）。
 - `bun run test`：111 项通过，0 失败，9 个测试文件。
 - `npm run build`：退出 0。
-- `QA_PLAYWRIGHT_MODULE=… QA_CHROMIUM=… QA_OUTPUT=… node scripts/account-experience-qa.mjs`：7 组浏览器检查通过，0 页面异常。
+- `QA_PLAYWRIGHT_MODULE=… QA_CHROMIUM=… QA_OUTPUT=… node scripts/account-experience-qa.mjs`：9 组浏览器检查通过，0 未捕获异常及非预期控制台错误（预期 HTTP 503 提示单独排除）。
 - `git diff --check`：通过。
 
 浏览器为 Chromium Headless Shell 153.0.8010.12；覆盖 1440×1000、390×844、320×760 和深浅主题。
@@ -22,12 +22,14 @@
 
 桌面/手机实际输入、选择、点击、主题切换、横向滚表和反复切页；全局页面没有横向溢出。
 
+归档时发现早期切页夹具缺少 `tasks`，React 错误边界捕获了异常，而脚本只采集未捕获异常。现已补齐正常夹具并增加控制台错误采集；查询任务页也验证任务数组和配额对象格式，坏响应在原页报错并可重试。最终额外覆盖坏响应恢复与四轮正常切页，均通过。
+
 ## 持续观察与证据
 
-最终页面连续观察 60 秒，每 10 秒采样。请求数保持 48；DOM 节点由 1732 回收到 1045，JS 堆由约 21.0 MB 回收到约 16.2 MB，未出现持续单向增长。这里只是开发页短时观察，不代表长期稳定性或生产性能结论。
+最终页面连续观察 60 秒，每 10 秒采样。请求数保持 48；DOM 节点由 1732 回收到 1045，JS 堆由约 24.1 MB 回收到约 15.9 MB，未出现持续单向增长。这里只是开发页短时观察，不代表长期稳定性或生产性能结论。
 
 原始检查、请求与采样见 [JSON 记录](account-experience-20261026.json)。截图及日志归档目录：
-`/Users/atomex/.codex/artifacts/surprising-assets-20261026/admin`，包含桌面/手机深浅主题、读取失败和精确字段展示。
+`/Users/atomex/.codex/artifacts/surprising-assets-20261026/admin`，包含桌面/手机深浅主题、读取失败和精确字段展示。最终浏览器日志为 `surprising-assets-admin-browser-console.log`；早期日志放在 `attempts/`。
 
 ## 未测范围
 

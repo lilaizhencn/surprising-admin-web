@@ -86,6 +86,12 @@ export default function QueryTasksPage() {
         }),
         queryTaskLimits()
       ]);
+      if (!response || !Array.isArray(response.tasks) || response.tasks.some(row => !row || typeof row !== "object" || Array.isArray(row))) {
+        throw new Error("查询任务数据格式异常，请重新加载。");
+      }
+      if (!quota || typeof quota !== "object" || Array.isArray(quota)) {
+        throw new Error("查询配额数据格式异常，请重新加载。");
+      }
       setRows(response.tasks);
       setPageInfo(cursorInfo(response));
       setFilters((current) => ({ ...current, cursor: nextCursor }));

@@ -7,7 +7,9 @@
     "editing the user clears stale results immediately; cancelled older responses cannot overwrite the newer user",
     "funding account requires a visible product scope and does not issue mismatched product-only reads",
     "manual adjustment retains native confirmation, exact target/product/units, approval binding and write-error feedback; fields cannot switch target while approval is pending",
-    "desktop and 320/390px layouts in both themes retain filters, exact fields, horizontal table scrolling and complete adjustment controls"
+    "desktop and 320/390px layouts in both themes retain filters, exact fields, horizontal table scrolling and complete adjustment controls",
+    "malformed query task records show a retryable error without crashing the page; a valid response recovers",
+    "four account/query-task round trips complete with valid query fixtures and no uncaught or unexpected console errors"
   ],
   "errors": [],
   "requests": [
@@ -254,6 +256,86 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/valuation",
+      "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/reports/account-assets/snapshots",
+      "query": "?valuationAsset=USDT&limit=100&snapshotDate=2026-10-26&sort=snapshotDate.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/alerts/events",
+      "query": "?status=OPEN&domain=SYSTEM&limit=100"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks",
+      "query": "?limit=100&sort=requestedAt.desc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/query-tasks/limits",
+      "query": ""
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/admin/reports/account-assets/valuation",
       "query": "?valuationAsset=USDT&limit=100&nonZeroOnly=true&sort=valuationValue.desc"
     },
@@ -407,50 +489,50 @@
     {
       "second": 0,
       "Nodes": 1732,
-      "TaskDuration": 1.7e-05,
-      "JSHeapUsedSize": 21039412,
+      "TaskDuration": 1.2e-05,
+      "JSHeapUsedSize": 24062776,
       "requests": 48
     },
     {
       "second": 10,
       "Nodes": 1732,
-      "TaskDuration": 0.00064,
-      "JSHeapUsedSize": 21039412,
+      "TaskDuration": 0.000934,
+      "JSHeapUsedSize": 24062776,
       "requests": 48
     },
     {
       "second": 20,
       "Nodes": 1732,
-      "TaskDuration": 0.000742,
-      "JSHeapUsedSize": 21039412,
+      "TaskDuration": 0.001173,
+      "JSHeapUsedSize": 24062776,
       "requests": 48
     },
     {
       "second": 30,
       "Nodes": 1045,
-      "TaskDuration": 0.032731,
-      "JSHeapUsedSize": 16179040,
+      "TaskDuration": 0.046283,
+      "JSHeapUsedSize": 15891344,
       "requests": 48
     },
     {
       "second": 40,
       "Nodes": 1045,
-      "TaskDuration": 0.032876,
-      "JSHeapUsedSize": 16179040,
+      "TaskDuration": 0.046412,
+      "JSHeapUsedSize": 15891344,
       "requests": 48
     },
     {
       "second": 50,
       "Nodes": 1045,
-      "TaskDuration": 0.032982,
-      "JSHeapUsedSize": 16179040,
+      "TaskDuration": 0.046524,
+      "JSHeapUsedSize": 15891344,
       "requests": 48
     },
     {
       "second": 60,
       "Nodes": 1045,
-      "TaskDuration": 0.033852,
-      "JSHeapUsedSize": 16179420,
+      "TaskDuration": 0.047281,
+      "JSHeapUsedSize": 15891724,
       "requests": 48
     }
   ],
@@ -458,10 +540,10 @@
     "All requests intercepted. No real account balances, adjustments, approvals, snapshots or recovery verified."
   ],
   "commands": {
-    "bun run test": "111 pass, 0 fail, 9 files",
-    "browser": "7 checks, 0 page errors",
     "npm run lint": "exit 0",
-    "npm run build": "exit 0"
+    "bun run test": "111 pass, 0 fail, 9 files",
+    "npm run build": "exit 0",
+    "browser": "9 checks; no uncaught errors or unexpected console errors (expected HTTP 503 messages excluded)"
   },
   "screenshots": [
     "accounts-desktop-dark.png",
