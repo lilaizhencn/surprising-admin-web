@@ -136,10 +136,10 @@ export default function FeesPage() {
               rows={records(data?.schedules)}
               columns={["productLine", "feeScheduleId", "userId", "instrumentId", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
               maxColumns={11}
-              onRowClick={selectSchedule}
+              onRowClick={selectSchedule} rowActionLabel="编辑费率" label="费率计划" isSelected={(row) => String(row.feeScheduleId) === scheduleForm.feeScheduleId}
               actions={(row) => row.status === "DISABLED" ? <StatusBadge value="DISABLED" /> : <button disabled={loading} onClick={() => void disableSchedule(row)}>禁用</button>}
             />
-            <CursorPager
+            <CursorPager loading={loading}
               page={schedulePageInfo}
               cursor={filters.scheduleCursor}
               onNext={() => void load(schedulePageInfo.nextCursor || "")}

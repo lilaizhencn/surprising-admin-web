@@ -232,7 +232,7 @@ export default function MarketsPage() {
         <Panel title="交易产品">
           <button disabled={!filters.productLine} title={filters.productLine ? "新增当前产品线合约" : "请先选择产品线"} onClick={() => { setSelected({ instrumentId: 0, symbol: "", baseAssetId: 0, quoteAssetId: 0, settleAssetId: 0, contractValueAssetId: 0, instrumentType: filters.productLine === "SPOT" ? "SPOT" : filters.productLine === "OPTION" ? "OPTION" : filters.productLine.endsWith("DELIVERY") ? "DELIVERY" : "PERPETUAL", contractType: filters.productLine === "OPTION" ? "VANILLA_OPTION" : filters.productLine, status: "DRAFT", supportedOrderTypes: ["LIMIT"], supportedTimeInForce: ["GTC"], riskLimitBrackets: [], indexSources: [] }); setChanges([]); setChangeReason(""); }}>新增合约</button>
           <p>保存草稿 → 上线展示 → 开启交易。配置保存后自动同步，交易核心确认后生效。</p>
-          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} />
+          <DataTable rows={items as unknown as UnknownRecord[]} columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]} onRowClick={(row) => void selectInstrument(row as unknown as Instrument)} rowActionLabel="编辑合约" label="产品市场" isSelected={(row) => selected != null && String(row.instrumentId) === String(selected.instrumentId)} />
           <CursorPager
             page={page}
             cursor={filters.cursor}

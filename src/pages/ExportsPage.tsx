@@ -146,7 +146,7 @@ export default function ExportsPage() {
         <SortSelect value={filters.sort} options={REQUESTED_AT_SORTS} onChange={(value) => setFilters({ ...filters, sort: value, cursor: "" })} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
       </div>
-      <CursorPager
+      <CursorPager loading={loading}
         page={pageInfo}
         cursor={filters.cursor}
         onNext={() => void load(pageInfo.nextCursor || "")}
@@ -184,7 +184,7 @@ export default function ExportsPage() {
         <DataTable
           rows={rows}
           columns={["exportId", "exportType", "status", "rowCount", "byteSize", "requestedByUsername", "requestedAt", "finishedAt", "expiresAt", "errorMessage"]}
-          onRowClick={(row) => setSelected(row)}
+          onRowClick={(row) => setSelected(row)} rowActionLabel="查看任务" label="导出任务" isSelected={(row) => selected != null && String(row.exportId) === String(selected.exportId)}
           actions={(row) => row.status === "SUCCEEDED"
             ? <button onClick={() => void download(row)}><Download size={14} />下载</button>
             : <StatusBadge value={String(row.status ?? "UNKNOWN")} />}

@@ -1,0 +1,55 @@
+{
+  "browser": "153.0.8010.12",
+  "checks": [
+    "delayed previous-user sessions/profile cannot replace the latest selection",
+    "keyboard user selection opens one detail request and marks the selected row",
+    "mobile order cards retain every configured field, exact integer IDs, timeline and cancellation action; action click does not also select the row",
+    "trigger-order mobile detail uses the correct large ID and product scope",
+    "desktop sticky actions remain available after horizontal scrolling; light/dark and 320/390/768px layouts fit",
+    "mobile fee selection fills the correct form and retains the disable action",
+    "role selection has one explicit action and visible selected state",
+    "export mobile card retains download action and task detail selection",
+    "28 repeated desktop/mobile selection cycles over 61826ms"
+  ],
+  "errors": [],
+  "lifecycle": [
+    {
+      "elapsedMs": 35,
+      "JSEventListeners": 233,
+      "Nodes": 999,
+      "TaskDuration": 0.035882,
+      "JSHeapUsedSize": 15585572
+    },
+    {
+      "elapsedMs": 22122,
+      "JSEventListeners": 234,
+      "Nodes": 1073,
+      "TaskDuration": 1.926402,
+      "JSHeapUsedSize": 16586488
+    },
+    {
+      "elapsedMs": 44193,
+      "JSEventListeners": 234,
+      "Nodes": 1073,
+      "TaskDuration": 3.819271,
+      "JSHeapUsedSize": 16747224
+    },
+    {
+      "elapsedMs": 61825,
+      "JSEventListeners": 234,
+      "Nodes": 1073,
+      "TaskDuration": 5.302475,
+      "JSHeapUsedSize": 16816008
+    }
+  ],
+  "writes": [
+    {
+      "path": "/api/v1/admin/gateway/trading-orders/9223372036854775807/cancel",
+      "query": "?productLine=LINEAR_PERPETUAL",
+      "method": "POST",
+      "body": "{\"reason\":\"Admin operation cancel\"}",
+      "approvalId": "ui-approved-fixture"
+    }
+  ],
+  "limitation": "Controlled HTTP responses and a synthetic cancellation failure; no actual backend writes, funds movement or permission changes."
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type AuthenticatedUser, type UnknownRecord } from "../types";
 import { userSessions, userProfile, adminUsers, updateUserStatus, replaceUserRoles, revokeSession, revokeUserSessions } from "../api/admin";
 import { Search, RefreshCw } from "lucide-react";
@@ -25,30 +25,54 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [rolesText, setRolesText] = useState("");
+  const selectedUserId = useRef("");
+  selectedUserId.current = selected ? String(selected.userId) : "";
+  const sessionRead = useRef<AbortController | null>(null);
+  const profileRead = useRef<AbortController | null>(null);
+  const listVersion = useRef(0);
 
   function updateSessionFilters(patch: Partial<typeof sessionFilters>) {
     setSessionFilters((current) => ({ ...current, ...patch, cursor: "" }));
   }
 
   async function loadSessions(userId: number | string, nextCursor = sessionFilters.cursor) {
-    const response = await userSessions(userId, {
-      active: sessionFilters.active === "" ? undefined : sessionFilters.active === "true",
-      limit: Number(sessionFilters.limit) || 100,
-      cursor: nextCursor,
-      sort: sessionFilters.sort
-    });
-    setSessions(response.sessions);
-    setSessionPageInfo(cursorInfo(response));
-    setSessionFilters((current) => ({ ...current, cursor: nextCursor || "" }));
+    if (selectedUserId.current !== String(userId)) return;
+    sessionRead.current?.abort();
+    const controller = new AbortController();
+    sessionRead.current = controller;
+    try {
+      const response = await userSessions(userId, {
+        active: sessionFilters.active === "" ? undefined : sessionFilters.active === "true",
+        limit: Number(sessionFilters.limit) || 100,
+        cursor: nextCursor,
+        sort: sessionFilters.sort
+      }, controller.signal);
+      if (controller.signal.aborted || selectedUserId.current !== String(userId)) return;
+      if (!Array.isArray(response.sessions)) throw new Error("会话数据格式异常，请重新加载。");
+      setSessions(response.sessions);
+      setSessionPageInfo(cursorInfo(response));
+      setSessionFilters((current) => ({ ...current, cursor: nextCursor || "" }));
+    } catch (err) {
+      if (!controller.signal.aborted && selectedUserId.current === String(userId)) setError(errorMessage(err));
+    }
   }
 
   async function loadProfile(userId: number | string) {
-    const response = await userProfile(userId, {
-      settleAsset: profileAsset,
-      productLine: profileProductLine,
-      limit: 50
-    });
-    setProfile(response);
+    if (selectedUserId.current !== String(userId)) return;
+    profileRead.current?.abort();
+    const controller = new AbortController();
+    profileRead.current = controller;
+    try {
+      const response = await userProfile(userId, {
+        settleAsset: profileAsset,
+        productLine: profileProductLine,
+        limit: 50
+      }, controller.signal);
+      if (!response || typeof response !== "object" || Array.isArray(response)) throw new Error("用户画像数据格式异常，请重新加载。");
+      if (!controller.signal.aborted && selectedUserId.current === String(userId)) setProfile(response);
+    } catch (err) {
+      if (!controller.signal.aborted && selectedUserId.current === String(userId)) setError(errorMessage(err));
+    }
   }
 
   function resetUserCursor() {
@@ -60,6 +84,7 @@ export default function UsersPage() {
   }
 
   async function load(nextCursor = listFilters.cursor) {
+    const version = ++listVersion.current;
     setLoading(true);
     setError("");
     try {
@@ -70,11 +95,13 @@ export default function UsersPage() {
         cursor: nextCursor,
         sort: listFilters.sort
       });
+      if (version !== listVersion.current) return;
+      if (!Array.isArray(response.users)) throw new Error("用户列表格式异常，请重新加载。");
       setUsers(response.users);
       setUserPageInfo(cursorInfo(response));
       setListFilters((current) => ({ ...current, cursor: nextCursor || "" }));
-      if (selected) {
-        const nextSelected = response.users.find((user) => String(user.userId) === String(selected.userId)) ?? null;
+      if (selectedUserId.current) {
+        const nextSelected = response.users.find((user) => String(user.userId) === selectedUserId.current) ?? null;
         setSelected(nextSelected);
         if (nextSelected) {
           await loadSessions(nextSelected.userId);
@@ -85,32 +112,32 @@ export default function UsersPage() {
         }
       }
     } catch (err) {
-      setError(errorMessage(err));
+      if (version === listVersion.current) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (version === listVersion.current) setLoading(false);
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); return () => { ++listVersion.current; }; }, []);
   useEffect(() => { setRolesText(selected?.roles.join(",") ?? ""); }, [selected]);
   useEffect(() => {
+    setSessions([]);
+    setSessionPageInfo(cursorInfo());
+    setProfile(null);
+    setError("");
     if (selected) {
-      void Promise.all([loadSessions(selected.userId, ""), loadProfile(selected.userId)])
-        .catch((err) => setError(errorMessage(err)));
-    } else {
-      setSessions([]);
-      setSessionPageInfo(cursorInfo());
-      setProfile(null);
+      void Promise.all([loadSessions(selected.userId, ""), loadProfile(selected.userId)]);
     }
+    return () => { sessionRead.current?.abort(); profileRead.current?.abort(); };
   }, [selected?.userId]);
 
   async function saveStatus(next: string) {
-    if (!selected) return;
+    if (!selected || loading) return;
     setLoading(true);
     setError("");
     try {
       const updated = await updateUserStatus(selected.userId, next);
-      setSelected(updated);
+      if (selectedUserId.current === String(updated.userId)) setSelected(updated);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -120,13 +147,13 @@ export default function UsersPage() {
   }
 
   async function saveRoles() {
-    if (!selected) return;
+    if (!selected || loading) return;
     const roles = rolesText.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean);
     setLoading(true);
     setError("");
     try {
       const updated = await replaceUserRoles(selected.userId, roles);
-      setSelected(updated);
+      if (selectedUserId.current === String(updated.userId)) setSelected(updated);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -136,7 +163,7 @@ export default function UsersPage() {
   }
 
   async function revokeOneSession(sessionId: unknown) {
-    if (!selected || !sessionId) return;
+    if (!selected || !sessionId || loading) return;
     setLoading(true);
     setError("");
     try {
@@ -150,7 +177,7 @@ export default function UsersPage() {
   }
 
   async function forceLogoutUser() {
-    if (!selected) return;
+    if (!selected || loading) return;
     setLoading(true);
     setError("");
     try {
@@ -178,8 +205,8 @@ export default function UsersPage() {
       <TwoColumn>
         <Panel title="用户列表">
           <div className="stack">
-            <DataTable rows={users as unknown as UnknownRecord[]} onRowClick={(row) => setSelected(row as unknown as AuthenticatedUser)} />
-            <CursorPager
+            <DataTable rows={users as unknown as UnknownRecord[]} onRowClick={(row) => setSelected(row as unknown as AuthenticatedUser)} rowActionLabel="选择用户" rowActionDisabled={loading} label="用户列表" isSelected={(row) => selected != null && String(row.userId) === String(selected.userId)} />
+            <CursorPager loading={loading}
               page={userPageInfo}
               cursor={listFilters.cursor}
               onNext={() => void load(userPageInfo.nextCursor || "")}
@@ -191,11 +218,11 @@ export default function UsersPage() {
           {selected ? (
             <div className="stack">
               <KeyValue data={selected as unknown as UnknownRecord} />
-              <label>状态<select value={selected.status} onChange={(event) => void saveStatus(event.target.value)}>
+              <label>状态<select disabled={loading} value={selected.status} onChange={(event) => void saveStatus(event.target.value)}>
                 {USER_STATUSES.map((item) => <option key={item}>{item}</option>)}
               </select></label>
-              <label>角色<input value={rolesText} onChange={(event) => setRolesText(event.target.value)} placeholder="USER,ADMIN" /></label>
-              <button className="primary" onClick={() => void saveRoles()}>保存角色</button>
+              <label>角色<input disabled={loading} value={rolesText} onChange={(event) => setRolesText(event.target.value)} placeholder="USER,ADMIN" /></label>
+              <button className="primary" disabled={loading} onClick={() => void saveRoles()}>保存角色</button>
             </div>
           ) : <Empty text="选择一个用户进行管理" />}
         </Panel>
@@ -205,7 +232,7 @@ export default function UsersPage() {
           <div className="stack">
             <div className="button-row">
               <button onClick={() => void loadSessions(selected.userId, sessionFilters.cursor)}><RefreshCw size={16} />刷新会话</button>
-              <button className="primary" onClick={() => void forceLogoutUser()}>强制下线全部会话</button>
+              <button className="primary" disabled={loading} onClick={() => void forceLogoutUser()}>强制下线全部会话</button>
             </div>
             <div className="filters compact">
               <label>Active<select value={sessionFilters.active} onChange={(event) => updateSessionFilters({ active: event.target.value })}><option value="">全部</option><option value="true">有效</option><option value="false">失效</option></select></label>
@@ -216,9 +243,9 @@ export default function UsersPage() {
             <DataTable
               rows={sessions}
               columns={["sessionId", "userId", "active", "ipAddress", "userAgent", "expiresAt", "revokedAt", "createdAt"]}
-              actions={(row) => row.active ? <button onClick={() => void revokeOneSession(row.sessionId)}>撤销</button> : <StatusBadge value="REVOKED" />}
+              actions={(row) => row.active ? <button disabled={loading} onClick={() => void revokeOneSession(row.sessionId)}>撤销</button> : <StatusBadge value="REVOKED" />}
             />
-            <CursorPager
+            <CursorPager loading={loading}
               page={sessionPageInfo}
               cursor={sessionFilters.cursor}
               onNext={() => void loadSessions(selected.userId, sessionPageInfo.nextCursor || "")}

@@ -227,7 +227,7 @@ export default function SupportPage() {
                 <DataTable
 	                  rows={tickets}
 	                  columns={["ticketId", "userId", "status", "priority", "category", "title", "assignedAdminUserId", "updatedAt"]}
-	                  onRowClick={(row) => void loadTicketNotes(row, "")}
+	                  onRowClick={(row) => void loadTicketNotes(row, "")} rowActionLabel="查看工单" label="客服工单"
 	                />
                 <CursorPager
                   page={ticketPageInfo}

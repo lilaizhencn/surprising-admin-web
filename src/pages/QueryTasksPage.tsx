@@ -263,8 +263,7 @@ export default function QueryTasksPage() {
         <DataTable
           rows={rows}
           columns={["queryTaskId", "queryType", "status", "rowCount", "byteSize", "requestedByUsername", "requestedAt", "finishedAt", "expiresAt", "archivedAt", "archiveReason", "errorMessage"]}
-          onRowClick={(row) => void openTask(row)}
-          actions={(row) => <button onClick={() => void openTask(row)}><Search size={14} />查看</button>}
+          onRowClick={(row) => void openTask(row)} rowActionLabel="查看任务" label="查询任务"
         />
       </Panel>
     </Page>

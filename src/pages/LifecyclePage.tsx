@@ -145,7 +145,7 @@ export default function LifecyclePage() {
       </div>
       <TwoColumn>
         <Panel title="交割 / 行权产品">
-          <CursorPager
+          <CursorPager loading={loading}
             page={instrumentPageInfo}
             cursor={filters.instrumentCursor}
             onNext={() => void load(instrumentPageInfo.nextCursor || "", filters.ledgerCursor)}
@@ -155,7 +155,7 @@ export default function LifecyclePage() {
             rows={instruments as unknown as UnknownRecord[]}
             columns={["instrumentId", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingInstrumentId", "strikePriceUnits", "optionType", "settlementMethod", "updatedAt"]}
             maxColumns={13}
-            onRowClick={(row) => setSelected(row as unknown as Instrument)}
+            onRowClick={(row) => setSelected(row as unknown as Instrument)} rowActionLabel="核查产品" label="待核查产品" isSelected={(row) => selected != null && String(row.instrumentId) === String(selected.instrumentId)}
           />
         </Panel>
         <Panel title="选中产品核查">
@@ -178,7 +178,7 @@ export default function LifecyclePage() {
       </TwoColumn>
       <TwoColumn>
         <Panel title={`${referenceType} 产品流水`}>
-          <CursorPager
+          <CursorPager loading={loading}
             page={ledgerPageInfo}
             cursor={filters.ledgerCursor}
             onNext={() => void load(filters.instrumentCursor, ledgerPageInfo.nextCursor || "")}

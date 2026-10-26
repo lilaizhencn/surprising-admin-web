@@ -284,7 +284,7 @@ export default function OrdersPage() {
       {cancelPreview && <Panel title="撤单影响预览"><JsonBlock value={cancelPreview} /></Panel>}
       <TwoColumn>
         <Panel title="订单列表">
-          <CursorPager
+          <CursorPager loading={loading}
             page={orderPageInfo}
             cursor={filters.orderCursor}
             onNext={() => void load(orderPageInfo.nextCursor || "", filters.triggerCursor, filters.tradeCursor)}
@@ -293,7 +293,7 @@ export default function OrdersPage() {
           <DataTable
             rows={orders as unknown as UnknownRecord[]}
             columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
-            onRowClick={(row) => void loadTimeline(row.orderId)}
+            onRowClick={(row) => void loadTimeline(row.orderId)} rowActionLabel="查看时间线" label="普通订单"
             actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
           />
         </Panel>
@@ -303,7 +303,7 @@ export default function OrdersPage() {
       </TwoColumn>
       <TwoColumn>
         <Panel title="条件单列表">
-          <CursorPager
+          <CursorPager loading={loading}
             page={triggerPageInfo}
             cursor={filters.triggerCursor}
             onNext={() => void load(filters.orderCursor, triggerPageInfo.nextCursor || "", filters.tradeCursor)}
@@ -312,7 +312,7 @@ export default function OrdersPage() {
           <DataTable
             rows={triggerOrders}
             columns={["triggerOrderId", "userId", "instrumentId", "ocoGroupId", "side", "positionSide", "triggerType", "priceSource", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
-            onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")}
+            onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")} rowActionLabel="查看时间线" label="条件单"
           />
         </Panel>
         <Panel title="条件单时间线">
@@ -320,7 +320,7 @@ export default function OrdersPage() {
         </Panel>
       </TwoColumn>
       <Panel title="成交审计">
-        <CursorPager
+        <CursorPager loading={loading}
           page={tradePageInfo}
           cursor={filters.tradeCursor}
           onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}

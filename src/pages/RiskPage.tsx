@@ -319,7 +319,7 @@ export default function RiskPage() {
             <DataTable
               rows={records(data?.candidates)}
               maxColumns={10}
-              onRowClick={(row) => void loadTimeline(row)}
+              onRowClick={(row) => void loadTimeline(row)} rowActionLabel="查看风险时间线" label="爆仓候选"
             />
             <CursorPager
               page={candidatePageInfo}

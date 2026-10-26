@@ -1,6 +1,6 @@
-import { RefreshCw, BookOpen } from "lucide-react";
+import { RefreshCw, BookOpen, ChevronsLeft, ChevronRight } from "lucide-react";
 import { type UnknownRecord, type StatusTone } from "../types";
-import { useMemo } from "react";
+export { DataTable } from "./AdminDataTable";
 import { formatValue } from "../config";
 
 export function Page({ title, children, onRefresh, loading, error, description }: { description?: string; title: string; children: React.ReactNode; onRefresh?: () => void | Promise<void>; loading?: boolean; error?: string | null }) {
@@ -26,66 +26,6 @@ export function Panel({ title, children }: { title: string; children: React.Reac
       <div className="panel-title"><BookOpen size={16} /><h3>{title}</h3></div>
       {children}
     </section>
-  );
-}
-
-export function DataTable({ rows, columns, maxColumns = 10, onRowClick, actions, mobileAction }: {
-  rows: UnknownRecord[];
-  columns?: string[];
-  maxColumns?: number;
-  onRowClick?: (row: UnknownRecord) => void;
-  actions?: (row: UnknownRecord) => React.ReactNode;
-  mobileAction?: { label: string; onClick: (row: UnknownRecord) => void };
-}) {
-  const visibleColumns = useMemo(() => {
-    if (columns?.length) return columns;
-    const keys = new Set<string>();
-    for (const row of rows.slice(0, 20)) Object.keys(row).forEach((key) => keys.add(key));
-    return Array.from(keys).slice(0, maxColumns);
-  }, [columns, maxColumns, rows]);
-
-  if (!rows.length) return <Empty text="暂无数据" />;
-  return (
-    <>
-      {mobileAction && (
-        <div className="mobile-card-list">
-          {rows.map((row, index) => (
-            <article className="mobile-data-card" key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index}>
-              <div className="mobile-data-card-fields">
-                {visibleColumns.map((column) => (
-                  <div key={column}>
-                    <span>{column}</span>
-                    <strong>{formatValue(row[column])}</strong>
-                  </div>
-                ))}
-              </div>
-              <button className="mobile-data-card-action" onClick={() => mobileAction.onClick(row)}>{mobileAction.label}</button>
-            </article>
-          ))}
-        </div>
-      )}
-      <div className={mobileAction ? "table-wrap mobile-table-fallback" : "table-wrap"}>
-        <table>
-          <thead>
-            <tr>
-              {visibleColumns.map((column) => <th key={column}>{column}</th>)}
-              {actions && <th>操作</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={row.id ? String(row.id) : row.orderId ? String(row.orderId) : row.exportId ? String(row.exportId) : index} onClick={() => onRowClick?.(row)} className={onRowClick ? "clickable" : ""}>
-                {visibleColumns.map((column) => {
-                  const text = formatValue(row[column]);
-                  return <td key={column} title={text}>{text}</td>;
-                })}
-                {actions && <td onClick={(event) => event.stopPropagation()}>{actions(row)}</td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
   );
 }
 
@@ -156,19 +96,20 @@ export function cursorInfo(page?: { nextCursor?: string | null; hasMore?: boolea
   };
 }
 
-export function CursorPager({ page, cursor, onNext, onReset }: {
+export function CursorPager({ page, cursor, onNext, onReset, loading = false }: {
   page: ReturnType<typeof cursorInfo>;
   cursor: string;
   onNext: () => void;
   onReset: () => void;
+  loading?: boolean;
 }) {
   return (
-    <div className="button-row compact-row">
-      <button onClick={onReset} disabled={!cursor && !page.hasMore}><RefreshCw size={14} />首页</button>
-      <button className="primary" onClick={onNext} disabled={!page.hasMore || !page.nextCursor}>下一页</button>
-      <StatusBadge value={page.hasMore ? "HAS_MORE" : "END"} />
-      <span className="muted mono">limit={page.limit || "-"} sort={page.sort || "-"}</span>
-    </div>
+    <nav className="button-row cursor-pager" aria-label="列表分页" aria-busy={loading}>
+      <button type="button" onClick={onReset} disabled={!cursor || loading}><ChevronsLeft size={14} aria-hidden="true" />首页</button>
+      <button type="button" onClick={onNext} disabled={loading || !page.hasMore || !page.nextCursor}>下一页<ChevronRight size={14} aria-hidden="true" /></button>
+      <span className="cursor-pager-state" role="status">{loading ? "正在加载…" : page.hasMore ? "还有更多记录" : "没有更多记录"}</span>
+      {page.limit > 0 && <span className="cursor-pager-limit">每页最多 {page.limit} 条</span>}
+    </nav>
   );
 }
 

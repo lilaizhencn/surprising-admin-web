@@ -71,14 +71,14 @@ export function replaceUserRoles(userId: number | string, roles: string[]) {
   return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/roles`, { roles });
 }
 
-export function userSessions(userId: number | string, params: { active?: boolean; limit?: number } & CursorListParams = {}) {
+export function userSessions(userId: number | string, params: { active?: boolean; limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
   return request<CursorPage<UnknownRecord, "sessions">>(
-    `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/sessions${queryString(params)}`
+    `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/sessions${queryString(params)}`, { signal }
   );
 }
 
-export function userProfile(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/profile${queryString(params)}`);
+export function userProfile(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}, signal?: AbortSignal) {
+  return request<UnknownRecord>(`/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/profile${queryString(params)}`, { signal });
 }
 
 export function supportUserOverview(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {

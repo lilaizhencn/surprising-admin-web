@@ -340,7 +340,7 @@ export default function AlertsPage() {
             <DataTable
               rows={rules}
               columns={["alertRuleId", "ruleCode", "domain", "metricKey", "target", "conditionOperator", "thresholdValue", "severity", "enabled", "updatedAt"]}
-              onRowClick={(row) => editRule(row)}
+              onRowClick={(row) => editRule(row)} rowActionLabel="编辑规则" label="告警规则"
               actions={(row) => <button onClick={() => void toggleRule(row)}>{row.enabled ? "停用" : "启用"}</button>}
             />
           </div>
@@ -393,7 +393,7 @@ export default function AlertsPage() {
             <DataTable
               rows={channels}
               columns={["alertChannelId", "channelCode", "channelName", "channelType", "domain", "minSeverity", "enabled", "endpoint", "updatedAt"]}
-              onRowClick={(row) => editChannel(row)}
+              onRowClick={(row) => editChannel(row)} rowActionLabel="编辑渠道" label="通知渠道"
               actions={(row) => <button onClick={() => void toggleChannel(row)}>{row.enabled ? "停用" : "启用"}</button>}
             />
           </div>
@@ -458,7 +458,7 @@ export default function AlertsPage() {
             <DataTable
               rows={events}
               columns={["alertEventId", "ruleCode", "domain", "metricKey", "target", "severity", "status", "currentValue", "thresholdValue", "occurrences", "lastSeenAt"]}
-              onRowClick={(row) => setSelectedEvent(row)}
+              onRowClick={(row) => setSelectedEvent(row)} rowActionLabel="查看告警" label="告警事件"
               actions={(row) => row.status === "OPEN" ? <button onClick={() => void acknowledge(row)}>确认</button> : <StatusBadge value={String(row.status ?? "")} />}
             />
             <CursorPager

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { adminRoles, adminPermissions, getRolePermissions, replaceRolePermissions } from "../api/admin";
 import { errorMessage } from "../lib/adminData";
-import { Page, Metric, TwoColumn, Panel, DataTable, StatusBadge, KeyValue, Empty } from "../components/AdminUi";
+import { Page, Metric, TwoColumn, Panel, DataTable, KeyValue, Empty } from "../components/AdminUi";
 
 export default function SecurityPage() {
   const [roles, setRoles] = useState<UnknownRecord[]>([]);
@@ -84,8 +84,7 @@ export default function SecurityPage() {
           <DataTable
             rows={roles}
             columns={["roleCode", "roleName", "permissionCount", "createdAt"]}
-            onRowClick={(row) => void selectRole(String(row.roleCode ?? ""))}
-            actions={(row) => row.roleCode === selectedRole ? <StatusBadge value="SELECTED" /> : <button onClick={() => void selectRole(String(row.roleCode ?? ""))}>选择</button>}
+            onRowClick={(row) => void selectRole(String(row.roleCode ?? ""))} rowActionLabel="配置权限" label="角色列表" isSelected={(row) => row.roleCode === selectedRole}
           />
         </Panel>
         <Panel title="角色权限">
