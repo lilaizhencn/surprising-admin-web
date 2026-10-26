@@ -1,0 +1,129 @@
+{
+  "checks": [
+    "list loading/error never shows fake zero/empty, retry works, delayed search response cannot replace current query",
+    "new draft cannot publish before save; bilingual preview, single create, pending field lock and navigation guard",
+    "cancelled publish creates/updates nothing; dirty content must be saved explicitly; publish confirms saved version/targets/times and retains original approval binding",
+    "editing published content warns about active delivery/read reset, preserves exact fractional schedule, and failed writes require a fresh server version",
+    "audit target switches cancel old reads; withdrawal retains exact target/version/approval and returns to draft only after explicit save",
+    "unsaved editor close/navigation can be cancelled; exact long IDs and bilingual forms fit 1440/390/320 light/dark layouts"
+  ],
+  "errors": [],
+  "samples": [
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 1,
+      "ScriptDuration": 0,
+      "TaskDuration": 0.02873,
+      "JSHeapUsedSize": 15691232
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.000654,
+      "TaskDuration": 0.042571,
+      "JSHeapUsedSize": 15739776
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.000654,
+      "TaskDuration": 0.042712,
+      "JSHeapUsedSize": 15739776
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.00079,
+      "TaskDuration": 0.054989,
+      "JSHeapUsedSize": 15691520
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.00079,
+      "TaskDuration": 0.055102,
+      "JSHeapUsedSize": 15691520
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.00079,
+      "TaskDuration": 0.055217,
+      "JSHeapUsedSize": 15691520
+    },
+    {
+      "JSEventListeners": 299,
+      "Nodes": 1251,
+      "LayoutCount": 0,
+      "RecalcStyleCount": 8,
+      "ScriptDuration": 0.001003,
+      "TaskDuration": 0.056152,
+      "JSHeapUsedSize": 15691884
+    }
+  ],
+  "browser": "153.0.8010.12",
+  "fixtureOnly": true,
+  "date": "2026-10-26",
+  "commands": {
+    "npm run lint": "passed",
+    "npm test": "121 passed across 12 files",
+    "npm run build": "passed",
+    "git diff --check": "passed"
+  },
+  "viewports": [
+    [
+      1440,
+      1000
+    ],
+    [
+      390,
+      844
+    ],
+    [
+      320,
+      844
+    ]
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "observationSeconds": 60,
+  "retainedAfterGc": {
+    "JSEventListeners": 299,
+    "Nodes": 1251,
+    "LayoutCount": 0,
+    "RecalcStyleCount": 8,
+    "ScriptDuration": 0.001003,
+    "TaskDuration": 0.070314,
+    "JSHeapUsedSize": 15691520
+  },
+  "screenshots": [
+    "announcements-editor-desktop-light.png",
+    "announcements-editor-mobile-320.png",
+    "announcements-editor-mobile-390.png",
+    "announcements-editor-mobile-dark.png",
+    "announcements-preview-mobile-320.png",
+    "announcements-preview-mobile-390.png"
+  ],
+  "artifactRoot": "/Users/atomex/.codex/artifacts/surprising-content-20261026/admin",
+  "overallGoal": "active",
+  "limits": [
+    "Synthetic local HTTP/session/approval fixtures only; no real messages or content publication",
+    "No production deployment, real multi-client synchronization or real multi-person approval",
+    "Browser TaskDuration/ScriptDuration and 60-second metrics are observations, not production performance claims",
+    "Remaining pages and six-product end-to-end audit still require work"
+  ]
+}

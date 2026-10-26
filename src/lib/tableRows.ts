@@ -1,6 +1,8 @@
 import type { UnknownRecord } from "../types"
 
 const identityFields = [
+  "auditId",
+  "announcementId",
   "id",
   "orderId",
   "triggerOrderId",
@@ -20,6 +22,16 @@ const identityFields = [
   "userId",
 ]
 const columnLabels: Readonly<Record<string, string>> = {
+  announcementId: "公告 ID",
+  auditId: "审计 ID",
+  title: "标题",
+  category: "类型",
+  displayStatus: "生效状态",
+  targets: "投放范围",
+  startsAt: "生效时间",
+  adminUserId: "管理员 ID",
+  adminUsername: "管理员",
+  action: "操作",
   withdrawalId: "提现申请 ID",
   assetSymbol: "资产",
   chain: "网络",

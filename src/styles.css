@@ -527,6 +527,17 @@ main {
   border-radius: 6px;
   padding: 10px;
 }
+.announcement-workspace { min-width: 0; border: 0; padding: 0; margin: 0; display: grid; gap: 20px; }
+.announcement-workspace:disabled { opacity: .72; }
+.announcement-admin-pagination { justify-content: flex-end; flex-wrap: wrap; }
+.announcement-admin-page .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.announcement-edit-panel { scroll-margin-top: 96px; }
+.announcement-edit-panel > .panel-title { height: auto; min-height: 48px; padding-top: 8px; padding-bottom: 8px; flex-wrap: wrap; justify-content: space-between; }
+.announcement-edit-panel > .panel-title h3 { min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.announcement-user-preview strong, .announcement-user-preview p, .announcement-preview-body { overflow-wrap: anywhere; }
+.announcement-user-preview .button-row { margin: 8px 0 16px; }
+.announcement-user-preview [aria-pressed="true"] { background: var(--color-ink); color: var(--color-surface); }
+.announcement-audit-snapshot pre { max-width: min(70vw, 700px); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
 .announcement-editor legend {
   padding: 0 6px;
   color: var(--color-ink-muted);
