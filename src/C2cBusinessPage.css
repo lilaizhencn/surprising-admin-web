@@ -1,47 +1,120 @@
 .c2c-business {
-	min-width: 0;
+  min-width: 0;
 }
 .c2c-business .toolbar {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 .c2c-business .panel {
-	padding: 20px;
-	border: 1px solid var(--border, var(--color-border-soft));
-	border-radius: 12px;
-	margin-block: 16px;
+  padding: 20px;
+  border: 1px solid var(--border, var(--color-border-soft));
+  border-radius: 12px;
+  margin-block: 16px;
 }
 .c2c-business label {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
-	margin-block: 12px;
-	max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-block: 12px;
+  max-width: 560px;
 }
 .c2c-business input,
 .c2c-business textarea {
-	min-width: 0;
-	width: 100%;
-	box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .c2c-business .table-scroll {
-	max-width: 100%;
-	overflow: auto;
+  max-width: 100%;
+  overflow: auto;
 }
 .c2c-business th,
 .c2c-business td {
-	padding: 12px;
-	overflow-wrap: anywhere;
-	vertical-align: top;
+  padding: 12px;
+  overflow-wrap: anywhere;
+  vertical-align: top;
 }
 .c2c-business td {
-	max-width: 360px;
+  max-width: 360px;
 }
 .c2c-business .error {
-	color: var(--color-negative);
+  color: var(--color-negative);
 }
 .c2c-business button {
-	margin: 4px;
+  margin: 4px;
+}
+.c2c-business-workspace {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.c2c-business-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.c2c-business-heading h1 {
+  font-size: 24px;
+  letter-spacing: -0.03em;
+  margin: 0 0 10px;
+}
+.c2c-business-heading p {
+  margin: 0 0 20px;
+  color: var(--color-ink-subtle);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.c2c-business .toolbar {
+  align-items: center;
+}
+.c2c-business .toolbar button {
+  margin: 0;
+}
+.c2c-business .toolbar > label {
+  margin-block: 0;
+}
+.c2c-business .c2c-review-detail {
+  scroll-margin-top: 96px;
+}
+.c2c-review-detail h2 {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.c2c-business label.c2c-identity-check {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.c2c-business .c2c-identity-check input {
+  width: 16px;
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.c2c-review-detail .kv {
+  margin-block: 16px;
+}
+.c2c-business .alert,
+.c2c-business .error {
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.c2c-business-intro h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+.c2c-business-intro p {
+  font-size: 13px;
+  color: var(--color-ink-subtle);
+  line-height: 1.8;
+  margin-bottom: 20px;
 }
