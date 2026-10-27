@@ -1,0 +1,118 @@
+{
+  "date": "2026-10-27",
+  "status": "batch-validated",
+  "fixtureOnly": true,
+  "goalComplete": false,
+  "backendChanged": false,
+  "nativeClientChanged": false,
+  "browser": "153.0.8010.12",
+  "sizes": [
+    "1440x1000",
+    "390x844",
+    "320x844"
+  ],
+  "commands": [
+    {
+      "command": "npm run lint",
+      "exitCode": 0
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "testsPassed": 139,
+      "testFiles": 15
+    },
+    {
+      "command": "npm run build",
+      "exitCode": 0
+    }
+  ],
+  "browserGroups": 7,
+  "checks": [
+    "invalid IDs send no request; incomplete summary/page remains an error, never a zero or empty success; SUPPORT reads only its existing summary and ticket APIs",
+    "ticket cursor pagination and fast user/ticket switching discard late responses; wrong-ticket notes clear old data and disable writes until a valid read",
+    "note sorting resets its cursor; duplicate clicks send one internal note; ambiguous write blocks repeat and fresh reads recover the server record; confirmed receipt clears the editor",
+    "status confirmation identifies user, original ticket, transition and reason; cancellation sends nothing; business rejection keeps the reason; ambiguous result is recovered by a fresh ticket read",
+    "create validates bounded title/category/notes, locks concurrent controls, opens the exact receipt ticket, clears only confirmed drafts and blocks repetition after an owner-mismatched receipt",
+    "SUPPORT role, desktop/390/320 layouts, both themes, full long content, return focus and operator change clearing were exercised",
+    "60-second steady observation sampled every 10 seconds; route exit caused no additional support reads"
+  ],
+  "unexpectedBrowserErrors": 0,
+  "observation": {
+    "durationSeconds": 60,
+    "sampleIntervalSeconds": 10,
+    "nodesBefore": 734,
+    "nodesAfterGc": 734,
+    "listenersBefore": 204,
+    "listenersAfterGc": 204,
+    "heapBeforeBytes": 15273312,
+    "heapAfterGcBytes": 15273520,
+    "mainThreadTaskDeltaMs": 15.448,
+    "scriptDeltaMs": 0.275,
+    "samples": [
+      {
+        "seconds": 0,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0,
+        "TaskDuration": 0.027917,
+        "JSHeapUsedSize": 15273312
+      },
+      {
+        "seconds": 10,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0,
+        "TaskDuration": 0.028476,
+        "JSHeapUsedSize": 15273312
+      },
+      {
+        "seconds": 20,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0,
+        "TaskDuration": 0.028631,
+        "JSHeapUsedSize": 15273312
+      },
+      {
+        "seconds": 30,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0.000154,
+        "TaskDuration": 0.042412,
+        "JSHeapUsedSize": 15273520
+      },
+      {
+        "seconds": 40,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0.000154,
+        "TaskDuration": 0.042555,
+        "JSHeapUsedSize": 15273520
+      },
+      {
+        "seconds": 50,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0.000154,
+        "TaskDuration": 0.042703,
+        "JSHeapUsedSize": 15273520
+      },
+      {
+        "seconds": 60,
+        "JSEventListeners": 204,
+        "Nodes": 734,
+        "ScriptDuration": 0.000275,
+        "TaskDuration": 0.043365,
+        "JSHeapUsedSize": 15273940
+      }
+    ],
+    "limitation": "Short local synthetic observation; task duration is a main-thread proxy, not production CPU or a long-term leak guarantee."
+  },
+  "artifactRoot": "/Users/atomex/.codex/artifacts/surprising-support-visitor-20261027/admin",
+  "unverified": [
+    "Real backend integration and long-duration disconnect/recovery",
+    "Real account, email delivery, financial and merchant operations",
+    "Other application routes not revisited in this batch"
+  ]
+}

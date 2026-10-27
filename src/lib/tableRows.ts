@@ -25,6 +25,9 @@ const identityFields = [
   "userId",
 ]
 const columnLabels: Readonly<Record<string, string>> = {
+  ticketId: "工单 ID",
+  supportStatus: "处理状态",
+  supportPriority: "优先级",
   approvalId: "审批 ID",
   requesterUserId: "申请人 ID",
   requesterUsername: "申请人",

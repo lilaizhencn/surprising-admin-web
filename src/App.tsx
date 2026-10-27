@@ -35,7 +35,7 @@ const AuditPage = lazy(() => import("./pages/AuditPage"));
 
 const NAV = [
   { key: "dashboard", label: "总览", icon: LayoutDashboard },
-  { key: "support", label: "客服视图", icon: LifeBuoy },
+  { key: "support", label: "客服工作台", icon: LifeBuoy },
   { key: "c2c", label: "C2C 运营", icon: MessageSquare },
   { key: "users", label: "用户权限", icon: Users },
   { key: "assets", label: "币种配置", icon: Database },

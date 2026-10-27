@@ -1,297 +1,364 @@
-import { useState } from "react";
-import { type UnknownRecord } from "../types";
-import { supportUserOverview, supportTickets, supportTicketNotes, createSupportTicket, addSupportTicketNote, updateSupportTicketStatus } from "../api/admin";
-import { Search, RefreshCw } from "lucide-react";
-import { cursorInfo, Page, TextFilter, Empty, Metric, TwoColumn, Panel, KeyValue, SortSelect, DataTable, CursorPager } from "../components/AdminUi";
-import { errorMessage, objectValue, extractRows } from "../lib/adminData";
-import { PRODUCT_LINES } from "../lib/products";
-import { UserProfileView } from "../features/users/UserProfileView";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ClipboardList, RefreshCw, Search } from "lucide-react";
+import { supportUserOverview, supportTickets } from "../api/admin";
+import { Page, Panel, Empty, Metric, KeyValue, DataTable, CursorPager } from "../components/AdminUi";
+import { positiveInt64 } from "../lib/integers";
+import { errorMessage } from "../lib/adminData";
+import {
+  SUPPORT_STATUSES,
+  SUPPORT_PRIORITIES,
+  supportOverview,
+  supportTicketPage,
+  type SupportTicket,
+  type SupportFilters,
+  type SupportPage as CursorPage,
+} from "../lib/support";
+import { SupportTicketPanel, SupportTicketCreate } from "../features/support/SupportTicketForms";
+import "../features/support/SupportPage.css";
 
 export default function SupportPage() {
-  const [userId, setUserId] = useState("");
-  const [settleAsset, setSettleAsset] = useState("USDT");
-  const [productLine, setProductLine] = useState("LINEAR_PERPETUAL");
-  const [overview, setOverview] = useState<UnknownRecord | null>(null);
-  const [tickets, setTickets] = useState<UnknownRecord[]>([]);
-  const [ticketFilters, setTicketFilters] = useState({ status: "", limit: "50", cursor: "", sort: "updatedAt.desc" });
-  const [ticketPageInfo, setTicketPageInfo] = useState(cursorInfo());
-  const [selectedTicket, setSelectedTicket] = useState<UnknownRecord | null>(null);
-  const [ticketNotes, setTicketNotes] = useState<UnknownRecord[]>([]);
-  const [noteFilters, setNoteFilters] = useState({ limit: "200", cursor: "", sort: "createdAt.asc" });
-  const [notePageInfo, setNotePageInfo] = useState(cursorInfo());
-  const [ticketForm, setTicketForm] = useState({
-    title: "",
-    category: "GENERAL",
-    priority: "MEDIUM",
-    initialNote: ""
-  });
-  const [noteBody, setNoteBody] = useState("");
-  const [statusForm, setStatusForm] = useState({ status: "PENDING_INTERNAL", reason: "" });
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [userId, setUserId] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
-
-  function updateTicketFilters(patch: Partial<typeof ticketFilters>) {
-    setTicketFilters((current) => ({ ...current, ...patch, cursor: "" }));
-  }
-
-  function updateNoteFilters(patch: Partial<typeof noteFilters>) {
-    setNoteFilters((current) => ({ ...current, ...patch, cursor: "" }));
-  }
-
-  async function load(nextTicketCursor = ticketFilters.cursor) {
-    const trimmedUserId = userId.trim();
-    if (!trimmedUserId) {
-      setError("请输入 User ID。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const [overviewResponse, ticketsResponse] = await Promise.all([
-        supportUserOverview(trimmedUserId, { settleAsset, productLine, limit: 25 }),
-        supportTickets({
-          userId: trimmedUserId,
-          status: ticketFilters.status,
-          limit: Number(ticketFilters.limit) || 50,
-          cursor: nextTicketCursor,
-          sort: ticketFilters.sort
-        })
-      ]);
-      setOverview(overviewResponse);
-      setTickets(ticketsResponse.tickets ?? []);
-      setTicketPageInfo(cursorInfo(ticketsResponse));
-      setTicketFilters((current) => ({ ...current, cursor: nextTicketCursor || "" }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadTicketNotes(ticket: UnknownRecord, nextCursor = noteFilters.cursor) {
-    const ticketId = ticket.ticketId;
-    if (ticketId === undefined || ticketId === null) return;
-    setSelectedTicket(ticket);
-    setLoading(true);
-    setError("");
-    try {
-      const response = await supportTicketNotes(String(ticketId), {
-        limit: Number(noteFilters.limit) || 200,
-        cursor: nextCursor,
-        sort: noteFilters.sort
-      });
-      setTicketNotes(response.notes ?? []);
-      setNotePageInfo(cursorInfo(response));
-      setNoteFilters((current) => ({ ...current, cursor: nextCursor || "" }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function createTicket() {
-    const trimmedUserId = userId.trim();
-    if (!trimmedUserId) {
-      setError("请输入 User ID。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      if (!ticketForm.title.trim()) throw new Error("请输入工单标题。");
-      const response = await createSupportTicket(trimmedUserId, {
-        title: ticketForm.title.trim(),
-        category: ticketForm.category.trim() || "GENERAL",
-        priority: ticketForm.priority,
-        initialNote: ticketForm.initialNote.trim() || undefined
-      });
-      setTicketForm({ title: "", category: "GENERAL", priority: "MEDIUM", initialNote: "" });
-      await load();
-      const ticket = objectValue(response.ticket);
-      if (ticket.ticketId) await loadTicketNotes(ticket, "");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function addNote() {
-    const ticket = selectedTicket;
-    const ticketId = ticket?.ticketId;
-    if (!ticket || ticketId === undefined || ticketId === null) {
-      setError("请选择工单。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      if (!noteBody.trim()) throw new Error("请输入备注内容。");
-      await addSupportTicketNote(String(ticketId), { noteType: "NOTE", visibility: "INTERNAL", body: noteBody.trim() });
-      setNoteBody("");
-      await loadTicketNotes(ticket, "");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function changeTicketStatus() {
-    const ticketId = selectedTicket?.ticketId;
-    if (ticketId === undefined || ticketId === null) {
-      setError("请选择工单。");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      if (!statusForm.reason.trim()) throw new Error("请输入状态变更原因。");
-      const response = await updateSupportTicketStatus(String(ticketId), {
-        status: statusForm.status,
-        reason: statusForm.reason.trim()
-      });
-      setStatusForm((current) => ({ ...current, reason: "" }));
-      await load();
-      const ticket = objectValue(response.ticket);
-      if (ticket.ticketId) await loadTicketNotes(ticket, "");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const user = objectValue(overview?.user);
-  const compliance = objectValue(overview?.compliance);
-  const errors = extractRows(overview?.errors);
-
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const changeBusy = useCallback((value: boolean) => {
+    locked.current = value;
+    setBusy(value);
+  }, []);
   return (
-    <Page title="客服视图" onRefresh={overview ? load : undefined} loading={loading} error={error}>
-      <div className="filters">
-        <TextFilter label="User ID" value={userId} onChange={setUserId} />
-        <label>产品线<select value={productLine} onChange={(event) => setProductLine(event.target.value)}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <TextFilter label="Settle Asset" value={settleAsset} onChange={(value) => setSettleAsset(value.toUpperCase())} />
-        <button className="primary" onClick={() => void load("")}><Search size={16} />查询用户</button>
-      </div>
-      {!overview ? <Empty text="输入用户 ID 查询只读资产、订单和风险状态" /> : (
-        <>
-          <div className="metrics">
-            <Metric label="用户状态" value={user.status ?? "-"} tone={String(user.status ?? "") === "NORMAL" ? "ok" : "warn"} />
-            <Metric label="KYC" value={compliance.kycStatus ?? "-"} tone={String(compliance.kycStatus ?? "") === "VERIFIED" ? "ok" : "warn"} />
-            <Metric label="风险标签" value={compliance.activeRiskTags ?? 0} tone={Number(compliance.activeRiskTags ?? 0) > 0 ? "warn" : "ok"} />
-            <Metric label="AML Case" value={compliance.openAmlCases ?? 0} tone={Number(compliance.openAmlCases ?? 0) > 0 ? "danger" : "ok"} />
-            <Metric label="AML 最高分" value={compliance.maxAmlRiskScore ?? 0} tone={Number(compliance.maxAmlRiskScore ?? 0) >= 70 ? "danger" : "muted"} />
-            <Metric label="聚合错误" value={errors.length} tone={errors.length ? "danger" : "ok"} />
-          </div>
-          <TwoColumn>
-            <Panel title="用户基础状态">
-              <KeyValue data={user} />
-            </Panel>
-            <Panel title="合规摘要">
-              <KeyValue data={compliance} />
-            </Panel>
-          </TwoColumn>
-          <Panel title="只读交易与资产概览">
-            <UserProfileView
-              profile={overview}
-              settleAsset={settleAsset}
-              onSettleAssetChange={setSettleAsset}
-              productLine={productLine}
-              onProductLineChange={setProductLine}
-              onRefresh={() => void load()}
-              showAudit={false}
-              showRaw={false}
-              refreshLabel="刷新客服概览"
-            />
-          </Panel>
-          <TwoColumn>
-            <Panel title="客服工单">
-              <div className="stack">
-                <div className="filters compact">
-                  <label>状态
-                    <select value={ticketFilters.status} onChange={(event) => updateTicketFilters({ status: event.target.value })}>
-                      <option value="">全部</option>
-                      <option value="OPEN">OPEN</option>
-                      <option value="PENDING_USER">PENDING_USER</option>
-                      <option value="PENDING_INTERNAL">PENDING_INTERNAL</option>
-                      <option value="RESOLVED">RESOLVED</option>
-                      <option value="CLOSED">CLOSED</option>
-                    </select>
-                  </label>
-                  <TextFilter label="Limit" value={ticketFilters.limit} onChange={(value) => updateTicketFilters({ limit: value })} />
-                  <SortSelect value={ticketFilters.sort} options={SUPPORT_TICKET_SORTS} onChange={(value) => updateTicketFilters({ sort: value })} />
-                  <button onClick={() => void load("")}><Search size={16} />查询工单</button>
-                </div>
-                <DataTable
-	                  rows={tickets}
-	                  columns={["ticketId", "userId", "status", "priority", "category", "title", "assignedAdminUserId", "updatedAt"]}
-	                  onRowClick={(row) => void loadTicketNotes(row, "")} rowActionLabel="查看工单" label="客服工单"
-	                />
-                <CursorPager
-                  page={ticketPageInfo}
-                  cursor={ticketFilters.cursor}
-                  onNext={() => void load(ticketPageInfo.nextCursor || "")}
-                  onReset={() => void load("")}
-                />
-                <div className="filters">
-                  <TextFilter label="Title" value={ticketForm.title} onChange={(value) => setTicketForm((current) => ({ ...current, title: value }))} />
-                  <TextFilter label="Category" value={ticketForm.category} onChange={(value) => setTicketForm((current) => ({ ...current, category: value.toUpperCase() }))} />
-                  <label>Priority
-                    <select value={ticketForm.priority} onChange={(event) => setTicketForm((current) => ({ ...current, priority: event.target.value }))}>
-                      <option value="LOW">LOW</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="HIGH">HIGH</option>
-                      <option value="URGENT">URGENT</option>
-                    </select>
-                  </label>
-                  <button className="primary" onClick={() => void createTicket()}>创建工单</button>
-                </div>
-                <textarea className="json-editor small" value={ticketForm.initialNote} onChange={(event) => setTicketForm((current) => ({ ...current, initialNote: event.target.value }))} placeholder="首条内部备注" />
-              </div>
-            </Panel>
-	            <Panel title="备注时间线">
-	              <div className="stack">
-	                <KeyValue data={objectValue(selectedTicket)} />
-	                <div className="filters compact">
-	                  <TextFilter label="Limit" value={noteFilters.limit} onChange={(value) => updateNoteFilters({ limit: value })} />
-	                  <SortSelect value={noteFilters.sort} options={SUPPORT_NOTE_SORTS} onChange={(value) => updateNoteFilters({ sort: value })} />
-	                  <button onClick={() => selectedTicket && void loadTicketNotes(selectedTicket, "")} disabled={!selectedTicket}>
-	                    <RefreshCw size={16} />刷新备注
-	                  </button>
-	                </div>
-	                <CursorPager
-	                  page={notePageInfo}
-	                  cursor={noteFilters.cursor}
-	                  onNext={() => selectedTicket && void loadTicketNotes(selectedTicket, notePageInfo.nextCursor || "")}
-	                  onReset={() => selectedTicket && void loadTicketNotes(selectedTicket, "")}
-	                />
-	                <DataTable rows={ticketNotes} columns={["createdAt", "adminUserId", "noteType", "visibility", "body"]} />
-                <textarea className="json-editor small" value={noteBody} onChange={(event) => setNoteBody(event.target.value)} placeholder="内部备注" />
-                <div className="button-row">
-                  <button onClick={() => void addNote()} disabled={!selectedTicket}>追加备注</button>
-                  <label>Status
-                    <select value={statusForm.status} onChange={(event) => setStatusForm((current) => ({ ...current, status: event.target.value }))}>
-                      <option value="OPEN">OPEN</option>
-                      <option value="PENDING_USER">PENDING_USER</option>
-                      <option value="PENDING_INTERNAL">PENDING_INTERNAL</option>
-                      <option value="RESOLVED">RESOLVED</option>
-                      <option value="CLOSED">CLOSED</option>
-                    </select>
-                  </label>
-                  <TextFilter label="Reason" value={statusForm.reason} onChange={(value) => setStatusForm((current) => ({ ...current, reason: value }))} />
-                  <button className="primary" onClick={() => void changeTicketStatus()} disabled={!selectedTicket}>变更状态</button>
-                </div>
-              </div>
-            </Panel>
-          </TwoColumn>
-        </>
+    <Page title="客服工作台" description="核对用户身份与合规摘要，跟进工单和内部备注。">
+      <form
+        className="support-query"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (locked.current) return;
+          try {
+            const id = positiveInt64(input, "用户 ID");
+            setError("");
+            setUserId(id);
+            setRevision((value) => value + 1);
+          } catch (failure) {
+            setError(errorMessage(failure));
+          }
+        }}
+      >
+        <label>
+          用户 ID
+          <input
+            value={input}
+            inputMode="numeric"
+            maxLength={19}
+            autoComplete="off"
+            disabled={busy}
+            onChange={(event) => {
+              if (locked.current) return;
+              setInput(event.target.value);
+              setUserId(null);
+              setError("");
+            }}
+            placeholder="输入完整用户 ID"
+          />
+        </label>
+        <button type="submit" className="primary" disabled={busy}>
+          <Search size={16} aria-hidden="true" />
+          查询用户
+        </button>
+      </form>
+      {error && (
+        <p className="alert danger" role="alert">
+          {error}
+        </p>
+      )}
+      {userId ? (
+        <SupportWorkspace key={userId + ":" + revision} userId={userId} onBusyChange={changeBusy} />
+      ) : (
+        <Empty text="输入用户 ID，查看身份、合规摘要和客服工单。" />
       )}
     </Page>
   );
 }
 
-const SUPPORT_TICKET_SORTS = ["updatedAt.desc", "updatedAt.asc", "createdAt.desc", "createdAt.asc"];
-
-const SUPPORT_NOTE_SORTS = ["createdAt.asc", "createdAt.desc"];
+const initialFilters: SupportFilters = { status: "", limit: 25, sort: "updatedAt.desc", cursor: "" };
+function SupportWorkspace({
+  userId,
+  onBusyChange,
+}: {
+  userId: string;
+  onBusyChange: (busy: boolean) => void;
+}) {
+  const [overview, setOverview] = useState<ReturnType<typeof supportOverview> | null>(null);
+  const [overviewError, setOverviewError] = useState("");
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [filters, setFilters] = useState(initialFilters);
+  const [page, setPage] = useState<CursorPage<SupportTicket> | null>(null);
+  const [ticketError, setTicketError] = useState("");
+  const [ticketLoading, setTicketLoading] = useState(true);
+  const [ticketRevision, setTicketRevision] = useState(0);
+  const [selected, setSelected] = useState<SupportTicket | null>(null);
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const trigger = useRef<HTMLElement | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const changeBusy = useCallback(
+    (value: boolean) => {
+      lock.current = value;
+      setBusy(value);
+      onBusyChange(value);
+    },
+    [onBusyChange],
+  );
+  useEffect(() => () => onBusyChange(false), [onBusyChange]);
+  useEffect(() => {
+    const abort = new AbortController();
+    setOverview(null);
+    setOverviewError("");
+    setOverviewLoading(true);
+    void supportUserOverview(userId, abort.signal)
+      .then((value) => {
+        const parsed = supportOverview(value, userId);
+        if (!abort.signal.aborted) setOverview(parsed);
+      })
+      .catch((failure) => {
+        if (!abort.signal.aborted) setOverviewError(errorMessage(failure));
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setOverviewLoading(false);
+      });
+    return () => abort.abort();
+  }, [userId, revision]);
+  useEffect(() => {
+    const abort = new AbortController();
+    setPage(null);
+    setTicketError("");
+    setTicketLoading(true);
+    void supportTickets({ ...filters, userId }, abort.signal)
+      .then((value) => {
+        const parsed = supportTicketPage(value, userId, filters);
+        if (!abort.signal.aborted) setPage(parsed);
+      })
+      .catch((failure) => {
+        if (!abort.signal.aborted) {
+          setTicketError(errorMessage(failure));
+          setSelected(null);
+        }
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setTicketLoading(false);
+      });
+    return () => abort.abort();
+  }, [userId, filters, revision, ticketRevision]);
+  function updateFilters(patch: Partial<SupportFilters>) {
+    if (lock.current) return;
+    setSelected(null);
+    setFilters((current) => ({ ...current, cursor: "", ...patch }));
+  }
+  function refresh() {
+    if (lock.current) return;
+    setSelected(null);
+    setRevision((value) => value + 1);
+  }
+  function closeTicket() {
+    if (lock.current) return;
+    setSelected(null);
+    requestAnimationFrame(() => {
+      const label = trigger.current?.getAttribute("aria-label");
+      const visibleTrigger = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".support-workspace .admin-row-detail"),
+      ).find(
+        (button) =>
+          label && button.getAttribute("aria-label") === label && button.getClientRects().length > 0,
+      );
+      if (visibleTrigger) visibleTrigger.focus();
+      else heading.current?.focus();
+    });
+  }
+  const compliance = overview?.compliance;
+  return (
+    <div className="support-workspace">
+      <div className="support-context">
+        <div>
+          <span className="support-eyebrow">当前服务用户</span>
+          <h3 ref={heading} tabIndex={-1}>
+            UID {userId}
+          </h3>
+        </div>
+        <button disabled={busy || overviewLoading || ticketLoading} onClick={refresh}>
+          <RefreshCw size={16} aria-hidden="true" />
+          刷新用户与工单
+        </button>
+      </div>
+      <Panel title="用户与合规摘要">
+        {overviewLoading ? (
+          <p role="status" aria-busy="true">
+            正在读取用户摘要…
+          </p>
+        ) : overviewError ? (
+          <div className="alert danger" role="alert">
+            <span>{overviewError}</span>
+            <button disabled={busy} onClick={() => setRevision((value) => value + 1)}>
+              重新读取摘要
+            </button>
+          </div>
+        ) : overview && compliance ? (
+          <>
+            <div className="metrics">
+              <Metric label="用户状态" value={overview.user.status} tone="muted" />
+              <Metric
+                label="身份认证"
+                value={compliance.kycStatus}
+                tone={compliance.kycStatus === "VERIFIED" ? "ok" : "warn"}
+              />
+              <Metric
+                label="活动风险标签"
+                value={compliance.activeRiskTags}
+                tone={compliance.activeRiskTags > 0 ? "warn" : "ok"}
+              />
+              <Metric
+                label="未结 AML 案件"
+                value={compliance.openAmlCases}
+                tone={compliance.openAmlCases > 0 ? "danger" : "ok"}
+              />
+            </div>
+            <KeyValue
+              data={{
+                用户名: overview.user.username,
+                邮箱: overview.user.email,
+                注册时间: overview.user.createdAt,
+                认证等级: compliance.kycLevel,
+                国家或地区: compliance.country,
+                认证到期时间: compliance.kycExpiresAt,
+                严重风险标签: compliance.criticalRiskTags,
+                AML最高分: compliance.maxAmlRiskScore,
+                摘要时间: overview.generatedAt,
+              }}
+            />
+          </>
+        ) : null}
+      </Panel>
+      <div className={`support-columns${selected ? " has-selection" : ""}`}>
+        <Panel title="客服工单">
+          <fieldset className="support-fieldset" disabled={busy}>
+            <div className="support-filters">
+              <label>
+                工单状态
+                <select
+                  aria-label="工单状态"
+                  value={filters.status}
+                  onChange={(event) => updateFilters({ status: event.target.value })}
+                >
+                  <option value="">全部状态</option>
+                  {Object.entries(SUPPORT_STATUSES).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                每页条数
+                <select
+                  aria-label="每页条数"
+                  value={filters.limit}
+                  onChange={(event) => updateFilters({ limit: Number(event.target.value) })}
+                >
+                  {[25, 50, 100].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                工单排序
+                <select
+                  aria-label="工单排序"
+                  value={filters.sort}
+                  onChange={(event) => updateFilters({ sort: event.target.value })}
+                >
+                  <option value="updatedAt.desc">最近更新优先</option>
+                  <option value="updatedAt.asc">最早更新优先</option>
+                  <option value="createdAt.desc">最近创建优先</option>
+                  <option value="createdAt.asc">最早创建优先</option>
+                </select>
+              </label>
+            </div>
+            <DataTable
+              rows={(page?.items ?? []).map((ticket) => ({
+                ...ticket,
+                supportStatus: SUPPORT_STATUSES[ticket.status],
+                supportPriority: SUPPORT_PRIORITIES[ticket.priority],
+              }))}
+              loading={ticketLoading}
+              error={ticketError}
+              emptyText="当前筛选下暂无工单"
+              columns={["ticketId", "title", "supportStatus", "supportPriority", "category", "updatedAt"]}
+              label="客服工单"
+              rowActionLabel="查看工单"
+              rowActionDisabled={busy}
+              isSelected={(row) => row.ticketId === selected?.ticketId}
+              onRowClick={(row) => {
+                if (lock.current) return;
+                const ticket = page?.items.find((item) => item.ticketId === row.ticketId);
+                if (ticket) {
+                  trigger.current =
+                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                  setSelected(ticket);
+                }
+              }}
+            />
+            {ticketError && <button onClick={refresh}>重新查询工单</button>}
+            {page && (
+              <CursorPager
+                page={page}
+                cursor={filters.cursor}
+                loading={ticketLoading || busy}
+                onNext={() => page?.hasMore && updateFilters({ cursor: page.nextCursor })}
+                onReset={() => updateFilters({ cursor: "" })}
+              />
+            )}
+          </fieldset>
+          <SupportTicketCreate
+            key={revision}
+            userId={userId}
+            enabled={!!overview && !!page && !ticketLoading}
+            busy={busy}
+            onBusyChange={changeBusy}
+            onCreated={(ticket) => {
+              setSelected(ticket);
+              setTicketRevision((value) => value + 1);
+            }}
+            onRecheck={refresh}
+          />
+        </Panel>
+        {selected ? (
+          <section className="support-detail" aria-label={`工单 ${selected.ticketId} 详情`}>
+            <button disabled={busy} onClick={closeTicket}>
+              <ArrowLeft size={16} aria-hidden="true" />
+              返回工单列表
+            </button>
+            <SupportTicketPanel
+              key={selected.ticketId}
+              ticket={selected}
+              workspaceBusy={busy}
+              onBusyChange={changeBusy}
+              onRecheck={refresh}
+              onChanged={(ticket) => {
+                setSelected(ticket);
+                setTicketRevision((value) => value + 1);
+              }}
+            />
+          </section>
+        ) : (
+          <div className="support-selection-hint">
+            <ClipboardList size={32} strokeWidth={1.4} aria-hidden="true" />
+            <h3>跟进每一条服务记录</h3>
+            <p>选择工单，查看备注时间线和处理进度。</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

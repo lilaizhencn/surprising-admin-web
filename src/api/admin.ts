@@ -81,11 +81,13 @@ export function userProfile(userId: number | string, params: { settleAsset?: str
   return request<UnknownRecord>(`/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/profile${queryString(params)}`, { signal });
 }
 
-export function supportUserOverview(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}) {
-  return request<UnknownRecord>(`/api/v1/admin/support/users/${positiveInt64(userId, "用户 ID")}/overview${queryString(params)}`);
+export function supportUserOverview(userId: number | string, signal?: AbortSignal) {
+  return request<UnknownRecord>(`/api/v1/admin/support/users/${positiveInt64(userId, "用户 ID")}/overview`, {
+    signal, expectedUserId: String(loadSession()?.user.userId ?? "")
+  });
 }
 
-export function supportTickets(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}) {
+export function supportTickets(params: { userId?: string; status?: string; limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
   return request<{
     ticketCount?: number;
     tickets?: UnknownRecord[];
@@ -94,7 +96,7 @@ export function supportTickets(params: { userId?: string; status?: string; limit
     sort?: string;
     limit?: number;
   }>(
-    `/api/v1/admin/support/tickets${queryString(params)}`
+    `/api/v1/admin/support/tickets${queryString(params)}`, { signal, expectedUserId: String(loadSession()?.user.userId ?? "") }
   );
 }
 
@@ -106,12 +108,12 @@ export function createSupportTicket(userId: number | string, body: {
   initialNote?: string;
 }) {
   return request<UnknownRecord>(`/api/v1/admin/support/users/${positiveInt64(userId, "用户 ID")}/tickets`, {
-    method: "POST",
+    method: "POST", expectedUserId: String(loadSession()?.user.userId ?? ""),
     body: serializeAdminBody(body)
   });
 }
 
-export function supportTicketNotes(ticketId: number | string, params: { limit?: number } & CursorListParams = {}) {
+export function supportTicketNotes(ticketId: number | string, params: { limit?: number } & CursorListParams = {}, signal?: AbortSignal) {
   return request<{
     noteCount?: number;
     notes?: UnknownRecord[];
@@ -120,7 +122,7 @@ export function supportTicketNotes(ticketId: number | string, params: { limit?: 
     sort?: string;
     limit?: number;
   }>(
-    `/api/v1/admin/support/tickets/${ticketId}/notes${queryString(params)}`
+    `/api/v1/admin/support/tickets/${positiveInt64(ticketId, "工单 ID")}/notes${queryString(params)}`, { signal, expectedUserId: String(loadSession()?.user.userId ?? "") }
   );
 }
 
@@ -129,15 +131,15 @@ export function addSupportTicketNote(ticketId: number | string, body: {
   visibility?: string;
   body: string;
 }) {
-  return request<UnknownRecord>(`/api/v1/admin/support/tickets/${ticketId}/notes`, {
-    method: "POST",
+  return request<UnknownRecord>(`/api/v1/admin/support/tickets/${positiveInt64(ticketId, "工单 ID")}/notes`, {
+    method: "POST", expectedUserId: String(loadSession()?.user.userId ?? ""),
     body: serializeAdminBody(body)
   });
 }
 
 export function updateSupportTicketStatus(ticketId: number | string, body: { status: string; reason: string }) {
-  return request<UnknownRecord>(`/api/v1/admin/support/tickets/${ticketId}/status`, {
-    method: "POST",
+  return request<UnknownRecord>(`/api/v1/admin/support/tickets/${positiveInt64(ticketId, "工单 ID")}/status`, {
+    method: "POST", expectedUserId: String(loadSession()?.user.userId ?? ""),
     body: serializeAdminBody(body)
   });
 }
