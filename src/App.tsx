@@ -23,6 +23,7 @@ const WalletPage = lazy(() => import("./pages/WalletPage"));
 const CompliancePage = lazy(() => import("./pages/CompliancePage"));
 const RiskPage = lazy(() => import("./pages/RiskPage"));
 const FundingInsurancePage = lazy(() => import("./pages/FundingInsurancePage"));
+const AffiliatePage = lazy(() => import("./pages/AffiliatePage"));
 const FeesPage = lazy(() => import("./pages/FeesPage"));
 const MarketMakerPage = lazy(() => import("./pages/MarketMakerPage"));
 const SecurityPage = lazy(() => import("./pages/SecurityPage"));
@@ -48,6 +49,7 @@ const NAV = [
   { key: "compliance", label: "合规风控", icon: Scale },
   { key: "risk", label: "风控强平", icon: Gauge },
   { key: "funding", label: "资金保险", icon: CircleDollarSign },
+  { key: "affiliate", label: "邀请与 KOL", icon: Users },
   { key: "fees", label: "费率配置", icon: SlidersHorizontal },
   { key: "maker", label: "做市管理", icon: Activity },
   { key: "security", label: "权限治理", icon: BadgeCheck },
@@ -147,6 +149,7 @@ export default function App() {
           {activeRoute === "compliance" && <CompliancePage />}
           {activeRoute === "risk" && <RiskPage />}
           {activeRoute === "funding" && <FundingInsurancePage />}
+          {activeRoute === "affiliate" && <AffiliatePage />}
           {activeRoute === "fees" && <FeesPage />}
           {activeRoute === "maker" && <MarketMakerPage />}
           {activeRoute === "security" && <SecurityPage />}

@@ -13,6 +13,7 @@ export type RouteKey =
   | "compliance"
   | "risk"
   | "funding"
+  | "affiliate"
   | "fees"
   | "maker"
   | "security"
