@@ -10,7 +10,7 @@ import { errorMessage, fieldText, objectValue, records } from "../lib/adminData"
 import { enumOrDefault, jsonObject, textOrNull } from "../lib/formValues";
 import { UPDATED_AT_SORTS } from "../lib/queryOptions";
 
-import { KYC_LEVELS, KYC_STATUSES, complianceDetail, complianceRows } from "../lib/compliance";
+import { KYC_LEVELS, KYC_STATUSES, complianceDetail, complianceRows, validateKycReview } from "../lib/compliance";
 
 const RISK_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
 
@@ -242,6 +242,7 @@ export default function CompliancePage() {
     if (!userId || detailLoading || writeBusy.current) return;
     try {
       const body = jsonObject(kycJson);
+      validateKycReview(body, objectValue(detail?.kyc));
       await runWrite(`保存用户 ${userId} 的 KYC 审核\n级别：${fieldText(body.kycLevel)}\n状态：${fieldText(body.status)}\n拒绝原因：${fieldText(body.rejectionReason) || "—"}\n有效期：${fieldText(body.expiresAt) || "未设置"}\n此次操作影响用户认证状态，并沿用后台审批要求。`, () => updateKyc(userId, body));
     } catch (reason) { setError(errorMessage(reason)); }
   }
@@ -463,13 +464,14 @@ export default function CompliancePage() {
               <div className="stack">
                 <div className="form-grid">
                   <label>KYC Level<select value={kycForm.kycLevel} onChange={(event) => updateKycForm({ kycLevel: event.target.value })}>{KYC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select></label>
-                  <label>状态<select value={kycForm.status} onChange={(event) => updateKycForm({ status: event.target.value })}>{KYC_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>状态<select aria-label="KYC 审核状态" value={kycForm.status} onChange={(event) => updateKycForm({ status: event.target.value })}>{KYC_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
                   <TextFilter label="国家/地区" value={kycForm.country} onChange={(value) => updateKycForm({ country: value.toUpperCase() })} />
                   <TextFilter label="证件类型" value={kycForm.documentType} onChange={(value) => updateKycForm({ documentType: value.toUpperCase() })} />
                   <TextFilter label="Provider" value={kycForm.provider} onChange={(value) => updateKycForm({ provider: value })} />
                   <TextFilter label="Provider Ref" value={kycForm.providerReference} onChange={(value) => updateKycForm({ providerReference: value })} />
                   <TextFilter label="过期时间 ISO" value={kycForm.expiresAt} onChange={(value) => updateKycForm({ expiresAt: value })} />
                 </div>
+                <p className="muted">通过前核对本次提交的原件并设置有效期；有效期不能超过证件期限。驳回须填写用户可理解的补正原因。第三方认证等级由实际核验流程决定。</p>
                 <label>拒绝原因<textarea className="json-editor small text-editor" value={kycForm.rejectionReason} onChange={(event) => updateKycForm({ rejectionReason: event.target.value })} /></label>
                 <details className="raw-toggle">
                   <summary>高级 JSON 请求体</summary>
