@@ -35,6 +35,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 describe("private admin requests", () => {
+  test("429 exposes Retry-After for mutations and downloads without repeating them", async () => {
+    const fetch = mock(async () => new Response('{"code":"RATE_LIMITED"}', { status: 429, headers: { "Retry-After": "12" } }));
+    globalThis.fetch = fetch;
+    for (const operation of [() => request("/private", { method: "POST", body: "{}" }), () => requestBlob("/export")]) {
+      await expect(operation()).rejects.toMatchObject({ status: 429, retryAfterSeconds: 12, message: expect.stringContaining("12 秒") });
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(loadSession()?.user.userId).toBe(9);
+  });
   test("never fetches a private file or history under a different owner", async () => {
     const fetch = mock(async () => json({}));
     globalThis.fetch = fetch;

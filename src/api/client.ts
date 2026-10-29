@@ -12,7 +12,7 @@ export function parseApiJson<T>(text: string): T {
 }
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string, readonly payload: unknown) {
+  constructor(readonly status: number, message: string, readonly payload: unknown, readonly retryAfterSeconds: number | null = null) {
     super(message);
     this.name = "ApiError";
   }
@@ -140,9 +140,18 @@ async function readBody(response: Response, signal: AbortSignal, maximum: number
 function apiError(response: Response, text: string) {
   let payload: unknown = text;
   try { payload = text ? parseApiJson(text) : null; } catch { /* Preserve non-JSON error bodies. */ }
+  const header = response.headers.get("Retry-After")?.trim();
+  const delay = header ? (/^\d+$/.test(header) ? Number(header) : (Date.parse(header) - Date.now()) / 1000) : NaN;
+  const retryAfter = Number.isFinite(delay) ? Math.max(1, Math.ceil(delay)) : null;
+  if (response.status === 429) return new ApiError(429,
+    retryAfter === null ? "请求过于频繁，请稍后重试。" : `请求过于频繁，请在 ${retryAfter} 秒后重试。`, payload, retryAfter);
+  const code = object(payload)?.code;
+  if (code === "REQUEST_EXCEEDS_RATE_BURST") return new ApiError(response.status, "请减小批量数量或查询条数后重试。", payload, retryAfter);
+  if (code === "GATEWAY_BUSY" || code === "RATE_LIMIT_STORAGE_UNAVAILABLE")
+    return new ApiError(response.status, "网关暂时繁忙，请先核对操作结果后重试。", payload, retryAfter);
   const message = typeof payload === "object" && payload && "message" in payload
     ? String((payload as { message?: unknown }).message) : `${response.status} ${response.statusText}`;
-  return new ApiError(response.status, message, payload);
+  return new ApiError(response.status, message, payload, retryAfter);
 }
 
 async function fetchBody(path: string, init: AdminRequestInit, session: AuthSession | null, signal: AbortSignal, blob: boolean, allowRefresh: boolean): Promise<{ response: Response; bytes: Uint8Array<ArrayBuffer> }> {
