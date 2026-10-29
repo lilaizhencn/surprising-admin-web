@@ -249,11 +249,21 @@ export default function AffiliatePage() {
         </Panel>
         <Panel title="核算来源与结算">
           <p>
-            核算读取已提交费用事实。错误会保留原进度；手动结算只处理已成熟佣金，付款由后台任务执行。
+            已接收进度包含完整留存的隔离费用；连续确认进度不会跨过未解决费用。关系异常仅隔离相关费用，健康团队继续核算；修复后后台自动重试。手动结算只处理已成熟佣金。
           </p>
           <DataTable
             rows={data?.sources ?? []}
-            columns={["productLine", "clusterPosition", "checkedAt", "error"]}
+            columns={[
+              "productLine",
+              "clusterPosition",
+              "orderId",
+              "readClusterPosition",
+              "readOrderId",
+              "deferredCount",
+              "oldestDeferredAt",
+              "checkedAt",
+              "error",
+            ]}
           />
           <button
             disabled={busy}

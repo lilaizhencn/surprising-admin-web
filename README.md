@@ -7,6 +7,11 @@
 金额按产品与资产展示，表格明确最小单位；停用不撤回已确认应付，未知资金结果沿用原身份。完整规则和验证边界见 [设计](../surprising-ex/docs/affiliate-design.md) 与 [验收](../surprising-ex/docs/validation/affiliate-20261028/README.md)。
 
 
+2026-10-29：来源表分别显示完整持久化的接收进度、不会越过未解决费用的连续确认进度，以及隔离待核算笔数和最早发生时间；缺字段或错误进度报错，不显示假零。关系异常修复后自动重试，刷新可核对确认进度追平。后端先停写并应用 `20261029-affiliate-team-isolation.sql`，统一升级后端，再发布此后台，旧接口不会被静默兼容为“无异常”。
+
+本轮真实 Spring MVC/PG 桌面和窄屏交互通过，lint、144 项测试和 build 通过；1000 队六产品/10000 队单产品的资金验证、环境限制与未测容量见[多团队报告](../surprising-ex/docs/validation/affiliate-teams-20261029/MULTI_TEAM_VALIDATION.md)。
+
+
 React / TypeScript 管理后台。开发运行 `npm run dev`；提交前执行 `npm run lint` 和 `npm run build`。
 
 ## 客服工单体验（2026-10-27）

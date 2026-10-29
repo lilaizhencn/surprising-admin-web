@@ -12,9 +12,55 @@ export type AffiliateAdminData = {
   settings: AffiliateSettings;
   profiles: UnknownRecord[];
   budgets: UnknownRecord[];
-  sources: UnknownRecord[];
+  sources: AffiliateSource[];
   payouts: UnknownRecord[];
 };
+export type AffiliateSource = UnknownRecord & {
+  productLine: string;
+  clusterPosition: string;
+  orderId: string;
+  readClusterPosition: string;
+  readOrderId: string;
+  deferredCount: string;
+  oldestDeferredAt: string | null;
+  checkedAt: string | null;
+  error: string | null;
+};
+function validSource(value: unknown): value is AffiliateSource {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as UnknownRecord;
+  const integer = (item: unknown) =>
+    typeof item === "string" &&
+    /^(0|[1-9][0-9]{0,18})$/.test(item) &&
+    BigInt(item) <= 9223372036854775807n;
+  const fields = [
+    "clusterPosition",
+    "orderId",
+    "readClusterPosition",
+    "readOrderId",
+    "deferredCount",
+  ];
+  if (
+    typeof row.productLine !== "string" ||
+    !row.productLine ||
+    !fields.every((key) => integer(row[key]))
+  )
+    return false;
+  if (
+    row.oldestDeferredAt !== null &&
+    (typeof row.oldestDeferredAt !== "string" ||
+      !Number.isFinite(Date.parse(row.oldestDeferredAt)))
+  )
+    return false;
+  const confirmed = BigInt(row.clusterPosition as string),
+    read = BigInt(row.readClusterPosition as string);
+  return (
+    (confirmed < read ||
+      (confirmed === read &&
+        BigInt(row.orderId as string) <= BigInt(row.readOrderId as string))) &&
+    (row.deferredCount === "0") === (row.oldestDeferredAt === null)
+  );
+}
 const owner = () => ({
   expectedUserId: String(loadSession()?.user.userId ?? ""),
 });
@@ -36,6 +82,7 @@ export const affiliateAdmin = {
       ![data.profiles, data.budgets, data.sources, data.payouts].every(
         Array.isArray,
       ) ||
+      !data.sources.every(validSource) ||
       !data.settings ||
       !Number.isInteger(data.settings.referralRatePpm) ||
       !Number.isInteger(data.settings.kolRatePpm) ||
