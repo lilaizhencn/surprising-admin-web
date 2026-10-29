@@ -5,6 +5,11 @@ const { request, requestBlob, saveSession, loadSession, parseApiJson, validateSe
   "../src/api/client"
 );
 const originalFetch = globalThis.fetch;
+// The public CSRF token endpoint is part of this HTTP fixture; individual mocks exercise business/refresh responses.
+function installTransport(handler: typeof fetch) {
+  globalThis.fetch = ((input, init) => String(input).endsWith("/auth/csrf")
+    ? Promise.resolve(json({token: "csrf-test"})) : handler(input, init)) as typeof fetch;
+}
 const session = (id = 9, token = "old") => ({
   user: {
     userId: id,
@@ -14,12 +19,14 @@ const session = (id = 9, token = "old") => ({
     createdAt: "2026-10-20T00:00:00Z",
   },
   accessToken: token,
-  refreshToken: `refresh-${id}-${token}`,
+  refreshToken: null,
+  browserSession: true,
   accessTokenExpiresAt: "2099-01-01T00:00:00Z",
   refreshTokenExpiresAt: "2099-01-01T00:00:00Z",
 });
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 beforeEach(() => {
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: { request: (_name: string, _options: unknown, run: () => unknown) => Promise.resolve(run()) } } });
   const values = new Map<string, string>();
   Object.assign(globalThis, {
     localStorage: {
@@ -37,7 +44,7 @@ afterEach(() => {
 describe("private admin requests", () => {
   test("429 exposes Retry-After for mutations and downloads without repeating them", async () => {
     const fetch = mock(async () => new Response('{"code":"RATE_LIMITED"}', { status: 429, headers: { "Retry-After": "12" } }));
-    globalThis.fetch = fetch;
+    installTransport(fetch);
     for (const operation of [() => request("/private", { method: "POST", body: "{}" }), () => requestBlob("/export")]) {
       await expect(operation()).rejects.toMatchObject({ status: 429, retryAfterSeconds: 12, message: expect.stringContaining("12 秒") });
     }
@@ -46,7 +53,7 @@ describe("private admin requests", () => {
   });
   test("never fetches a private file or history under a different owner", async () => {
     const fetch = mock(async () => json({}));
-    globalThis.fetch = fetch;
+    installTransport(fetch);
     await expect(request("/private", { expectedUserId: "10" })).rejects.toThrow("账号已变化");
     await expect(requestBlob("/private/file", { expectedUserId: "10" })).rejects.toThrow(
       "账号已变化",
@@ -62,7 +69,7 @@ describe("private admin requests", () => {
       await waiting;
       return json({}, 401);
     });
-    globalThis.fetch = fetch;
+    installTransport(fetch);
     const result = request("/private", { expectedUserId: "9" });
     saveSession(session(10));
     release();
@@ -78,14 +85,14 @@ describe("private admin requests", () => {
       waiting = new Promise<void>((resolve) => {
         release = resolve;
       });
-    globalThis.fetch = mock(async (url) => {
-      if (String(url).endsWith("/auth/refresh")) {
+    installTransport(mock(async (url) => {
+      if (String(url).endsWith("/auth/browser/refresh")) {
         open();
         await waiting;
         return json(session(9, "new"));
       }
       return json({}, 401);
-    });
+    }));
     const result = request("/private", { expectedUserId: "9" });
     void result.catch(() => {});
     await opened;
@@ -96,8 +103,8 @@ describe("private admin requests", () => {
   });
   test("concurrent 401 responses share one rotating refresh", async () => {
     let refreshes = 0;
-    globalThis.fetch = mock(async (url, init) => {
-      if (String(url).endsWith("/auth/refresh")) {
+    installTransport(mock(async (url, init) => {
+      if (String(url).endsWith("/auth/browser/refresh")) {
         refreshes++;
         await new Promise((resolve) => setTimeout(resolve, 10));
         return json(session(9, "new"));
@@ -105,7 +112,7 @@ describe("private admin requests", () => {
       return new Headers(init?.headers).get("Authorization") === "Bearer new"
         ? json({ ok: true })
         : json({}, 401);
-    });
+    }));
     expect(
       await Promise.all([
         request("/one", { expectedUserId: "9" }),
@@ -116,13 +123,13 @@ describe("private admin requests", () => {
   });
   test("a rejected refreshed token fails without an endless refresh loop", async () => {
     let refreshes = 0;
-    globalThis.fetch = mock(async (url) => {
-      if (String(url).endsWith("/auth/refresh")) {
+    installTransport(mock(async (url) => {
+      if (String(url).endsWith("/auth/browser/refresh")) {
         refreshes++;
         return json(session(9, "new"));
       }
       return json({}, 401);
-    });
+    }));
     await expect(request("/private", { expectedUserId: "9" })).rejects.toHaveProperty(
       "status",
       401,
@@ -134,7 +141,7 @@ describe("private admin requests", () => {
     const waiting = new Promise<void>((resolve) => {
       finish = resolve;
     });
-    globalThis.fetch = mock(
+    installTransport(mock(
       async () =>
         new Response(
           new ReadableStream({
@@ -145,7 +152,7 @@ describe("private admin requests", () => {
             },
           }),
         ),
-    );
+    ));
     const result = request("/private", { expectedUserId: "9" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     saveSession(session(10));
@@ -169,8 +176,10 @@ describe("session boundary", () => {
     const { username: _username, ...user } = session().user;
     const value = { ...session(), user: { ...user, ...labels } };
     expect(validateSession(value)).toEqual(value);
+    saveSession(null);
+    saveSession(null);
     localStorage.setItem("surprising-admin.session", JSON.stringify(value));
-    expect(loadSession()).toEqual(value);
+    expect(loadSession()).toBeNull();
     saveSession(validateSession(value));
     expect(loadSession()).toEqual(value);
   });
@@ -182,18 +191,21 @@ describe("session boundary", () => {
   ])("malformed login labels are rejected: %j", labels => {
     const value = { ...session(), user: { ...session().user, ...labels } };
     expect(() => validateSession(value)).toThrow("登录会话已失效");
+    saveSession(null);
     localStorage.setItem("surprising-admin.session", JSON.stringify(value));
     expect(loadSession()).toBeNull();
   });
   test.each([null, {}, { user: { userId: 1 }, accessToken: "audit" }, { ...session(), user: { ...session().user, roles: "ADMIN" } }, { ...session(), refreshTokenExpiresAt: "invalid" }, { ...session(), refreshTokenExpiresAt: "2000-01-01T00:00:00Z" }])("bad stored sessions recover to login: %j", value => {
+    saveSession(null);
     localStorage.setItem("surprising-admin.session", JSON.stringify(value));
     expect(loadSession()).toBeNull();
     expect(localStorage.getItem("surprising-admin.session")).toBeNull();
   });
   test("a long user ID remains exact in a valid stored session", () => {
     const raw = JSON.stringify(session()).replace('"userId":9', '"userId":9223372036854775807');
-    localStorage.setItem("surprising-admin.session", raw);
+    saveSession(validateSession(parseApiJson(raw)));
     expect(String(loadSession()?.user.userId)).toBe("9223372036854775807");
+    expect(localStorage.getItem("surprising-admin.session")).toBeNull();
   });
   test("storage denial and a blocked write keep only this tab's session", () => {
     const denied = () => { throw new DOMException("blocked", "SecurityError"); };
@@ -208,30 +220,30 @@ describe("session boundary", () => {
 describe("refresh failure classification", () => {
   test.each([503, 500, 429])("transient refresh status %i preserves the session and never repeats a write", async status => {
     let writes = 0;
-    globalThis.fetch = mock(async url => {
-      if (String(url).endsWith("/auth/refresh")) return json({ message: "temporarily unavailable" }, status);
+    installTransport(mock(async url => {
+      if (String(url).endsWith("/auth/browser/refresh")) return json({ message: "temporarily unavailable" }, status);
       writes++;
       return json({}, 401);
-    });
+    }));
     await expect(request("/write", { method: "POST", body: "{}" })).rejects.toHaveProperty("status", status);
     expect(loadSession()?.accessToken).toBe("old");
     expect(writes).toBe(1);
   });
   test("a network refresh failure preserves the session", async () => {
-    globalThis.fetch = mock(async url => {
-      if (String(url).endsWith("/auth/refresh")) throw new TypeError("offline");
+    installTransport(mock(async url => {
+      if (String(url).endsWith("/auth/browser/refresh")) throw new TypeError("offline");
       return json({}, 401);
-    });
+    }));
     await expect(request("/private")).rejects.toThrow("offline");
     expect(loadSession()?.accessToken).toBe("old");
   });
   test.each([401, 403])("confirmed refresh rejection %i clears this session", async status => {
-    globalThis.fetch = mock(async url => json({}, String(url).endsWith("/auth/refresh") ? status : 401));
+    installTransport(mock(async url => json({}, String(url).endsWith("/auth/browser/refresh") ? status : 401)));
     await expect(request("/private")).rejects.toHaveProperty("status", status);
     expect(loadSession()).toBeNull();
   });
   test("an unexpected refresh identity cannot replace the logged-in user", async () => {
-    globalThis.fetch = mock(async url => String(url).endsWith("/auth/refresh") ? json(session(10, "new")) : json({}, 401));
+    installTransport(mock(async url => String(url).endsWith("/auth/browser/refresh") ? json(session(10, "new")) : json({}, 401)));
     await expect(request("/private")).rejects.toThrow("身份");
     expect(loadSession()?.user.userId).toBe(9);
   });
@@ -241,17 +253,17 @@ describe("complete request deadline and body limits", () => {
   test("slow headers are aborted once; writes are not automatically retried", async () => {
     let signal: AbortSignal | undefined;
     const send = mock((_url: unknown, init?: RequestInit) => { signal = init?.signal ?? undefined; return new Promise<Response>(() => {}); });
-    globalThis.fetch = send;
+    installTransport(send);
     await expect(request("/write", { method: "POST", timeoutMs: 25 })).rejects.toHaveProperty("status", 408);
     expect(signal?.aborted).toBe(true);
     expect(send).toHaveBeenCalledTimes(1);
   });
   test.each([false, true])("unfinished response body is cancelled for blob=%p", async blob => {
     let cancelled = false;
-    globalThis.fetch = mock(async () => new Response(new ReadableStream({
+    installTransport(mock(async () => new Response(new ReadableStream({
       start(controller) { controller.enqueue(new TextEncoder().encode('{"ok":')); },
       cancel() { cancelled = true; }
-    })));
+    }))));
     const result = blob ? requestBlob("/file", { timeoutMs: 25 }) : request("/json", { timeoutMs: 25 });
     await expect(result).rejects.toHaveProperty("status", 408);
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -259,7 +271,7 @@ describe("complete request deadline and body limits", () => {
   });
   test("caller cancellation also closes a body stream", async () => {
     let cancelled = false;
-    globalThis.fetch = mock(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } })));
+    installTransport(mock(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }))));
     const abort = new AbortController();
     const result = request("/json", { signal: abort.signal });
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -269,23 +281,23 @@ describe("complete request deadline and body limits", () => {
     expect(cancelled).toBe(true);
   });
   test("aborted requests never start a fetch", async () => {
-    const send = mock(async () => json({})); globalThis.fetch = send;
+    const send = mock(async () => json({})); installTransport(send);
     const abort = new AbortController(); abort.abort();
     await expect(request("/json", { signal: abort.signal })).rejects.toHaveProperty("name", "AbortError");
     expect(send).not.toHaveBeenCalled();
   });
   test.each([false, true])("stream size limit cancels without waiting for EOF, blob=%p", async blob => {
     let cancelled = false;
-    globalThis.fetch = mock(async () => new Response(new ReadableStream({
+    installTransport(mock(async () => new Response(new ReadableStream({
       start(controller) { controller.enqueue(new Uint8Array(17)); },
       cancel() { cancelled = true; }
-    })));
+    }))));
     const result = blob ? requestBlob("/file", { maxResponseBytes: 16 }) : request("/json", { maxResponseBytes: 16 });
     await expect(result).rejects.toHaveProperty("status", 413);
     expect(cancelled).toBe(true);
   });
   test("declared oversize is rejected before body decoding", async () => {
-    globalThis.fetch = mock(async () => new Response("{}", { headers: { "Content-Length": "17" } }));
+    installTransport(mock(async () => new Response("{}", { headers: { "Content-Length": "17" } })));
     await expect(request("/json", { maxResponseBytes: 16 })).rejects.toHaveProperty("status", 413);
   });
   test("the original deadline remains in force while a shared refresh is waiting", async () => {
@@ -293,10 +305,10 @@ describe("complete request deadline and body limits", () => {
     const refreshOpened = new Promise<void>(resolve => { opened = resolve; });
     let release!: () => void;
     const refreshWaiting = new Promise<void>(resolve => { release = resolve; });
-    globalThis.fetch = mock(async url => {
-      if (String(url).endsWith("/auth/refresh")) { opened(); await refreshWaiting; return json(session(9, "new")); }
+    installTransport(mock(async url => {
+      if (String(url).endsWith("/auth/browser/refresh")) { opened(); await refreshWaiting; return json(session(9, "new")); }
       return json({}, 401);
-    });
+    }));
     const result = request("/private", { timeoutMs: 25 });
     await refreshOpened;
     await expect(result).rejects.toHaveProperty("status", 408);
@@ -312,10 +324,10 @@ test("a real HTTP response with headers and an unfinished body reaches the appli
       return new Response(new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('{"unfinished":')); } }), { headers: { "Content-Type": "application/json" } });
     }
   });
-  globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => {
+  installTransport(((url: string | URL | Request, init?: RequestInit) => {
     const path = new URL(String(url)).pathname;
     return originalFetch(new URL(path, server.url), init);
-  }) as typeof fetch;
+  }) as typeof fetch);
   const started = performance.now();
   try {
     await expect(request("/unfinished", { timeoutMs: 100 })).rejects.toHaveProperty("status", 408);

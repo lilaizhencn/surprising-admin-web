@@ -218,3 +218,7 @@ Playwright 模块，可用 `QA_CHROMIUM` 指定浏览器，再执行 `node scrip
 ## 统一网关限流（2026-10-29）
 
 后台请求与导出均识别 429/Retry-After，显示等待秒数并保留结构化错误。网关并发不足和限流存储故障与登录失效区分，写操作不自动重试，提示先核对业务结果。验证记录见后端 `docs/validation/open-platform-20261029/`。
+
+## 安全会话
+
+管理令牌只在内存中保留，通过独立 HttpOnly Cookie 和 CSRF 恢复；管理 Cookie 操作还要求页面 Origin 在 Gateway 管理来源名单中。开发服务默认只监听 127.0.0.1。生产 `/admin/` 使用 `npm run build -- --base=/admin/`，并安装后端部署目录的管理安全头 snippet；第三方源站、防火墙与私有探针策略见后端安全文档。

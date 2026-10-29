@@ -42,7 +42,8 @@ export interface AuthenticatedUser {
 export interface AuthSession {
   user: AuthenticatedUser;
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string | null;
+  browserSession?: boolean;
   accessTokenExpiresAt: string;
   refreshTokenExpiresAt: string;
 }

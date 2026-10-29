@@ -2,7 +2,7 @@ import { LayoutDashboard, LifeBuoy, MessageSquare, Users, Database, BarChart3, C
 import { type RouteKey, type AuthSession } from "./types";
 import { type AdminApprovalRequestContext, type AdminApprovalDecision, setApprovalRequestHandler, login } from "./api/admin";
 import { useState, useEffect, useRef } from "react";
-import { loadSession, saveSession, validateSession } from "./api/client";
+import { loadSession, saveSession, validateSession, logoutBrowserSession } from "./api/client";
 import { KeyValue, StatusBadge } from "./components/AdminUi";
 import { errorMessage } from "./lib/adminData";
 import { lazy, Suspense } from "react";
@@ -119,8 +119,7 @@ export default function App() {
 
   if (!consoleRole) {
     return <ForbiddenScreen session={session} onLogout={() => {
-      saveSession(null);
-      setSession(null);
+      void logoutBrowserSession().then(() => setSession(null)).catch(error => window.alert(errorMessage(error)));
     }} />;
   }
 
@@ -129,8 +128,7 @@ export default function App() {
 
   return (
     <ConsoleShell items={visibleNav} route={activeRoute} session={session} onNavigate={navigate} onLogout={() => {
-      saveSession(null);
-      setSession(null);
+      void logoutBrowserSession().then(() => setSession(null)).catch(error => window.alert(errorMessage(error)));
     }}>
         <div key={String(session.user.userId)}>
           <PageErrorBoundary key={activeRoute}>

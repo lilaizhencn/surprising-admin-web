@@ -31,7 +31,7 @@ export function validateSession(value: unknown): AuthSession {
   if (!session || !user || !optionalText(user.username) || !optionalText(user.email)
       || !text(user.status) || !date(user.createdAt)
       || !Array.isArray(user.roles) || user.roles.length > 100 || !user.roles.every(text)
-      || !text(session.accessToken) || !text(session.refreshToken)
+      || !text(session.accessToken) || (session.browserSession !== true && !text(session.refreshToken))
       || !date(session.accessTokenExpiresAt) || !date(session.refreshTokenExpiresAt)
       || Date.parse(session.refreshTokenExpiresAt as string) <= Date.now()) {
     throw new Error("登录会话已失效，请重新登录。");
@@ -40,33 +40,28 @@ export function validateSession(value: unknown): AuthSession {
   return session as unknown as AuthSession;
 }
 
-// When browser storage is unavailable, keep only this tab's current session in memory.
+// Access credentials stay in this tab's memory. Only non-secret preferences/device IDs use storage.
 let memorySession: AuthSession | null = null;
-let storageUnavailable = false;
 export function loadSession(): AuthSession | null {
-  if (storageUnavailable) {
-    try { return memorySession ? validateSession(memorySession) : null; } catch { memorySession = null; return null; }
-  }
-  let raw: string | null;
-  try { raw = localStorage.getItem(config.sessionKey); }
-  catch { storageUnavailable = true; return memorySession; }
-  if (!raw) { memorySession = null; return null; }
-  try { return memorySession = validateSession(parseApiJson<unknown>(raw)); }
-  catch {
-    memorySession = null;
-    try { localStorage.removeItem(config.sessionKey); } catch { /* Storage may be read-only. */ }
-    return null;
-  }
+  try { localStorage.removeItem(config.sessionKey); } catch { /* Storage may be disabled. */ }
+  try { return memorySession ? validateSession(memorySession) : null; }
+  catch { memorySession = null; return null; }
 }
 
 export function saveSession(session: AuthSession | null) {
   memorySession = session === null ? null : validateSession(session);
-  try {
-    if (memorySession) localStorage.setItem(config.sessionKey, JSON.stringify(memorySession));
-    else localStorage.removeItem(config.sessionKey);
-    storageUnavailable = false;
-  } catch { storageUnavailable = true; }
+  try { localStorage.removeItem(config.sessionKey); } catch { /* Storage may be disabled. */ }
   window.dispatchEvent(new Event("surprising-admin.session-changed"));
+}
+
+export async function restoreBrowserSession(): Promise<void> {
+  try { saveSession(validateSession(await request("/api/v1/auth/browser/refresh", { method: "POST", body: "{}" }, null, false))); }
+  catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; }
+}
+
+export async function logoutBrowserSession(): Promise<void> {
+  await request("/api/v1/auth/browser/logout", { method: "POST", body: "{}" }, null, false);
+  saveSession(null);
 }
 
 export function adminGatewayPath(service: string, path = "") {
@@ -162,12 +157,31 @@ async function fetchBody(path: string, init: AdminRequestInit, session: AuthSess
   if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
   if (productLine) headers.set("X-Product-Line", productLine);
   signal.throwIfAborted();
-  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}${path}`, { ...requestInit, headers, signal }), signal);
+  const browserAuth = path.startsWith("/api/v1/auth/") && (requestInit.method ?? "GET") !== "GET";
+  const send = async () => {
+  if (browserAuth) {
+    const csrfResponse = await untilAborted(fetch(`${config.gatewayBaseUrl}/api/v1/auth/csrf`, { credentials: "include", headers: {"X-Auth-Client": "admin"}, signal }), signal);
+    const csrfText = new TextDecoder().decode(await readBody(csrfResponse, signal, 2048));
+    if (!csrfResponse.ok) throw apiError(csrfResponse, csrfText);
+    const csrf = parseApiJson<{token: string}>(csrfText);
+    if (typeof csrf.token !== "string" || csrf.token.length > 512) throw new Error("无法建立安全登录会话，请稍后重试。");
+    headers.set("X-XSRF-TOKEN", csrf.token);
+    headers.set("X-Auth-Transport", "cookie");
+    headers.set("X-Auth-Client", "admin");
+    if (!path.endsWith("/verify-email") && !path.endsWith("/resend-email-verification")) headers.delete("Authorization");
+  }
+  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}${path}`, { ...requestInit, credentials: browserAuth ? "include" : "omit", headers, signal }), signal);
+    return response;
+  };
+  if (browserAuth && (typeof navigator === "undefined" || !navigator.locks))
+    throw new ApiError(0, "请升级浏览器后使用安全登录。", null);
+  const response = browserAuth
+    ? await navigator.locks.request("surprising-admin-browser-session", { signal }, send) : await send();
   try { requireOwner(expectedUserId); }
   catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
-  if (response.status === 401 && allowRefresh && session?.refreshToken && !path.endsWith("/auth/refresh")) {
+  if (response.status === 401 && allowRefresh && session && !path.startsWith("/api/v1/auth/")) {
     void response.body?.cancel().catch(() => {});
-    const refreshed = await untilAborted(refreshSession(session.refreshToken), signal);
+    const refreshed = await untilAborted(refreshSession(session.accessToken), signal);
     return fetchBody(path, init, refreshed, signal, blob, false);
   }
   const bytes = await readBody(response, signal, maxResponseBytes ?? (blob ? 64 : 8) * 1024 * 1024);
@@ -221,21 +235,22 @@ export async function requestBlob(path: string, init: AdminRequestInit = {}, ses
 }
 
 let refreshInFlight: { token: string; promise: Promise<AuthSession> } | null = null;
-function refreshSession(refreshToken: string): Promise<AuthSession> {
-  if (refreshInFlight?.token === refreshToken) return refreshInFlight.promise;
-  const promise = refreshSessionOnce(refreshToken).finally(() => {
+function refreshSession(accessToken: string): Promise<AuthSession> {
+  if (refreshInFlight?.token === accessToken) return refreshInFlight.promise;
+  const promise = refreshSessionOnce(accessToken).finally(() => {
     if (refreshInFlight?.promise === promise) refreshInFlight = null;
   });
-  refreshInFlight = { token: refreshToken, promise };
+  refreshInFlight = { token: accessToken, promise };
   return promise;
 }
 
-async function refreshSessionOnce(refreshToken: string): Promise<AuthSession> {
-  const current = () => loadSession()?.refreshToken === refreshToken;
+async function refreshSessionOnce(accessToken: string): Promise<AuthSession> {
+  const owner = String(loadSession()?.user.userId);
+  const current = () => loadSession()?.accessToken === accessToken && String(loadSession()?.user.userId) === owner;
   if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
   try {
-    const next = validateSession(await request<unknown>("/api/v1/auth/refresh", {
-      method: "POST", body: JSON.stringify({ refreshToken })
+    const next = validateSession(await request<unknown>("/api/v1/auth/browser/refresh", {
+      method: "POST", body: "{}"
     }, null, false));
     if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
     if (String(next.user.userId) !== String(loadSession()?.user.userId)) throw new Error("刷新身份与当前账号不一致，请重新登录。");
