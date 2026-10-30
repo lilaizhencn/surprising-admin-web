@@ -12,6 +12,8 @@ const row = {
   toAddress: "0x123",
   amount: "90071992.54740993",
   amountUnits: "9007199254740993",
+  platformFee: "0.5",
+  receivedAmount: "90071992.04740993",
   status: "PENDING_APPROVAL",
   createdAt: "2026-10-26T12:00:00Z",
 };
@@ -36,4 +38,9 @@ test("human review and retry actions follow the backend state transitions", () =
     expect(custodyWithdrawalActions(status)).toEqual(["retry"]);
   for (const status of ["SUBMITTED", "COMPLETED", "REFUNDED", "FAILED_PENDING", "UNKNOWN"])
     expect(custodyWithdrawalActions(status)).toEqual([]);
+});
+
+test("inconsistent or missing fee quotations cannot be approved", () => {
+  for (const patch of [{platformFee: undefined}, {platformFee: "NaN"}, {platformFee: "1"}, {receivedAmount: "0"}, {amount: 25}])
+    expect(() => parseCustodyWithdrawals([{...row,...patch}])).toThrow();
 });

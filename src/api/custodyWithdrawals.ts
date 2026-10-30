@@ -10,6 +10,8 @@ export type CustodyWithdrawal = UnknownRecord & {
   assetSymbol: string;
   toAddress: string;
   amount: string;
+  platformFee: string;
+  receivedAmount: string;
   status: string;
   createdAt: string;
 };
@@ -45,11 +47,19 @@ export function parseCustodyWithdrawals(response: unknown): CustodyWithdrawal[] 
     if (
       !uuid.test(id) ||
       seen.has(id) ||
-      ["chain", "assetSymbol", "toAddress", "amount", "status", "createdAt"].some(
+      ["chain", "assetSymbol", "toAddress", "amount", "platformFee", "receivedAmount", "status", "createdAt"].some(
         (field) => typeof row[field] !== "string" || !(row[field] as string).trim(),
       )
     )
       throw new Error("平台提现记录字段不完整，数据未展示。");
+    for (const field of ["amount", "platformFee", "receivedAmount"]) {
+      const amount = row[field] as string;
+      if (amount.length > 120 || !/^\d+(?:\.\d+)?$/.test(amount)) throw new Error("提现金额格式异常，操作已停止。");
+    }
+    const fields = [row.amount, row.platformFee, row.receivedAmount] as string[];
+    const decimals = Math.max(...fields.map((value) => value.split(".")[1]?.length ?? 0));
+    const units = fields.map((value) => { const [whole, fraction = ""] = value.split("."); return BigInt(whole + fraction.padEnd(decimals, "0")); });
+    if (units[0] !== units[1] + units[2] || units[2] <= 0n) throw new Error("提现总扣款、平台手续费与收款金额不一致，操作已停止。");
     seen.add(id);
     if (row.amountUnits != null) int64String(row.amountUnits, "提现最小单位");
     return {

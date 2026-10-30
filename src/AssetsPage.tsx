@@ -132,14 +132,14 @@ export function AssetsPage() {
         <label>网络名称<input required maxLength={100} value={network.displayName} onChange={e => setNetwork({ ...network, displayName: e.target.value })} /></label>
         <label>合约地址<input required={!network.nativeAsset} disabled={network.nativeAsset || Boolean(network.networkId)} maxLength={128} value={network.contractAddress} onChange={e => setNetwork({ ...network, contractAddress: e.target.value })} /></label>
         <label>链上小数位<input type="number" required min={0} max={36} disabled={Boolean(network.networkId)} value={network.chainDecimals} onChange={e => setNetwork({ ...network, chainDecimals: Number(e.target.value) })} /></label>
-        {([['minDeposit','最小充值'],['minWithdrawal','最小提现'],['withdrawalFee','提现手续费']] as const).map(([key,label]) => <label key={key}>{label}（{asset.asset}）<input required inputMode="decimal" pattern="[0-9]+(\.[0-9]+)?" value={network[key]} onChange={e => setNetwork({ ...network, [key]: e.target.value })} /></label>)}
+        {([['minDeposit','最小充值'],['minWithdrawal','最小提现'],['withdrawalFee','平台提现手续费（内扣）']] as const).map(([key,label]) => <label key={key}>{label}（{asset.asset}）<input required inputMode="decimal" pattern="[0-9]+(\.[0-9]+)?" value={network[key]} onChange={e => setNetwork({ ...network, [key]: e.target.value })} /></label>)}
         <label>到账确认数<input type="number" required min={1} value={network.confirmations} onChange={e => setNetwork({ ...network, confirmations: Number(e.target.value) })} /></label>
       </div><div className="checkbox-grid">
         <label><input type="checkbox" disabled={Boolean(network.networkId)} checked={network.nativeAsset} onChange={e => setNetwork({ ...network, nativeAsset: e.target.checked, contractAddress: e.target.checked ? "" : network.contractAddress })} />原生币</label>
         <label><input type="checkbox" disabled={!asset.listed} checked={network.depositEnabled} onChange={e => setNetwork({ ...network, depositEnabled: e.target.checked })} />允许充值</label>
         <label><input type="checkbox" disabled={!asset.listed} checked={network.withdrawalEnabled} onChange={e => setNetwork({ ...network, withdrawalEnabled: e.target.checked })} />允许提现</label>
       </div><label>修改原因<input required maxLength={500} value={network.reason} onChange={e => setNetwork({ ...network, reason: e.target.value })} /></label>
-      <p className="muted">网络归属、合约地址和链上精度创建后固定；更换合约需要新建网络配置。</p>
+      <p className="muted">申请金额为用户总扣款，平台手续费从申请金额内扣，收款金额＝申请金额－平台手续费。链上 Gas 独立结算，不属于此固定费。配置修改后新申请须重新报价，已受理单按原快照恢复。网络归属、合约地址和链上精度创建后固定。</p>
       <button className="primary" type="submit">{busy ? "保存中…" : "保存网络"}</button></fieldset></form>
     </section>}
   </div>;

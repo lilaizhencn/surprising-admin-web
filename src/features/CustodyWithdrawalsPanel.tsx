@@ -32,7 +32,10 @@ const detailFields = [
   ["userId", "用户 ID"],
   ["chain", "网络"],
   ["assetSymbol", "资产"],
-  ["amount", "提现金额"],
+  ["amount", "用户总扣款"],
+  ["platformFee", "平台手续费（内扣）"],
+  ["receivedAmount", "链上收款金额"],
+  ["networkRevision", "报价配置版本"],
   ["amountUnits", "金额（最小单位）"],
   ["toAddress", "完整收款地址"],
   ["status", "平台状态"],
@@ -142,7 +145,7 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
     }
     if (
       !window.confirm(
-        `确认${actionLabels[action]}？\n用户：${row.userId}\n来源：SPOT 资金账户\n金额：${row.amount} ${row.assetSymbol}\n网络：${row.chain}\n收款地址：${row.toAddress}\n申请：${row.withdrawalId}\n原因：${reason.trim()}`,
+        `确认${actionLabels[action]}？\n用户：${row.userId}\n来源：SPOT 资金账户\n总扣款：${row.amount} ${row.assetSymbol}\n平台手续费（内扣）：${row.platformFee} ${row.assetSymbol}\n收款金额：${row.receivedAmount} ${row.assetSymbol}\n网络：${row.chain}\n收款地址：${row.toAddress}\n申请：${row.withdrawalId}\n原因：${reason.trim()}`,
       )
     )
       return;
@@ -274,6 +277,8 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
               "chain",
               "assetSymbol",
               "amount",
+              "platformFee",
+              "receivedAmount",
               "status",
               "createdAt",
             ]}

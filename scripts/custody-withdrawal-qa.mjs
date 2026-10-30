@@ -34,6 +34,9 @@ const base = {
   toAddress: "0x" + "a".repeat(40),
   amount: "90071992.54740993",
   amountUnits: "9007199254740993",
+  platformFee: "0.5",
+  receivedAmount: "90071992.04740993",
+  networkRevision: 8,
   status: "PENDING_APPROVAL",
   createdAt: "2026-10-26T12:00:00Z",
 };
@@ -61,7 +64,9 @@ await context.route(
     });
     let status = 200,
       data = {};
-    if (url.pathname === "/api/v1/admin/wallet/withdrawals") {
+    if (url.pathname.endsWith("/csrf")) data={token:"test-only-csrf"};
+    else if(url.pathname.endsWith("/browser/refresh")) data={accessToken:"admin-withdrawal-fixture",browserSession:true,accessTokenExpiresAt:"2030-01-01T00:00:00Z",refreshTokenExpiresAt:"2030-01-01T00:00:00Z",user:{userId:"1",username:"管理员",roles:["SUPER_ADMIN"],status:"ACTIVE",createdAt:"2026-01-01T00:00:00Z"}};
+    else if (url.pathname === "/api/v1/admin/wallet/withdrawals") {
       const selected = url.searchParams.get("status") || "PENDING_APPROVAL";
       if (holdStatus === selected) await new Promise((resolve) => (releaseRead = resolve));
       status = listError ? 503 : 200;
@@ -178,7 +183,7 @@ const pick = () =>
     .getByRole("button", { name: "查看申请：提现申请 ID " + base.withdrawalId, exact: true })
     .click();
 const setStatus = async (value) => panel.getByLabel(/^平台提现状态/).selectOption(value);
-const posts = () => requests.filter((request) => request.method === "POST");
+const posts = () => requests.filter((request) => request.method === "POST" && /\/withdrawals\/.+\/(approve|reject|retry)$/.test(request.path));
 let cdp;
 try {
   await page.goto("http://127.0.0.1:5184/#wallet");
