@@ -12,6 +12,7 @@ const AssetsPage = lazy(() => import("./AssetsPage").then(module => ({ default: 
 const C2cBusinessPage = lazy(() => import("./C2cBusinessPage").then(module => ({ default: module.C2cBusinessPage })));
 const MaintenancePage = lazy(() => import("./MaintenancePage"));
 const AnnouncementsPage = lazy(() => import("./AnnouncementsPage"));
+const LegalPage = lazy(() => import("./pages/LegalPage"));
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const SupportPage = lazy(() => import("./pages/SupportPage"));
@@ -58,6 +59,7 @@ const NAV = [
   { key: "queries", label: "查询任务", icon: BookOpen },
   { key: "alerts", label: "告警中心", icon: Bell },
   { key: "announcements", label: "公告中心", icon: Megaphone },
+  { key: "legal", label: "协议管理", icon: FileText },
   { key: "system", label: "系统监控", icon: Server },
   { key: "audit", label: "审计日志", icon: FileText }
 ] satisfies Array<{ key: RouteKey; label: string; icon: typeof LayoutDashboard }>;
@@ -156,6 +158,7 @@ export default function App() {
           {activeRoute === "queries" && <QueryTasksPage />}
           {activeRoute === "alerts" && <AlertsPage />}
           {activeRoute === "announcements" && <AnnouncementsPage />}
+          {activeRoute === "legal" && <LegalPage />}
           {activeRoute === "system" && <SystemPage />}
           {activeRoute === "audit" && <AuditPage />}
           </Suspense>

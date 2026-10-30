@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, Plus } from "lucide-react";
+import { RichArticleEditor } from "./components/RichArticleEditor";
+import { ArticleView } from "./components/ArticleView";
+import { CONTENT_LOCALES, localeLabel } from "./lib/contentLocales";
 import { DataTable } from "./components/AdminUi";
 import { parseApiJson } from "./api/client";
 import { announcementSave, requirePublishable, localDateTimeValue, type AnnouncementDraft as Draft } from "./lib/announcementDraft";
@@ -12,6 +15,7 @@ import {
   updateAnnouncement,
   withdrawAnnouncement,
   type Announcement,
+  type AnnouncementSummary,
   type AnnouncementSave,
   type AnnouncementTranslation
 } from "./api/announcements";
@@ -19,7 +23,7 @@ import {
 const LINES = ["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"];
 const PLATFORMS = ["WEB", "IOS", "ANDROID"];
 const PLACEMENTS = ["CENTER", "MODAL", "BANNER"];
-const LOCALES = ["zh-CN", "en-US"];
+const LOCALES = CONTENT_LOCALES.map(locale => locale.code);
 
 function emptyDraft(): Draft {
   return {
@@ -35,7 +39,7 @@ function emptyDraft(): Draft {
 }
 
 export default function AnnouncementsPage() {
-  const [rows, setRows] = useState<Announcement[]>([]);
+  const [rows, setRows] = useState<AnnouncementSummary[]>([]);
   const [count, setCount] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [offset, setOffset] = useState(0);
@@ -47,6 +51,9 @@ export default function AnnouncementsPage() {
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [editLocale, setEditLocale] = useState("zh-CN");
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [previewLocale, setPreviewLocale] = useState("zh-CN");
   const [auditRows, setAuditRows] = useState<Awaited<ReturnType<typeof announcementAudit>>>([]);
   const [auditFor, setAuditFor] = useState<string | null>(null);
@@ -106,19 +113,27 @@ export default function AnnouncementsPage() {
     const timer = window.setTimeout(() => void load(0), 200);
     return () => { window.clearTimeout(timer); readRequest.current?.abort(); };
   }, [status, query]);
-  function canLeaveEditor() { return !writeLock.current && (!dirty || window.confirm("当前公告有未保存的修改，确定放弃这些修改？")); }
+  function canLeaveEditor() { return !writeLock.current && !mediaBusy && (!dirty || window.confirm("当前公告有未保存的修改，确定放弃这些修改？")); }
   function closeEditor() {
     if (!canLeaveEditor()) return;
-    detailRequest.current?.abort(); setEditing(null); setCreating(false); setWriteBlocked(false); setError("");
+    detailRequest.current?.abort(); setDetailLoading(false); setEditing(null); setCreating(false); setWriteBlocked(false); setError("");
   }
   function closeAudit() { auditRequest.current?.abort(); setAuditFor(null); setAuditRows([]); setAuditLoading(false); setAuditError(""); }
   function beginCreate() {
     if (!canLeaveEditor()) return;
-    detailRequest.current?.abort(); setEditing(null); setCreating(true); setDraft(emptyDraft()); closeAudit(); setError(""); setNotice(""); setWriteBlocked(false);
+    detailRequest.current?.abort(); setDetailLoading(false); setEditing(null); setCreating(true); setDraft(emptyDraft()); closeAudit(); setError(""); setNotice(""); setWriteBlocked(false);
   }
-  function beginEdit(row: Announcement) {
+  async function beginEdit(summary: AnnouncementSummary) {
     if (!canLeaveEditor()) return;
-    detailRequest.current?.abort(); setEditing(row); setCreating(false); setDraft(draftFrom(row)); closeAudit(); setError(""); setNotice(""); setWriteBlocked(false);
+    detailRequest.current?.abort();
+    const abort = new AbortController(); detailRequest.current = abort;
+    setDetailLoading(true); setError("");
+    try {
+      const row = await getAnnouncement(summary.announcementId, abort.signal);
+      if (abort.signal.aborted || !mounted.current) return;
+      setEditing(row); setCreating(false); setDraft(draftFrom(row)); closeAudit(); setNotice(""); setWriteBlocked(false);
+    } catch (reason) { if (!abort.signal.aborted && mounted.current) setError(errorText(reason)); }
+    finally { if (!abort.signal.aborted && mounted.current) setDetailLoading(false); }
   }
   async function reloadEditor() {
     if (!editing || writeLock.current || (dirty && !window.confirm("重新载入将以服务端最新内容覆盖本地修改，是否继续？"))) return;
@@ -173,7 +188,7 @@ export default function AnnouncementsPage() {
     } catch (cause) { if (mounted.current) failedWrite(cause); }
     finally { writeLock.current = false; if (mounted.current) setSaving(false); }
   }
-  async function withdraw(row: Announcement) {
+  async function withdraw(row: Announcement | AnnouncementSummary) {
     if (writeLock.current || writeBlocked) return;
     const reason = window.prompt("请输入撤回原因（1–1000 字）", "");
     if (reason === null) return;
@@ -189,7 +204,7 @@ export default function AnnouncementsPage() {
     } catch (cause) { if (mounted.current) failedWrite(cause); }
     finally { writeLock.current = false; if (mounted.current) setSaving(false); }
   }
-  async function showAudit(row: Announcement) {
+  async function showAudit(row: Pick<Announcement, "announcementId">) {
     auditRequest.current?.abort();
     const abort = new AbortController(); auditRequest.current = abort;
     setAuditFor(row.announcementId); setAuditRows([]); setAuditError(""); setAuditLoading(true);
@@ -221,6 +236,7 @@ export default function AnnouncementsPage() {
       <div><h2>公告中心</h2><p>管理多语言公告、投放范围、生效时间和发布审计。</p></div>
       <div className="button-row"><button onClick={() => void load(0)} disabled={loading || saving}><RefreshCw size={15} aria-hidden="true" />刷新</button><button className="primary" onClick={beginCreate} disabled={saving}><Plus size={15} aria-hidden="true" />新建公告</button></div>
     </div>
+    {detailLoading && <p role="status">正在载入公告正文…</p>}
     {error && <div className="alert danger" role="alert">{error}</div>}
     {notice && <div className="alert" role="status">{notice}</div>}
     <fieldset className="announcement-workspace" disabled={saving}>
@@ -236,10 +252,10 @@ export default function AnnouncementsPage() {
       <DataTable rows={rows.map(row => ({ ...row, title: titleFor(row), displayStatus: statusLabel(row.effectiveStatus), targets: `位置：${row.placements.join(", ")}\n产品线：${row.productLines.join(", ")}\n客户端：${row.platforms.join(", ")}` }))}
         columns={["announcementId", "title", "category", "displayStatus", "targets", "startsAt", "expiresAt"]}
         loading={loading} error={error && !rows.length ? error : ""} emptyText="当前条件下没有公告"
-        label="公告列表" onRowClick={record => beginEdit(record as unknown as Announcement)} rowActionLabel="编辑公告" rowActionDisabled={saving}
+        label="公告列表" onRowClick={record => void beginEdit(record as unknown as AnnouncementSummary)} rowActionLabel="编辑公告" rowActionDisabled={saving || detailLoading}
         isSelected={row => row.announcementId === editing?.announcementId}
-        actions={record => { const row = record as unknown as Announcement; return <div className="row-actions">
-          {row.status === "DRAFT" && <button onClick={() => void publish(row)} disabled={writeBlocked}>发布</button>}
+        actions={record => { const row = record as unknown as AnnouncementSummary; return <div className="row-actions">
+          {row.status === "DRAFT" && <button onClick={() => void beginEdit(row)} disabled={writeBlocked || detailLoading}>预览与发布</button>}
           {row.status !== "WITHDRAWN" && <button onClick={() => void withdraw(row)} disabled={writeBlocked}>撤回</button>}
           <button onClick={() => void showAudit(row)}>审计</button>
         </div>; }} />
@@ -254,7 +270,7 @@ export default function AnnouncementsPage() {
       <div className="panel-title"><h3>{editing ? `编辑公告 #${editing.announcementId} · ${statusLabel(editing.effectiveStatus)}` : "新建公告"}</h3><button onClick={closeEditor}>关闭编辑</button></div>
       <div className="announcement-editor">
         <p className="muted">{editing ? `当前公告 #${editing.announcementId} · 已保存版本 ${editing.version}` : "新公告尚未保存"}{dirty ? " · 有未保存修改" : " · 与已保存内容一致"}</p>
-        <p className="muted">草稿可先保存一种完整语言，发布前须完成中英文内容。开始和结束时间均使用浏览器本地时区。</p>
+        <p className="muted">支持 12 种语言，可按需添加翻译。发布前须完成所有已填写语言的内容；未提供的语言将明确展示可用译文。开始和结束时间均使用浏览器本地时区。</p>
         {writeBlocked && <div className="alert danger" role="alert">操作结果需要重新核对。{editing ? <button onClick={() => void reloadEditor()}>重新载入当前公告</button> : <span>请先刷新列表核对是否已创建，再决定后续操作。</span>}</div>}
         <div className="filters">
           <label>公告类型<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value }))}>
@@ -267,15 +283,34 @@ export default function AnnouncementsPage() {
         <fieldset><legend>展示位置</legend>{PLACEMENTS.map(value => <Check key={value} value={value} checked={draft.placements.includes(value)} disabled={value === "CENTER"} onChange={() => toggleTarget("placements", value)} />)}</fieldset>
         <fieldset><legend>客户端</legend><Check value="ALL" checked={draft.platforms.includes("ALL")} onChange={() => setDraft(current => ({ ...current, platforms: ["ALL"] }))} />{!draft.platforms.includes("ALL") && PLATFORMS.map(value => <Check key={value} value={value} checked={draft.platforms.includes(value)} onChange={() => toggleTarget("platforms", value)} />)}{draft.platforms.includes("ALL") && <button onClick={() => setDraft(current => ({ ...current, platforms: PLATFORMS }))}>指定客户端</button>}</fieldset>
         <fieldset><legend>交易产品线</legend><Check value="ALL" checked={draft.productLines.includes("ALL")} onChange={() => setDraft(current => ({ ...current, productLines: ["ALL"] }))} />{!draft.productLines.includes("ALL") && LINES.map(value => <Check key={value} value={value} checked={draft.productLines.includes(value)} onChange={() => toggleTarget("productLines", value)} />)}{draft.productLines.includes("ALL") && <button onClick={() => setDraft(current => ({ ...current, productLines: LINES }))}>指定产品线</button>}</fieldset>
-        {LOCALES.map(locale => <section className="announcement-language" key={locale}>
-          <h4>{locale === "zh-CN" ? "简体中文（必填）" : "English (required)"}</h4>
-          <label>标题<input maxLength={160} value={draft.translations[locale]?.title ?? ""} onChange={event => setTranslation(locale, "title", event.target.value)} /></label>
-          <label>摘要<input maxLength={500} value={draft.translations[locale]?.summary ?? ""} onChange={event => setTranslation(locale, "summary", event.target.value)} /></label>
-          <label>正文<textarea rows={7} maxLength={12000} value={draft.translations[locale]?.body ?? ""} onChange={event => setTranslation(locale, "body", event.target.value)} /></label>
-        </section>)}
-        <section className="announcement-language announcement-user-preview"><h4>用户预览</h4><div className="button-row" aria-label="预览语言">{LOCALES.map(locale => <button key={locale} aria-pressed={previewLocale === locale} onClick={() => setPreviewLocale(locale)}>{locale === "zh-CN" ? "简体中文" : "English"}</button>)}</div><strong>{draft.translations[previewLocale]?.title || "公告标题"}</strong><p>{draft.translations[previewLocale]?.summary}</p><div className="announcement-preview-body">{draft.translations[previewLocale]?.body || "公告正文预览"}</div></section>
-        <p className="muted">{!editing ? "请先保存草稿，再发布已保存版本。" : dirty ? "请先保存更改，再发布已保存版本。" : editing.status === "PUBLISHED" ? "保存会更新当前投放内容，并重置用户已读记录。" : editing.status === "WITHDRAWN" ? "已撤回公告需先保存为草稿，才能重新发布。" : "发布前请核对两种语言的预览、投放范围与生效时间。"}</p>
-        <div className="button-row"><button className="primary" disabled={saving || writeBlocked} onClick={() => void save()}>{saving ? "保存中…" : editing?.status === "PUBLISHED" ? "保存已发布内容" : editing?.status === "WITHDRAWN" ? "保存为草稿" : "保存草稿"}</button><button disabled={saving || writeBlocked || !editing || Boolean(dirty) || editing.status !== "DRAFT"} onClick={() => void publish(editing)}>{saving ? "处理中…" : "发布 / 定时发布"}</button>{editing && <button onClick={() => void showAudit(editing)}>查看审计</button>}</div>
+        <div className="article-language-controls">
+          <label>编辑语言<select aria-label="编辑语言" value={editLocale} disabled={mediaBusy} onChange={event => setEditLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}{draft.translations[locale.code]?.title.trim() && draft.translations[locale.code]?.body.trim() ? " ✓" : ""}</option>)}</select></label>
+          <span className="muted">已填写 {Object.values(draft.translations).filter(item => item.title.trim() && item.body.trim()).length} / 12 种语言</span>
+          <button type="button" disabled={mediaBusy} onClick={() => {
+            if (!window.confirm(`清空 ${localeLabel(editLocale)} 的内容？保存前可关闭编辑放弃本轮修改。`)) return;
+            setDraft(current => ({ ...current, translations: { ...current.translations, [editLocale]: { locale: editLocale, title: "", summary: "", body: "", bodyHtml: null } } }));
+            setEditLocale(current => current === "zh-CN" ? "en-US" : "zh-CN");
+          }}>清空当前语言</button>
+        </div>
+        <section className="announcement-language" lang={editLocale} dir={editLocale.startsWith("ar") ? "rtl" : "auto"}>
+          <h4>{localeLabel(editLocale)}</h4>
+          <label>标题<input maxLength={160} value={draft.translations[editLocale]?.title ?? ""} onChange={event => setTranslation(editLocale, "title", event.target.value)} /></label>
+          <label>摘要<input maxLength={500} value={draft.translations[editLocale]?.summary ?? ""} onChange={event => setTranslation(editLocale, "summary", event.target.value)} /></label>
+          <RichArticleEditor key={`${editing?.announcementId ?? "new"}:${editing?.version ?? "0"}:${editLocale}`} locale={editLocale}
+            text={draft.translations[editLocale]?.body ?? ""} html={draft.translations[editLocale]?.bodyHtml}
+            disabled={saving || writeBlocked} onBusyChange={setMediaBusy}
+            onChange={value => setDraft(current => ({ ...current, translations: { ...current.translations,
+              [editLocale]: { ...(current.translations[editLocale] ?? { locale: editLocale, title: "", summary: "", body: "" }),
+                ...value, body: value.body || (/<(?:img|audio|video)\b/.test(value.bodyHtml) ? "[media]" : "") }
+            } }))} />
+        </section>
+        <section className="announcement-language announcement-user-preview"><h4>用户预览</h4>
+          <label>预览语言<select value={previewLocale} onChange={event => setPreviewLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}</option>)}</select></label>
+          <strong dir="auto">{draft.translations[previewLocale]?.title || "此语言尚未填写标题"}</strong><p dir="auto">{draft.translations[previewLocale]?.summary}</p>
+          <ArticleView locale={previewLocale} html={draft.translations[previewLocale]?.bodyHtml} text={draft.translations[previewLocale]?.body || "此语言尚未填写正文"} />
+        </section>
+        <p className="muted">{!editing ? "请先保存草稿，再发布已保存版本。" : dirty ? "请先保存更改，再发布已保存版本。" : editing.status === "PUBLISHED" ? "保存会更新当前投放内容，并重置用户已读记录。" : editing.status === "WITHDRAWN" ? "已撤回公告需先保存为草稿，才能重新发布。" : "发布前请核对已填写语言的预览、投放范围与生效时间。"}</p>
+        <div className="button-row"><button className="primary" disabled={saving || mediaBusy || writeBlocked} onClick={() => void save()}>{saving ? "保存中…" : editing?.status === "PUBLISHED" ? "保存已发布内容" : editing?.status === "WITHDRAWN" ? "保存为草稿" : "保存草稿"}</button><button disabled={saving || mediaBusy || writeBlocked || !editing || Boolean(dirty) || editing.status !== "DRAFT"} onClick={() => void publish(editing)}>{saving ? "处理中…" : "发布 / 定时发布"}</button>{editing && <button onClick={() => void showAudit(editing)}>查看审计</button>}</div>
       </div>
     </section>}
 
@@ -315,17 +350,17 @@ function draftDiffersFrom(row: Announcement, draft: Draft) {
     item.title.trim() || item.summary.trim() || item.body.trim()
   ).length || row.translations.some(item => {
     const next = draft.translations[item.locale];
-    return !next || item.title !== next.title || item.summary !== next.summary || item.body !== next.body;
+    return !next || item.title !== next.title || item.summary !== next.summary || item.body !== next.body || (item.bodyHtml ?? null) !== (next.bodyHtml ?? null);
   });
   return translationsDiffer || row.category !== draft.category || row.priority !== Number(draft.priority)
-    || row.placements.join(",") !== draft.placements.join(",")
-    || row.productLines.join(",") !== draft.productLines.join(",")
-    || row.platforms.join(",") !== draft.platforms.join(",")
+    || [...row.placements].sort().join(",") !== [...draft.placements].sort().join(",")
+    || [...row.productLines].sort().join(",") !== [...draft.productLines].sort().join(",")
+    || [...row.platforms].sort().join(",") !== [...draft.platforms].sort().join(",")
     || localDateTimeValue(row.startsAt) !== draft.startsAt
     || (row.expiresAt ? localDateTimeValue(row.expiresAt) : "") !== draft.expiresAt;
 }
 
-function titleFor(row: Announcement) {
+function titleFor(row: { translations: readonly { locale: string; title: string }[] }) {
   return row.translations.find(item => item.locale === "zh-CN")?.title ?? row.translations[0]?.title ?? "（无标题）";
 }
 

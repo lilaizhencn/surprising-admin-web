@@ -153,7 +153,7 @@ async function fetchBody(path: string, init: AdminRequestInit, session: AuthSess
   const { productLine, expectedUserId, timeoutMs: _timeout, maxResponseBytes, ...requestInit } = init;
   requireOwner(expectedUserId);
   const headers = new Headers(requestInit.headers);
-  if (!blob && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!blob && !(requestInit.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
   if (productLine) headers.set("X-Product-Line", productLine);
   signal.throwIfAborted();

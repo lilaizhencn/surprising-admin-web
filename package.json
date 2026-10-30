@@ -12,12 +12,18 @@
     "test": "bun test tests"
   },
   "dependencies": {
+    "@tiptap/extension-image": "3.32.2",
+    "@tiptap/extension-placeholder": "3.32.2",
+    "@tiptap/react": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
     "@vitejs/plugin-react": "6.0.3",
+    "dompurify": "3.4.17",
     "lucide-react": "1.22.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.60.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "typescript": "6.0.3",

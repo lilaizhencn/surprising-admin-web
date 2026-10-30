@@ -22,6 +22,7 @@ export type RouteKey =
   | "queries"
   | "alerts"
   | "announcements"
+  | "legal"
   | "system"
   | "audit";
 

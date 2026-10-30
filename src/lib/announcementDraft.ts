@@ -15,10 +15,11 @@ export function announcementSave(draft: AnnouncementDraft, original?: Announceme
   const startsAt = original && localDateTimeValue(original.startsAt) === draft.startsAt ? original.startsAt : new Date(draft.startsAt).toISOString();
   const expiresAt = original?.expiresAt && localDateTimeValue(original.expiresAt) === draft.expiresAt ? original.expiresAt : draft.expiresAt ? new Date(draft.expiresAt).toISOString() : null;
   if (expiresAt && Date.parse(expiresAt) <= Date.parse(startsAt)) throw new Error("结束时间必须晚于开始时间。");
-  const translations = Object.values(draft.translations).filter(item => item.title.trim() || item.summary.trim() || item.body.trim()).map(item => {
+  const translations = Object.values(draft.translations).filter(item => item.title.trim() || item.summary.trim() || item.body.trim() || item.bodyHtml?.trim()).map(item => {
+    if (item.bodyHtml && item.bodyHtml.length > 64000) throw new Error(item.locale + " 富文本内容过长，请减少内容或媒体数量。");
     if (!item.title.trim() || item.title.trim().length > 160 || !item.body.trim() || item.body.trim().length > 12000 || item.summary.trim().length > 500)
       throw new Error(item.locale + " 请填写标题（1–160 字）、正文（1–12000 字），摘要最多 500 字。");
-    return { locale: item.locale, title: item.title.trim(), summary: item.summary.trim(), body: item.body.trim() };
+    return { locale: item.locale, title: item.title.trim(), summary: item.summary.trim(), body: item.body.trim(), bodyHtml: item.bodyHtml ?? null };
   });
   if (!translations.length) throw new Error("请至少填写一种语言的标题和正文。");
   if (!draft.placements.length || !draft.productLines.length || !draft.platforms.length) throw new Error("请完整选择展示位置、产品线与客户端。");
@@ -26,7 +27,7 @@ export function announcementSave(draft: AnnouncementDraft, original?: Announceme
 }
 export function requirePublishable(row: Announcement) {
   if (row.status !== "DRAFT") throw new Error("请先保存为草稿，再发布已保存版本。");
-  for (const locale of ["zh-CN", "en-US"]) if (!row.translations.some(item => item.locale === locale && item.title.trim() && item.body.trim()))
-    throw new Error("发布前请完成简体中文和 English 的标题与正文，并保存更改。");
+  if (!row.translations.length || row.translations.some(item => !item.title.trim() || !item.body.trim()))
+    throw new Error("发布前请完成已添加语言的标题与正文，并保存更改。");
   if (!row.placements.includes("CENTER")) throw new Error("发布公告必须包含公告中心展示位置。");
 }

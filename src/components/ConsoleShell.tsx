@@ -30,6 +30,7 @@ const groups: { label: string; keys: RouteKey[] }[] = [
       "queries",
       "alerts",
       "announcements",
+      "legal",
       "system",
       "audit",
     ],

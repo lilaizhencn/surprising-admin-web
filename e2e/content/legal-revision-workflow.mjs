@@ -1,0 +1,41 @@
+// Controlled admin identity/approval; actual CMS, immutable history and consent database.
+import { chromium, expect } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
+const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE});
+const page=await browser.newPage({viewport:{width:1366,height:900}});
+page.on("dialog",dialog=>dialog.accept());
+const api=await browser.newContext({extraHTTPHeaders:{Authorization:"Bearer content-qa-admin"}});
+const base="http://127.0.0.1:19094/api/v1/admin/legal/revisions";
+const approve=async()=>{const dialog=page.getByRole("dialog",{name:"敏感操作审批"});await dialog.getByLabel("审批单 ID",{exact:true}).fill("1");await dialog.getByRole("button",{name:"继续",exact:true}).click();};
+try {
+  const rows=(await (await api.request.get(base+"?offset=0&limit=50")).json()).revisions;
+  const original=rows.find(row=>row.type==="USER_AGREEMENT"&&row.status==="PUBLISHED");
+  expect(original).toBeTruthy();
+  await page.goto("http://127.0.0.1:5174/e2e/content/legal.html#legal");
+  await page.getByRole("row").filter({hasText:original.revisionLabel}).getByRole("button",{name:"查看与管理"}).click();
+  const editor=page.getByRole("region",{name:"协议修订编辑器"});
+  await editor.getByRole("button",{name:"复制为新修订"}).click();
+  await expect(editor.locator(".page-header > h2")).toContainText("未保存");
+  await editor.getByLabel("修订标识").fill("qa-revision-"+Date.now());
+  await editor.getByRole("button",{name:"保存草稿"}).click();
+  await expect(page.getByRole("status").filter({hasText:"草稿已保存"})).toBeVisible();
+  await editor.getByLabel("操作原因").fill("本地 QA：发布替代版本并保留历史正文及确认记录");
+  await editor.getByRole("button",{name:"审批并发布"}).click();await approve();
+  await expect(page.getByRole("status").filter({hasText:"协议已发布"})).toBeVisible();
+  const old=(await (await api.request.get(base+"/"+original.revisionId)).json());
+  expect(old.status).toBe("SUPERSEDED");
+  const publicOld=await api.request.get("http://127.0.0.1:19094/api/v1/legal/revisions/"+original.revisionId+"?locale=en-US");
+  expect(publicOld.ok()).toBe(true);expect(String((await publicOld.json()).revisionId)).toBe(String(original.revisionId));
+  const status=await api.request.get("http://127.0.0.1:19094/api/v1/legal/status?locale=en-US",{headers:{Authorization:"Bearer content-qa-reader"}});
+  expect(status.ok()).toBe(true);expect((await status.json()).missingRevisionIds).toHaveLength(1);
+  await editor.getByLabel("操作原因").fill("本地 QA：确认必需协议不能无替代撤回");
+  await editor.getByRole("button",{name:"审批并撤回"}).click();await approve();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(editor.getByRole("status")).toContainText("正文已锁定");
+  const current=await api.request.get("http://127.0.0.1:19094/api/v1/legal/current?locale=en-US");
+  expect((await current.json()).filter(item=>item.type==="USER_AGREEMENT")).toHaveLength(1);
+  const artifacts=process.env.CONTENT_QA_ARTIFACTS??"/Users/atomex/.cache/announcement-ui-evidence";
+  await page.screenshot({path:`${artifacts}/admin-legal-required-withdraw-blocked.png`,fullPage:true});
+  await writeFile(`${artifacts}/admin-legal-revision-result.json`,JSON.stringify({original:original.revisionId,historyPreserved:true,renewedConsentRequired:true,requiredWithdrawalBlocked:true},null,2));
+  console.log("Copy/edit/save/publish, immutable superseded history, renewed consent and mandatory withdrawal protection passed.");
+} finally {await api.close();await browser.close();}
