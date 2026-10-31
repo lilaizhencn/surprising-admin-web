@@ -14,7 +14,7 @@ try {
     await context.addInitScript(theme=>{
       localStorage.setItem("surprising-ex.language","zh");localStorage.setItem("surprising-ex.theme",theme);
       window.__mediaCspErrors=[];
-      document.addEventListener("securitypolicyviolation",event=>{if(event.blockedURI.startsWith("https://cdn.surprising.top/"))window.__mediaCspErrors.push(event.violatedDirective);});
+      document.addEventListener("securitypolicyviolation",event=>{if(event.blockedURI.startsWith("https://ex-cdn.tokdou.com/"))window.__mediaCspErrors.push(event.violatedDirective);});
     },theme);
     await context.route("**/api/v1/auth/**",route=>{
       const path=new URL(route.request().url()).pathname;
@@ -23,7 +23,7 @@ try {
     const page=await context.newPage(),errors=[];page.on("pageerror",error=>errors.push(error.message));
     page.on("requestfailed",request=>console.log("Failed request",request.url(),request.failure()?.errorText));
     const response=await page.goto(base+"/announcements");
-    expect(response.headers()["content-security-policy"]).toContain("https://cdn.surprising.top/public/exchange/content/");
+    expect(response.headers()["content-security-policy"]).toContain("https://ex-cdn.tokdou.com/public/exchange/content/");
     await page.getByRole("button").filter({hasText:"公告图文音视频闭环验证"}).first().click();
     const article=page.locator(".announcement-detail");
     await expect.poll(()=>article.locator("img").evaluate(item=>item.complete&&item.naturalWidth>0)).toBe(true);
