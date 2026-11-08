@@ -1,17 +1,16 @@
 import { FEE_STATUSES, FEE_SOURCE_TYPES, feeScheduleFormTemplate, feeScheduleFormFromRecord, feeSchedulePayload } from "../features/fees/feeScheduleForm";
 import { useState, useEffect } from "react";
-import { gatewayGet, gatewayPost } from "../api/admin";
+import { gatewayGet, gatewayPost, adminVipLevels, adminUserVipStatus, adminUpdateUserVip } from "../api/admin";
 import { type UnknownRecord } from "../types";
-import { Search } from "lucide-react";
+import { Search, Crown, Award, SlidersHorizontal } from "lucide-react";
 import { positiveInt64, positiveInt32 } from "../lib/integers";
 import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, StatusBadge, CursorPager, KeyValue } from "../components/AdminUi";
 import { errorMessage, fieldText, records } from "../lib/adminData";
 import { jsonObject } from "../lib/formValues";
 import { PRODUCT_LINES } from "../lib/products";
 
-
-
 export default function FeesPage() {
+  const [activeTab, setActiveTab] = useState<"schedules" | "vip">("schedules");
   const [filters, setFilters] = useState({
     productLine: "LINEAR_PERPETUAL",
     status: "",
@@ -29,6 +28,15 @@ export default function FeesPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  // VIP 管理状态
+  const [vipLevels, setVipLevels] = useState<Array<UnknownRecord>>([]);
+  const [vipUserId, setVipUserId] = useState("");
+  const [vipStatus, setVipStatus] = useState<UnknownRecord | null>(null);
+  const [vipFormLevel, setVipFormLevel] = useState(1);
+  const [vipMakerDiscount, setVipMakerDiscount] = useState("0");
+  const [vipTakerDiscount, setVipTakerDiscount] = useState("0");
+  const [vipReason, setVipReason] = useState("");
+
   function updateFilters(patch: Partial<typeof filters>) {
     setFilters((current) => ({ ...current, ...patch, scheduleCursor: "" }));
   }
@@ -40,7 +48,7 @@ export default function FeesPage() {
       const limit = Number(filters.limit) || 200;
       const userId = filters.userId.trim() ? positiveInt64(filters.userId, "用户 ID") : undefined;
       const instrumentId = filters.instrumentId.trim() ? positiveInt32(filters.instrumentId, "合约 ID") : undefined;
-      const [schedules, effective] = await Promise.all([
+      const [schedules, effective, levels] = await Promise.all([
         gatewayGet<{ schedules?: UnknownRecord[]; items?: UnknownRecord[]; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("trading-fees", "/schedules", {
           userId,
           instrumentId,
@@ -54,17 +62,57 @@ export default function FeesPage() {
           ? gatewayGet<UnknownRecord>("trading-fees", "/effective", {
               userId, instrumentId, productLine: filters.productLine
             })
-          : Promise.resolve(null)
+          : Promise.resolve(null),
+        adminVipLevels().catch(() => [])
       ]);
       setData({
         schedules: schedules.schedules ?? schedules.items ?? [],
         effective: effective ?? {}
       });
+      if (Array.isArray(levels) && levels.length) {
+        setVipLevels(levels as unknown as UnknownRecord[]);
+      }
       setSchedulePageInfo(cursorInfo(schedules));
       setFilters((current) => ({
         ...current,
         scheduleCursor: nextScheduleCursor || ""
       }));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadUserVip() {
+    if (!vipUserId.trim()) return;
+    setLoading(true); setError(""); setNotice("");
+    try {
+      const status = await adminUserVipStatus(vipUserId.trim());
+      setVipStatus(status as unknown as UnknownRecord);
+      setVipFormLevel(Number(status.currentLevel) || 0);
+      setVipMakerDiscount(String(status.makerFeeDiscountPpm ?? 0));
+      setVipTakerDiscount(String(status.takerFeeDiscountPpm ?? 0));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitVipOverride() {
+    if (!vipUserId.trim()) return;
+    setLoading(true); setError(""); setNotice("");
+    try {
+      await adminUpdateUserVip({
+        userId: vipUserId.trim(),
+        vipLevel: Number(vipFormLevel),
+        makerFeeDiscountPpm: Number(vipMakerDiscount) || undefined,
+        takerFeeDiscountPpm: Number(vipTakerDiscount) || undefined,
+        reason: vipReason.trim() || "运营手动调整 VIP 梯级"
+      });
+      setNotice(`用户 ${vipUserId} 的 VIP 等级已更新为 VIP${vipFormLevel}。`);
+      await loadUserVip();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -118,69 +166,160 @@ export default function FeesPage() {
   useEffect(() => { void load(); }, []);
 
   return (
-    <Page title="费率配置" onRefresh={load} loading={loading} error={error}>
+    <Page title="费率与 VIP 运营管理" onRefresh={load} loading={loading} error={error}>
       {notice && <p role="status">{notice}</p>}
-      <div className="filters">
-        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
-        <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
-        <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></select></label>
-        <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
-        <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
-        <button onClick={() => void load("")}><Search size={16} />查询</button>
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <button
+          className={activeTab === "schedules" ? "primary" : ""}
+          onClick={() => setActiveTab("schedules")}
+        >
+          <SlidersHorizontal size={14} style={{ marginRight: "4px" }} />
+          交易费率计划
+        </button>
+        <button
+          className={activeTab === "vip" ? "primary" : ""}
+          onClick={() => setActiveTab("vip")}
+        >
+          <Crown size={14} style={{ marginRight: "4px" }} />
+          VIP 动态阶梯与做市返佣 (VIP0~VIP9)
+        </button>
       </div>
-      <div className="two-grid">
-        <Panel title="费率计划">
-          <div className="stack">
+
+      {activeTab === "schedules" ? (
+        <>
+          <div className="filters">
+            <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
+            <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
+            <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></select></label>
+            <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
+            <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
+            <button onClick={() => void load("")}><Search size={16} />查询</button>
+          </div>
+          <div className="two-grid">
+            <Panel title="费率计划">
+              <div className="stack">
+                <DataTable
+                  rows={records(data?.schedules)}
+                  columns={["productLine", "feeScheduleId", "userId", "instrumentId", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
+                  maxColumns={11}
+                  onRowClick={selectSchedule} rowActionLabel="编辑费率" label="费率计划" isSelected={(row) => String(row.feeScheduleId) === scheduleForm.feeScheduleId}
+                  actions={(row) => row.status === "DISABLED" ? <StatusBadge value="DISABLED" /> : <button disabled={loading} onClick={() => void disableSchedule(row)}>禁用</button>}
+                />
+                <CursorPager loading={loading}
+                  page={schedulePageInfo}
+                  cursor={filters.scheduleCursor}
+                  onNext={() => void load(schedulePageInfo.nextCursor || "")}
+                  onReset={() => void load("")}
+                />
+              </div>
+            </Panel>
+            <Panel title="用户当前有效费率">
+              {filters.userId && filters.instrumentId ? <KeyValue data={data?.effective ?? {}} /> : <p>输入用户 ID 和合约 ID 后查询当前产品线的有效费率。</p>}
+            </Panel>
+            <Panel title="新增/更新费率计划">
+              <p>档位代码仅作为费率计划标签；有效费率按当前用户、产品线和合约解析。</p>
+              <div className="stack">
+                <div className="form-grid">
+                  <TextFilter label="Schedule ID" value={scheduleForm.feeScheduleId} onChange={(value) => updateScheduleForm({ feeScheduleId: value })} />
+                  <label>产品线<select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <TextFilter label="User ID" value={scheduleForm.userId} onChange={(value) => updateScheduleForm({ userId: value })} />
+                  <TextFilter label="币对 ID" value={scheduleForm.instrumentId} onChange={(value) => updateScheduleForm({ instrumentId: value.toUpperCase() })} />
+                  <label>来源<select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <TextFilter label="档位标签（可选）" value={scheduleForm.tierCode} onChange={(value) => updateScheduleForm({ tierCode: value.toUpperCase() })} />
+                  <label>状态<select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <TextFilter label="Maker ppm" value={scheduleForm.makerFeeRatePpm} onChange={(value) => updateScheduleForm({ makerFeeRatePpm: value })} />
+                  <TextFilter label="Taker ppm" value={scheduleForm.takerFeeRatePpm} onChange={(value) => updateScheduleForm({ takerFeeRatePpm: value })} />
+                  <TextFilter label="生效时间 ISO" value={scheduleForm.effectiveTime} onChange={(value) => updateScheduleForm({ effectiveTime: value })} />
+                  <TextFilter label="过期时间 ISO" value={scheduleForm.expireTime} onChange={(value) => updateScheduleForm({ expireTime: value })} />
+                </div>
+                <label>原因<textarea className="json-editor small text-editor" value={scheduleForm.reason} onChange={(event) => updateScheduleForm({ reason: event.target.value })} /></label>
+                <details className="raw-toggle">
+                  <summary>高级 JSON 请求体</summary>
+                  <textarea className="json-editor small" value={scheduleJson} onChange={(event) => setScheduleJson(event.target.value)} />
+                </details>
+                <button className="primary" disabled={loading} onClick={() => void submitSchedule()}>提交计划</button>
+              </div>
+            </Panel>
+          </div>
+        </>
+      ) : (
+        <div className="two-grid">
+          <Panel title="全网 VIP 阶梯标准 (VIP0 ~ VIP9)">
+            <p>系统按用户近 30 天结算交易量动态评估等级；VIP9 做市商享有 -50 ppm 负费率返佣。</p>
             <DataTable
-              rows={records(data?.schedules)}
-              columns={["productLine", "feeScheduleId", "userId", "instrumentId", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
-              maxColumns={11}
-              onRowClick={selectSchedule} rowActionLabel="编辑费率" label="费率计划" isSelected={(row) => String(row.feeScheduleId) === scheduleForm.feeScheduleId}
-              actions={(row) => row.status === "DISABLED" ? <StatusBadge value="DISABLED" /> : <button disabled={loading} onClick={() => void disableSchedule(row)}>禁用</button>}
+              rows={vipLevels.length > 0 ? vipLevels : [
+                { level: 0, name: "VIP 0", minVolume30d: "0", makerFeeRatePpm: 200, takerFeeRatePpm: 500 },
+                { level: 1, name: "VIP 1", minVolume30d: "10,000", makerFeeRatePpm: 180, takerFeeRatePpm: 450 },
+                { level: 2, name: "VIP 2", minVolume30d: "50,000", makerFeeRatePpm: 150, takerFeeRatePpm: 400 },
+                { level: 3, name: "VIP 3", minVolume30d: "250,000", makerFeeRatePpm: 120, takerFeeRatePpm: 350 },
+                { level: 4, name: "VIP 4", minVolume30d: "1,000,000", makerFeeRatePpm: 100, takerFeeRatePpm: 300 },
+                { level: 5, name: "VIP 5", minVolume30d: "5,000,000", makerFeeRatePpm: 80, takerFeeRatePpm: 250 },
+                { level: 6, name: "VIP 6", minVolume30d: "20,000,000", makerFeeRatePpm: 50, takerFeeRatePpm: 200 },
+                { level: 7, name: "VIP 7", minVolume30d: "50,000,000", makerFeeRatePpm: 20, takerFeeRatePpm: 150 },
+                { level: 8, name: "VIP 8", minVolume30d: "150,000,000", makerFeeRatePpm: 0, takerFeeRatePpm: 120 },
+                { level: 9, name: "VIP 9 (MM 做市商)", minVolume30d: "500,000,000", makerFeeRatePpm: -50, takerFeeRatePpm: 100 }
+              ]}
+              columns={["level", "name", "minVolume30d", "makerFeeRatePpm", "takerFeeRatePpm"]}
+              maxColumns={5}
             />
-            <CursorPager loading={loading}
-              page={schedulePageInfo}
-              cursor={filters.scheduleCursor}
-              onNext={() => void load(schedulePageInfo.nextCursor || "")}
-              onReset={() => void load("")}
-            />
-          </div>
-        </Panel>
-        <Panel title="用户当前有效费率">
-          {filters.userId && filters.instrumentId ? <KeyValue data={data?.effective ?? {}} /> : <p>输入用户 ID 和合约 ID 后查询当前产品线的有效费率。</p>}
-        </Panel>
-        <Panel title="新增/更新费率计划">
-          <p>档位代码仅作为费率计划标签；有效费率按当前用户、产品线和合约解析。</p>
-          <div className="stack">
-            <div className="form-grid">
-              <TextFilter label="Schedule ID" value={scheduleForm.feeScheduleId} onChange={(value) => updateScheduleForm({ feeScheduleId: value })} />
-              <label>产品线<select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-              <TextFilter label="User ID" value={scheduleForm.userId} onChange={(value) => updateScheduleForm({ userId: value })} />
-              <TextFilter label="币对 ID" value={scheduleForm.instrumentId} onChange={(value) => updateScheduleForm({ instrumentId: value.toUpperCase() })} />
-              <label>来源<select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
-              <TextFilter label="档位标签（可选）" value={scheduleForm.tierCode} onChange={(value) => updateScheduleForm({ tierCode: value.toUpperCase() })} />
-              <label>状态<select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
-              <TextFilter label="Maker ppm" value={scheduleForm.makerFeeRatePpm} onChange={(value) => updateScheduleForm({ makerFeeRatePpm: value })} />
-              <TextFilter label="Taker ppm" value={scheduleForm.takerFeeRatePpm} onChange={(value) => updateScheduleForm({ takerFeeRatePpm: value })} />
-              <TextFilter label="生效时间 ISO" value={scheduleForm.effectiveTime} onChange={(value) => updateScheduleForm({ effectiveTime: value })} />
-              <TextFilter label="过期时间 ISO" value={scheduleForm.expireTime} onChange={(value) => updateScheduleForm({ expireTime: value })} />
+          </Panel>
+
+          <Panel title="用户 VIP 查验与人工调级">
+            <div className="stack">
+              <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
+                <TextFilter label="用户 ID" value={vipUserId} onChange={setVipUserId} />
+                <button className="primary" disabled={loading} onClick={() => void loadUserVip()}>
+                  <Search size={16} /> 查询 VIP 状态
+                </button>
+              </div>
+
+              {vipStatus && (
+                <div style={{ marginTop: "12px", padding: "10px", background: "rgba(0,198,255,0.06)", borderRadius: "6px" }}>
+                  <KeyValue data={vipStatus} />
+                </div>
+              )}
+
+              <hr style={{ margin: "16px 0", borderColor: "rgba(255,255,255,0.1)" }} />
+
+              <h4>人工调级与做市商特批</h4>
+              <div className="form-grid">
+                <label>
+                  指定 VIP 等级
+                  <select value={vipFormLevel} onChange={(e) => setVipFormLevel(Number(e.target.value))}>
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((lvl) => (
+                      <option key={lvl} value={lvl}>
+                        VIP {lvl} {lvl === 9 ? "(做市商负费率)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <TextFilter label="Maker 额外折扣 (ppm)" value={vipMakerDiscount} onChange={setVipMakerDiscount} />
+                <TextFilter label="Taker 额外折扣 (ppm)" value={vipTakerDiscount} onChange={setVipTakerDiscount} />
+              </div>
+              <label>
+                审批原因/调级理由
+                <textarea
+                  className="json-editor small text-editor"
+                  value={vipReason}
+                  onChange={(e) => setVipReason(e.target.value)}
+                  placeholder="例如：特邀做市商流动性协议特批"
+                />
+              </label>
+              <button className="primary" disabled={loading || !vipUserId} onClick={() => void submitVipOverride()}>
+                <Award size={14} style={{ marginRight: "4px" }} />
+                确认调级并生效
+              </button>
             </div>
-            <label>原因<textarea className="json-editor small text-editor" value={scheduleForm.reason} onChange={(event) => updateScheduleForm({ reason: event.target.value })} /></label>
-            <details className="raw-toggle">
-              <summary>高级 JSON 请求体</summary>
-              <textarea className="json-editor small" value={scheduleJson} onChange={(event) => setScheduleJson(event.target.value)} />
-            </details>
-            <button className="primary" disabled={loading} onClick={() => void submitSchedule()}>提交计划</button>
-          </div>
-        </Panel>
-      </div>
+          </Panel>
+        </div>
+      )}
     </Page>
   );
 }
 
 const FEE_SCHEDULE_SORTS = ["updatedAt.desc", "updatedAt.asc", "createdAt.desc", "createdAt.asc", "effectiveTime.desc", "effectiveTime.asc"];
-
 
 interface FeesData {
   schedules: UnknownRecord[];

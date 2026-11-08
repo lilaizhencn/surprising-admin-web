@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
-import { gatewayGet, gatewayPost } from "../api/admin";
-import { RefreshCw, Search } from "lucide-react";
+import { gatewayGet, gatewayPost, adminGridStrategies, adminStopGridStrategy } from "../api/admin";
+import { RefreshCw, Search, Bot, Activity } from "lucide-react";
 import { positiveInt64 } from "../lib/integers";
 import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, TwoColumn, DataTable, CursorPager, KeyValue } from "../components/AdminUi";
 import { errorMessage, objectValue, records, ppmPercent } from "../lib/adminData";
@@ -28,8 +28,43 @@ export default function MarketMakerPage() {
     logSort: "createdAt.desc"
   });
   const [logPageInfo, setLogPageInfo] = useState(cursorInfo());
+  const [activeTab, setActiveTab] = useState<"maker" | "grid">("maker");
+  const [gridStrategies, setGridStrategies] = useState<UnknownRecord[]>([]);
+  const [gridSymbol, setGridSymbol] = useState("");
+  const [gridStatus, setGridStatus] = useState("");
+  const [gridLoading, setGridLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  async function loadGrid() {
+    setGridLoading(true);
+    try {
+      const list = await adminGridStrategies({
+        symbol: gridSymbol.trim() || undefined,
+        status: gridStatus || undefined
+      });
+      setGridStrategies(list as unknown as UnknownRecord[]);
+    } catch {
+      setGridStrategies([]);
+    } finally {
+      setGridLoading(false);
+    }
+  }
+
+  async function handleStopGrid(strategyId: string) {
+    if (!window.confirm(`确认终止网格策略 ${strategyId} 并撤销所有未成交挂单？`)) return;
+    setGridLoading(true); setError(""); setNotice("");
+    try {
+      await adminStopGridStrategy(strategyId);
+      setNotice(`网格策略 ${strategyId} 已成功终止。`);
+      await loadGrid();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setGridLoading(false);
+    }
+  }
 
   function updateInsightFilters(patch: Partial<typeof insightFilters>) {
     setInsightFilters((current) => ({ ...current, ...patch, logCursor: "" }));
@@ -118,8 +153,81 @@ export default function MarketMakerPage() {
   const pnlRows = records(pnl?.rows as UnknownRecord[] | undefined);
 
   return (
-    <Page title="做市管理" onRefresh={load} loading={loading} error={error}>
-      <div className="metrics">
+    <Page title="做市与策略机器人管理" onRefresh={() => { void load(); void loadGrid(); }} loading={loading || gridLoading} error={error}>
+      {notice && <p role="status">{notice}</p>}
+
+      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+        <button
+          className={activeTab === "maker" ? "primary" : ""}
+          onClick={() => setActiveTab("maker")}
+        >
+          <Activity size={14} style={{ marginRight: "4px" }} />
+          做市商流动性与归因
+        </button>
+        <button
+          className={activeTab === "grid" ? "primary" : ""}
+          onClick={() => { setActiveTab("grid"); void loadGrid(); }}
+        >
+          <Bot size={14} style={{ marginRight: "4px" }} />
+          网格策略机器人全网监控
+        </button>
+      </div>
+
+      {activeTab === "grid" ? (
+        <div className="stack">
+          <div className="filters">
+            <TextFilter label="交易对" value={gridSymbol} onChange={setGridSymbol} />
+            <label>
+              状态
+              <select value={gridStatus} onChange={(e) => setGridStatus(e.target.value)}>
+                <option value="">全部</option>
+                <option value="RUNNING">RUNNING (运行中)</option>
+                <option value="STOPPED">STOPPED (已终止)</option>
+              </select>
+            </label>
+            <button className="primary" disabled={gridLoading} onClick={() => void loadGrid()}>
+              <Search size={16} /> 查询网格策略
+            </button>
+          </div>
+
+          <Panel title={`全网网格策略机器人列表 (${gridStrategies.length})`}>
+            {gridStrategies.length === 0 ? (
+              <p>暂无符合条件的网格策略记录</p>
+            ) : (
+              <DataTable
+                rows={gridStrategies}
+                columns={[
+                  "strategyId",
+                  "userId",
+                  "symbol",
+                  "gridType",
+                  "lowerPrice",
+                  "upperPrice",
+                  "gridCount",
+                  "investAmount",
+                  "matchedCount",
+                  "profitUsd",
+                  "status",
+                  "createdAt"
+                ]}
+                actions={(row) => (
+                  row.status === "RUNNING" ? (
+                    <button
+                      className="danger"
+                      disabled={gridLoading}
+                      onClick={() => void handleStopGrid(String(row.strategyId))}
+                    >
+                      强制终止
+                    </button>
+                  ) : <span>已结束</span>
+                )}
+              />
+            )}
+          </Panel>
+        </div>
+      ) : (
+        <>
+          <div className="metrics">
         <Metric label="策略数" value={totals.strategyCount ?? strategies.length} tone="muted" />
         <Metric label="运行中" value={totals.runningStrategies ?? 0} tone="ok" />
         <Metric label="降级/暂停" value={`${totals.degradedStrategies ?? 0}/${totals.pausedStrategies ?? 0}`} tone={Number(totals.degradedStrategies ?? 0) > 0 ? "warn" : "muted"} />
@@ -259,6 +367,8 @@ export default function MarketMakerPage() {
         <Panel title="指标采集警告">
           <DataTable rows={warnings} columns={["productLine", "strategyId", "instrumentId", "accountId", "message"]} />
         </Panel>
+      )}
+      </>
       )}
     </Page>
   );

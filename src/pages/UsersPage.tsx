@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { type AuthenticatedUser, type UnknownRecord } from "../types";
-import { userSessions, userProfile, adminUsers, updateUserStatus, replaceUserRoles, revokeSession, revokeUserSessions } from "../api/admin";
-import { Search, RefreshCw } from "lucide-react";
+import { userSessions, userProfile, adminUsers, updateUserStatus, replaceUserRoles, revokeSession, revokeUserSessions, adminSubAccounts, adminUpdateSubAccountStatus } from "../api/admin";
+import { Search, RefreshCw, GitBranch, ShieldAlert } from "lucide-react";
 import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, Empty, StatusBadge } from "../components/AdminUi";
 import { errorMessage } from "../lib/adminData";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
@@ -22,14 +22,49 @@ export default function UsersPage() {
   const [profile, setProfile] = useState<UnknownRecord | null>(null);
   const [profileAsset, setProfileAsset] = useState("USDT");
   const [profileProductLine, setProfileProductLine] = useState("LINEAR_PERPETUAL");
+  const [subAccounts, setSubAccounts] = useState<UnknownRecord[]>([]);
+  const [subLoading, setSubLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [rolesText, setRolesText] = useState("");
   const selectedUserId = useRef("");
   selectedUserId.current = selected ? String(selected.userId) : "";
   const sessionRead = useRef<AbortController | null>(null);
   const profileRead = useRef<AbortController | null>(null);
   const listVersion = useRef(0);
+
+  async function loadSubAccounts(userId: number | string) {
+    setSubLoading(true);
+    try {
+      const list = await adminSubAccounts(userId);
+      setSubAccounts(list as unknown as UnknownRecord[]);
+    } catch {
+      setSubAccounts([]);
+    } finally {
+      setSubLoading(false);
+    }
+  }
+
+  async function toggleSubAccountStatus(row: UnknownRecord) {
+    if (!row.subUserId) return;
+    const subUserId = Number(row.subUserId);
+    const nextStatus = row.status === "ACTIVE" ? "FROZEN" : "ACTIVE";
+    const prompt = row.status === "ACTIVE"
+      ? `确认冻结子账户 ${subUserId}？冻结后该子账户将无法下单与发起内部划转。`
+      : `确认解冻子账户 ${subUserId}？`;
+    if (!window.confirm(prompt)) return;
+    setSubLoading(true); setError(""); setNotice("");
+    try {
+      await adminUpdateSubAccountStatus(subUserId, nextStatus);
+      setNotice(`子账户 ${subUserId} 状态已更新为 ${nextStatus}。`);
+      if (selected) await loadSubAccounts(selected.userId);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubLoading(false);
+    }
+  }
 
   function updateSessionFilters(patch: Partial<typeof sessionFilters>) {
     setSessionFilters((current) => ({ ...current, ...patch, cursor: "" }));
@@ -124,9 +159,14 @@ export default function UsersPage() {
     setSessions([]);
     setSessionPageInfo(cursorInfo());
     setProfile(null);
+    setSubAccounts([]);
     setError("");
     if (selected) {
-      void Promise.all([loadSessions(selected.userId, ""), loadProfile(selected.userId)]);
+      void Promise.all([
+        loadSessions(selected.userId, ""),
+        loadProfile(selected.userId),
+        loadSubAccounts(selected.userId)
+      ]);
     }
     return () => { sessionRead.current?.abort(); profileRead.current?.abort(); };
   }, [selected?.userId]);
@@ -191,7 +231,8 @@ export default function UsersPage() {
   }
 
   return (
-    <Page title="用户权限" onRefresh={load} loading={loading} error={error}>
+    <Page title="用户权限与子账户治理" onRefresh={load} loading={loading} error={error}>
+      {notice && <p role="status">{notice}</p>}
       <div className="filters">
         <label>搜索<input value={query} onChange={(event) => { setQuery(event.target.value); resetUserCursor(); }} placeholder="userId / username / email" /></label>
         <label>状态<select value={status} onChange={(event) => { setStatus(event.target.value); resetUserCursor(); }}>
@@ -227,6 +268,33 @@ export default function UsersPage() {
           ) : <Empty text="选择一个用户进行管理" />}
         </Panel>
       </TwoColumn>
+      <Panel title={`关联子账户体系 (${subAccounts.length})`}>
+        {selected ? (
+          <div className="stack">
+            <div className="button-row">
+              <button disabled={subLoading} onClick={() => void loadSubAccounts(selected.userId)}>
+                <RefreshCw size={16} />刷新子账户
+              </button>
+            </div>
+            {subAccounts.length === 0 ? (
+              <Empty text="该主账户名下暂无子账户" />
+            ) : (
+              <DataTable
+                rows={subAccounts}
+                columns={["subUserId", "subAccountName", "permission", "status", "createdAt"]}
+                actions={(row) => (
+                  <button
+                    disabled={subLoading}
+                    onClick={() => void toggleSubAccountStatus(row)}
+                  >
+                    {row.status === "ACTIVE" ? "冻结权限" : "恢复权限"}
+                  </button>
+                )}
+              />
+            )}
+          </div>
+        ) : <Empty text="选择主账户查看其名下的子账户树" />}
+      </Panel>
       <Panel title="会话治理">
         {selected ? (
           <div className="stack">
