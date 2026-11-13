@@ -13,7 +13,7 @@ await context.route("**/api/v1/auth/**",async route=>{
   const path=new URL(route.request().url()).pathname;
   const reply=(body,status=200)=>route.fulfill({status,contentType:"application/json",body:JSON.stringify(body)});
   if(path.endsWith("/csrf"))return reply({token:"controlled-csrf"});
-  if(path.endsWith("/browser/refresh"))return active?reply(session):reply({message:"No test session"},401);
+  if(path.endsWith("/auth/session"))return active?reply(session):reply({message:"No test session"},401);
   if(path.endsWith("/google/config")||path.endsWith("/telegram/config"))return reply({enabled:false,webClientId:""});
   if(path.endsWith("/auth/login")||path.endsWith("/auth/register")) {
     const acceptance=route.request().headers()["x-legal-acceptance"];

@@ -4,7 +4,7 @@ installConfigFixture();
 const { gatewayPost, gatewayPatch, adminLocalWrite, setApprovalRequestHandler } = await import("../src/api/admin");
 const { saveSession } = await import("../src/api/client");
 const originalFetch = globalThis.fetch;
-const session = (id = 9) => ({ user: { userId: id, username: "QA", roles: ["ADMIN"], status: "NORMAL", createdAt: "2026-10-20T00:00:00Z" }, accessToken: `qa-${id}`, refreshToken: `refresh-${id}`, accessTokenExpiresAt: "2099-01-01T00:00:00Z", refreshTokenExpiresAt: "2099-01-01T00:00:00Z" });
+const session = (id = 9) => ({ user: { userId: id, username: "QA", roles: ["ADMIN"], status: "NORMAL", createdAt: "2026-10-20T00:00:00Z" } });
 beforeEach(() => {
   const storage = new Map<string, string>();
   Object.assign(globalThis, { window: new EventTarget(), localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) } });

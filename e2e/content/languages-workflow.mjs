@@ -9,7 +9,7 @@ await page.addInitScript(()=>{if(!localStorage.getItem("surprising-ex.language")
 await page.route("**/api/v1/auth/**",route=>{
   const path=new URL(route.request().url()).pathname;
   const body=path.endsWith("/csrf")?{token:"controlled-csrf"}:path.endsWith("/config")?{enabled:false}:{message:"No test session"};
-  return route.fulfill({status:path.endsWith("/refresh")?401:200,contentType:"application/json",body:JSON.stringify(body)});
+  return route.fulfill({status:path.endsWith("/session")?401:200,contentType:"application/json",body:JSON.stringify(body)});
 });
 const locales=[["en","en-US","English"],["zh","zh-CN","简体中文"],["zh-TW","zh-TW","繁體中文"],["es","es-ES","Español"],["fr","fr-FR","Français"],["de","de-DE","Deutsch"],["pt","pt-BR","Português (Brasil)"],["ru","ru-RU","Русский"],["ar","ar-SA","العربية"],["ja","ja-JP","日本語"],["ko","ko-KR","한국어"],["hi","hi-IN","हिन्दी"]];
 async function choose(label){await page.locator(".language-picker [role=combobox]").click();await page.getByRole("option",{name:label,exact:true}).click();}

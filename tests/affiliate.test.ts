@@ -33,10 +33,6 @@ beforeEach(() => {
       status: "NORMAL",
       createdAt: "2026-10-20T00:00:00Z",
     },
-    accessToken: "qa",
-    refreshToken: "refresh",
-    accessTokenExpiresAt: "2099-01-01T00:00:00Z",
-    refreshTokenExpiresAt: "2099-01-01T00:00:00Z",
   });
 });
 afterEach(() => {

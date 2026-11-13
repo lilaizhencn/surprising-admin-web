@@ -24,7 +24,7 @@
 - `surprising-admin-web` 的“账户资产”页已为账户流水、产品账户流水、产品划转、人工调整追溯、资产估值报表和日终资产快照接入独立游标分页和排序控件，避免大账户历史数据使用 offset 扫表。
 - `surprising-admin-web` 已新增系统监控页面，用于查看 gateway 路由配置、后端 `/actuator/health` 巡检结果、UP/DOWN 汇总、延迟、outbox backlog、后台 API 错误率、登录失败和审批积压。
 - `surprising-admin-web` 系统监控页已接入 gateway `/api/v1/admin/system/observability`，展示 Kafka consumer lag、WebSocket 连接/订阅统计和 Prometheus 抓取状态。
-- `surprising-ex` gateway 已新增后台安全域 `/api/v1/admin/gateway/{service}/...`，后台代理只接受 Bearer Token 后台角色，不使用普通前端的 `X-User-Id` fallback。
+- `surprising-ex` gateway 已新增后台安全域 `/api/v1/admin/gateway/{service}/...`，后台代理只接受后台会话（HttpOnly Cookie 或 Bearer）的后台角色，不使用普通前端的 `X-User-Id` fallback。
 - `surprising-ex` gateway 已新增 `/api/v1/admin/system/routes`、`/api/v1/admin/system/health` 和 `/api/v1/admin/system/metrics`，由 gateway 统一对业务服务做健康巡检，并聚合 outbox backlog、后台 API 错误率、登录失败和审批积压。
 - gateway 已新增管理员用户/角色管理、SUPPORT 客服只读角色、普通用户列表/状态限制、用户详情聚合、refresh session 会话治理/强制下线、登录日志、管理员操作日志、后台代理审计落库、wallet 服务路由、wallet-admin 服务端 Basic Auth 注入。
 - gateway 已新增敏感操作审批流：审批申请、查询、批准、驳回、消费；高风险后台写操作默认必须携带匹配的已批准审批单，且申请人与审批人不能是同一个管理员。

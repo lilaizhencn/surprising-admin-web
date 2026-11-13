@@ -25,13 +25,13 @@ Surprising 交易所后台管理 Web。后台所有业务请求统一走 gateway
 
 ## 会话治理
 
-“用户权限”页会展示用户 refresh session 列表，支持撤销单个会话或强制下线该用户全部有效会话。会话撤销接口位于 gateway 本地后台路径：
+“用户权限”页会展示用户登录会话列表，支持撤销单个会话或强制下线该用户全部有效会话。会话撤销接口位于 gateway 本地后台路径：
 
 - `GET /api/v1/admin/users/{userId}/sessions`
 - `POST /api/v1/admin/sessions/{sessionId}/revoke`
 - `POST /api/v1/admin/users/{userId}/sessions/revoke`
 
-撤销写操作同样需要审批单，通过后会把匹配 refresh session 标记为 `revoked_at`，用户下一次刷新 token 时会被拒绝。
+撤销写操作同样需要审批单，通过后会把匹配会话标记为 `revoked_at` 并立即从 Valkey 删除，用户的下一次请求会得到 401。
 
 会话列表支持 `createdAt.desc`、`createdAt.asc` 的 `limit/cursor/sort` 游标分页，响应保留 `sessions/count` 并额外返回 `nextCursor`、`hasMore`、`sort`、`limit`。
 
@@ -392,3 +392,10 @@ pnpm build
 修改要求原因和确认，并沿用后台审批流程；不使用内部运维密钥。资金调整仍在账户管理，OI 保底及最大持仓限额仍在合约编辑。
 
 验证：TypeScript lint、生产构建；真实后台登录、审批及浏览器交互未在本轮自动化验证。
+
+## 登录与会话
+
+- 后台登录由网关写入 HttpOnly 会话 Cookie（`surprising-admin-session`，8 小时滑动有效），页面脚本读不到令牌；请求一律 `credentials: include`，带 `X-Auth-Client: admin`，不发送 `Authorization`。
+- 写请求带 `X-CSRF-Token`，值取自 `surprising-admin-csrf` Cookie；Cookie 读不到时先 `GET /api/v1/auth/csrf`。
+- 页面打开时 `GET /api/v1/auth/session` 恢复登录用户；任何业务请求收到 401 即清除本地状态并回到登录页。退出调用 `POST /api/v1/auth/logout`。
+- 没有 access/refresh 令牌，也没有刷新接口。

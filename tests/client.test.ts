@@ -1,16 +1,16 @@
 import { installConfigFixture } from "./configFixture";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 installConfigFixture();
-const { request, requestBlob, saveSession, loadSession, parseApiJson, validateSession } = await import(
+const { request, requestBlob, saveSession, loadSession, parseApiJson, validateSession, restoreBrowserSession, logoutBrowserSession } = await import(
   "../src/api/client"
 );
 const originalFetch = globalThis.fetch;
-// The public CSRF token endpoint is part of this HTTP fixture; individual mocks exercise business/refresh responses.
+// The public CSRF token endpoint is part of this HTTP fixture; individual mocks exercise business responses.
 function installTransport(handler: typeof fetch) {
   globalThis.fetch = ((input, init) => String(input).endsWith("/auth/csrf")
     ? Promise.resolve(json({token: "csrf-test"})) : handler(input, init)) as typeof fetch;
 }
-const session = (id = 9, token = "old") => ({
+const session = (id = 9) => ({
   user: {
     userId: id,
     roles: ["ADMIN"],
@@ -18,15 +18,10 @@ const session = (id = 9, token = "old") => ({
     status: "NORMAL",
     createdAt: "2026-10-20T00:00:00Z",
   },
-  accessToken: token,
-  refreshToken: null,
   browserSession: true,
-  accessTokenExpiresAt: "2099-01-01T00:00:00Z",
-  refreshTokenExpiresAt: "2099-01-01T00:00:00Z",
 });
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 beforeEach(() => {
-  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { locks: { request: (_name: string, _options: unknown, run: () => unknown) => Promise.resolve(run()) } } });
   const values = new Map<string, string>();
   Object.assign(globalThis, {
     localStorage: {
@@ -60,7 +55,7 @@ describe("private admin requests", () => {
     );
     expect(fetch).not.toHaveBeenCalled();
   });
-  test("a late 401 cannot refresh or restore the previous account", async () => {
+  test("a late 401 cannot touch the new account", async () => {
     let release!: () => void;
     const waiting = new Promise<void>((resolve) => {
       release = resolve;
@@ -76,65 +71,6 @@ describe("private admin requests", () => {
     await expect(result).rejects.toThrow("账号已变化");
     expect(loadSession()?.user.userId).toBe(10);
     expect(fetch).toHaveBeenCalledTimes(1);
-  });
-  test("an in-flight refresh cannot overwrite a newer login", async () => {
-    let open!: () => void, release!: () => void;
-    const opened = new Promise<void>((resolve) => {
-        open = resolve;
-      }),
-      waiting = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-    installTransport(mock(async (url) => {
-      if (String(url).endsWith("/auth/browser/refresh")) {
-        open();
-        await waiting;
-        return json(session(9, "new"));
-      }
-      return json({}, 401);
-    }));
-    const result = request("/private", { expectedUserId: "9" });
-    void result.catch(() => {});
-    await opened;
-    saveSession(session(10));
-    release();
-    await expect(result).rejects.toThrow("会话已变化");
-    expect(loadSession()?.user.userId).toBe(10);
-  });
-  test("concurrent 401 responses share one rotating refresh", async () => {
-    let refreshes = 0;
-    installTransport(mock(async (url, init) => {
-      if (String(url).endsWith("/auth/browser/refresh")) {
-        refreshes++;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        return json(session(9, "new"));
-      }
-      return new Headers(init?.headers).get("Authorization") === "Bearer new"
-        ? json({ ok: true })
-        : json({}, 401);
-    }));
-    expect(
-      await Promise.all([
-        request("/one", { expectedUserId: "9" }),
-        request("/two", { expectedUserId: "9" }),
-      ]),
-    ).toEqual([{ ok: true }, { ok: true }]);
-    expect(refreshes).toBe(1);
-  });
-  test("a rejected refreshed token fails without an endless refresh loop", async () => {
-    let refreshes = 0;
-    installTransport(mock(async (url) => {
-      if (String(url).endsWith("/auth/browser/refresh")) {
-        refreshes++;
-        return json(session(9, "new"));
-      }
-      return json({}, 401);
-    }));
-    await expect(request("/private", { expectedUserId: "9" })).rejects.toHaveProperty(
-      "status",
-      401,
-    );
-    expect(refreshes).toBe(1);
   });
   test("session changes during response body reading cannot return private content", async () => {
     let finish!: () => void;
@@ -163,6 +99,59 @@ describe("private admin requests", () => {
     expect(parseApiJson<{ id: string }>('{"id":9223372036854775807}').id).toBe(
       "9223372036854775807",
     );
+  });
+});
+
+describe("cookie session transport", () => {
+  test("every request rides the HttpOnly cookie and never sends an Authorization header", async () => {
+    let seen: RequestInit | undefined;
+    installTransport(mock(async (_url, init) => { seen = init; return json({ ok: true }); }));
+    await request("/private");
+    const headers = new Headers(seen?.headers);
+    expect(seen?.credentials).toBe("include");
+    expect(headers.get("X-Auth-Client")).toBe("admin");
+    expect(headers.has("Authorization")).toBe(false);
+    expect(headers.has("X-CSRF-Token")).toBe(false);
+  });
+  test("writes carry the CSRF token; login also declares the cookie transport", async () => {
+    const seen: Headers[] = [];
+    installTransport(mock(async (_url, init) => { seen.push(new Headers(init?.headers)); return json({}); }));
+    await request("/private", { method: "POST", body: "{}" });
+    await request("/api/v1/auth/login", { method: "POST", body: "{}" }, null);
+    expect(seen[0].get("X-CSRF-Token")).toBe("csrf-test");
+    expect(seen[0].has("X-Auth-Transport")).toBe(false);
+    expect(seen[1].get("X-CSRF-Token")).toBe("csrf-test");
+    expect(seen[1].get("X-Auth-Transport")).toBe("cookie");
+  });
+  test("a 401 means the login is gone: the local session is cleared without any retry", async () => {
+    const fetch = mock(async () => json({}, 401));
+    installTransport(fetch);
+    await expect(request("/private")).rejects.toHaveProperty("status", 401);
+    expect(loadSession()).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  test("a 401 after another account signed in leaves the new account alone", async () => {
+    installTransport(mock(async () => { saveSession(session(10)); return json({}, 401); }));
+    await expect(request("/private", { expectedUserId: "9" })).rejects.toThrow("账号已变化");
+    expect(loadSession()?.user.userId).toBe(10);
+  });
+  test("restore uses GET /auth/session and stays logged out on 401", async () => {
+    const urls: string[] = [];
+    installTransport(mock(async url => { urls.push(String(url)); return json(session(11)); }));
+    await restoreBrowserSession();
+    expect(urls).toEqual(["http://qa.invalid/api/v1/auth/session"]);
+    expect(loadSession()?.user.userId).toBe(11);
+    saveSession(null);
+    installTransport(mock(async () => json({}, 401)));
+    await restoreBrowserSession();
+    expect(loadSession()).toBeNull();
+  });
+  test("logout posts /auth/logout and clears the local session", async () => {
+    const calls: string[] = [];
+    installTransport(mock(async (url, init) => { calls.push(`${init?.method} ${String(url)}`); return new Response(null, { status: 204 }); }));
+    await logoutBrowserSession();
+    expect(calls).toEqual(["POST http://qa.invalid/api/v1/auth/logout"]);
+    expect(loadSession()).toBeNull();
   });
 });
 
@@ -195,7 +184,7 @@ describe("session boundary", () => {
     localStorage.setItem("surprising-admin.session", JSON.stringify(value));
     expect(loadSession()).toBeNull();
   });
-  test.each([null, {}, { user: { userId: 1 }, accessToken: "audit" }, { ...session(), user: { ...session().user, roles: "ADMIN" } }, { ...session(), refreshTokenExpiresAt: "invalid" }, { ...session(), refreshTokenExpiresAt: "2000-01-01T00:00:00Z" }])("bad stored sessions recover to login: %j", value => {
+  test.each([null, {}, { user: { userId: 1 } }, { ...session(), user: { ...session().user, roles: "ADMIN" } }, { ...session(), sessionExpiresAt: "invalid" }])("bad stored sessions recover to login: %j", value => {
     saveSession(null);
     localStorage.setItem("surprising-admin.session", JSON.stringify(value));
     expect(loadSession()).toBeNull();
@@ -214,38 +203,6 @@ describe("session boundary", () => {
     expect(loadSession()?.user.userId).toBe(10);
     saveSession(null);
     expect(loadSession()).toBeNull();
-  });
-});
-
-describe("refresh failure classification", () => {
-  test.each([503, 500, 429])("transient refresh status %i preserves the session and never repeats a write", async status => {
-    let writes = 0;
-    installTransport(mock(async url => {
-      if (String(url).endsWith("/auth/browser/refresh")) return json({ message: "temporarily unavailable" }, status);
-      writes++;
-      return json({}, 401);
-    }));
-    await expect(request("/write", { method: "POST", body: "{}" })).rejects.toHaveProperty("status", status);
-    expect(loadSession()?.accessToken).toBe("old");
-    expect(writes).toBe(1);
-  });
-  test("a network refresh failure preserves the session", async () => {
-    installTransport(mock(async url => {
-      if (String(url).endsWith("/auth/browser/refresh")) throw new TypeError("offline");
-      return json({}, 401);
-    }));
-    await expect(request("/private")).rejects.toThrow("offline");
-    expect(loadSession()?.accessToken).toBe("old");
-  });
-  test.each([401, 403])("confirmed refresh rejection %i clears this session", async status => {
-    installTransport(mock(async url => json({}, String(url).endsWith("/auth/browser/refresh") ? status : 401)));
-    await expect(request("/private")).rejects.toHaveProperty("status", status);
-    expect(loadSession()).toBeNull();
-  });
-  test("an unexpected refresh identity cannot replace the logged-in user", async () => {
-    installTransport(mock(async url => String(url).endsWith("/auth/browser/refresh") ? json(session(10, "new")) : json({}, 401)));
-    await expect(request("/private")).rejects.toThrow("身份");
-    expect(loadSession()?.user.userId).toBe(9);
   });
 });
 
@@ -299,21 +256,6 @@ describe("complete request deadline and body limits", () => {
   test("declared oversize is rejected before body decoding", async () => {
     installTransport(mock(async () => new Response("{}", { headers: { "Content-Length": "17" } })));
     await expect(request("/json", { maxResponseBytes: 16 })).rejects.toHaveProperty("status", 413);
-  });
-  test("the original deadline remains in force while a shared refresh is waiting", async () => {
-    let opened!: () => void;
-    const refreshOpened = new Promise<void>(resolve => { opened = resolve; });
-    let release!: () => void;
-    const refreshWaiting = new Promise<void>(resolve => { release = resolve; });
-    installTransport(mock(async url => {
-      if (String(url).endsWith("/auth/browser/refresh")) { opened(); await refreshWaiting; return json(session(9, "new")); }
-      return json({}, 401);
-    }));
-    const result = request("/private", { timeoutMs: 25 });
-    await refreshOpened;
-    await expect(result).rejects.toHaveProperty("status", 408);
-    release();
-    await new Promise(resolve => setTimeout(resolve, 0));
   });
 });
 

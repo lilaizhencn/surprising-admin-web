@@ -31,16 +31,14 @@ export function validateSession(value: unknown): AuthSession {
   if (!session || !user || !optionalText(user.username) || !optionalText(user.email)
       || !text(user.status) || !date(user.createdAt)
       || !Array.isArray(user.roles) || user.roles.length > 100 || !user.roles.every(text)
-      || !text(session.accessToken) || (session.browserSession !== true && !text(session.refreshToken))
-      || !date(session.accessTokenExpiresAt) || !date(session.refreshTokenExpiresAt)
-      || Date.parse(session.refreshTokenExpiresAt as string) <= Date.now()) {
+      || (session.sessionExpiresAt != null && !date(session.sessionExpiresAt))) {
     throw new Error("登录会话已失效，请重新登录。");
   }
   positiveInt64(user.userId, "登录用户 ID");
   return session as unknown as AuthSession;
 }
 
-// Access credentials stay in this tab's memory. Only non-secret preferences/device IDs use storage.
+// 登录凭证只在网关写入的 HttpOnly Cookie 里；这里只缓存用户资料，不含任何令牌。
 let memorySession: AuthSession | null = null;
 export function loadSession(): AuthSession | null {
   try { localStorage.removeItem(config.sessionKey); } catch { /* Storage may be disabled. */ }
@@ -54,14 +52,37 @@ export function saveSession(session: AuthSession | null) {
   window.dispatchEvent(new Event("surprising-admin.session-changed"));
 }
 
+/** 页面打开时用 Cookie 向网关确认登录；401 表示未登录或已失效。 */
 export async function restoreBrowserSession(): Promise<void> {
-  try { saveSession(validateSession(await request("/api/v1/auth/browser/refresh", { method: "POST", body: "{}" }, null, false))); }
+  try { saveSession(validateSession(await request("/api/v1/auth/session", {}, null))); }
   catch (error) { if (!(error instanceof ApiError && error.status === 401)) throw error; }
 }
 
 export async function logoutBrowserSession(): Promise<void> {
-  await request("/api/v1/auth/browser/logout", { method: "POST", body: "{}" }, null, false);
+  await request("/api/v1/auth/logout", { method: "POST", body: "{}" }, null);
   saveSession(null);
+}
+
+const CSRF_COOKIE = "surprising-admin-csrf";
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  for (const part of document.cookie.split(";")) {
+    const [key, ...rest] = part.trim().split("=");
+    if (key === name) { try { return decodeURIComponent(rest.join("=")); } catch { return null; } }
+  }
+  return null;
+}
+
+/** CSRF Cookie 缺失（浏览器重启、跨域名读不到）时，先向网关申请再取值。 */
+async function csrfToken(signal: AbortSignal): Promise<string> {
+  const existing = readCookie(CSRF_COOKIE);
+  if (existing) return existing;
+  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}/api/v1/auth/csrf`, { credentials: "include", headers: { "X-Auth-Client": "admin" }, signal }), signal);
+  const text = new TextDecoder().decode(await readBody(response, signal, 2048));
+  if (!response.ok) throw apiError(response, text);
+  const csrf = parseApiJson<{ token: string }>(text);
+  if (typeof csrf.token !== "string" || csrf.token.length > 512) throw new Error("无法建立安全登录会话，请稍后重试。");
+  return readCookie(CSRF_COOKIE) ?? csrf.token;
 }
 
 export function adminGatewayPath(service: string, path = "") {
@@ -82,7 +103,7 @@ export function queryString(params: Record<string, unknown>) {
 export interface AdminRequestInit extends RequestInit {
   productLine?: string;
   expectedUserId?: string;
-  /** Deadline includes refresh, headers, body and decoding. */
+  /** Deadline includes headers, body and decoding. */
   timeoutMs?: number;
   maxResponseBytes?: number;
 }
@@ -149,40 +170,26 @@ function apiError(response: Response, text: string) {
   return new ApiError(response.status, message, payload, retryAfter);
 }
 
-async function fetchBody(path: string, init: AdminRequestInit, session: AuthSession | null, signal: AbortSignal, blob: boolean, allowRefresh: boolean): Promise<{ response: Response; bytes: Uint8Array<ArrayBuffer> }> {
+async function fetchBody(path: string, init: AdminRequestInit, signal: AbortSignal, blob: boolean): Promise<{ response: Response; bytes: Uint8Array<ArrayBuffer> }> {
   const { productLine, expectedUserId, timeoutMs: _timeout, maxResponseBytes, ...requestInit } = init;
   requireOwner(expectedUserId);
   const headers = new Headers(requestInit.headers);
   if (!blob && !(requestInit.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
   if (productLine) headers.set("X-Product-Line", productLine);
+  headers.set("X-Auth-Client", "admin");
   signal.throwIfAborted();
-  const browserAuth = path.startsWith("/api/v1/auth/") && (requestInit.method ?? "GET") !== "GET";
-  const send = async () => {
-  if (browserAuth) {
-    const csrfResponse = await untilAborted(fetch(`${config.gatewayBaseUrl}/api/v1/auth/csrf`, { credentials: "include", headers: {"X-Auth-Client": "admin"}, signal }), signal);
-    const csrfText = new TextDecoder().decode(await readBody(csrfResponse, signal, 2048));
-    if (!csrfResponse.ok) throw apiError(csrfResponse, csrfText);
-    const csrf = parseApiJson<{token: string}>(csrfText);
-    if (typeof csrf.token !== "string" || csrf.token.length > 512) throw new Error("无法建立安全登录会话，请稍后重试。");
-    headers.set("X-XSRF-TOKEN", csrf.token);
-    headers.set("X-Auth-Transport", "cookie");
-    headers.set("X-Auth-Client", "admin");
-    if (!path.endsWith("/verify-email") && !path.endsWith("/resend-email-verification")) headers.delete("Authorization");
+  const method = (requestInit.method ?? "GET").toUpperCase();
+  // 写请求带 CSRF 头；只有登录/注册这类认证接口需要声明用 Cookie 保存会话。
+  if (method !== "GET" && method !== "HEAD") {
+    headers.set("X-CSRF-Token", await csrfToken(signal));
+    if (path.startsWith("/api/v1/auth/")) headers.set("X-Auth-Transport", "cookie");
   }
-  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}${path}`, { ...requestInit, credentials: browserAuth ? "include" : "omit", headers, signal }), signal);
-    return response;
-  };
-  if (browserAuth && (typeof navigator === "undefined" || !navigator.locks))
-    throw new ApiError(0, "请升级浏览器后使用安全登录。", null);
-  const response = browserAuth
-    ? await navigator.locks.request("surprising-admin-browser-session", { signal }, send) : await send();
+  const response = await untilAborted(fetch(`${config.gatewayBaseUrl}${path}`, { ...requestInit, credentials: "include", headers, signal }), signal);
   try { requireOwner(expectedUserId); }
   catch (error) { void response.body?.cancel().catch(() => {}); throw error; }
-  if (response.status === 401 && allowRefresh && session && !path.startsWith("/api/v1/auth/")) {
-    void response.body?.cancel().catch(() => {});
-    const refreshed = await untilAborted(refreshSession(session.accessToken), signal);
-    return fetchBody(path, init, refreshed, signal, blob, false);
+  if (response.status === 401 && expectedUserId !== undefined && !path.startsWith("/api/v1/auth/")) {
+    // 登录已失效（过期、被踢下线、被冻结）：清除本地状态，页面回到登录页。
+    if (String(loadSession()?.user.userId ?? "") === expectedUserId) saveSession(null);
   }
   const bytes = await readBody(response, signal, maxResponseBytes ?? (blob ? 64 : 8) * 1024 * 1024);
   requireOwner(expectedUserId);
@@ -212,52 +219,24 @@ async function withDeadline<T>(init: AdminRequestInit, fallback: number, run: (s
   }
 }
 
-export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<T> {
+export async function request<T>(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<T> {
   init = { ...init, expectedUserId: init.expectedUserId ?? (session ? String(session.user.userId) : undefined) };
   return withDeadline(init, 15_000, async signal => {
-    const { bytes } = await fetchBody(path, init, session, signal, false, allowRefresh);
+    const { bytes } = await fetchBody(path, init, signal, false);
     const text = new TextDecoder().decode(bytes);
     return text ? parseApiJson<T>(text) : undefined as T;
   });
 }
 
 /** File downloads share authentication, ownership, size and deadline checks. */
-export async function requestFile(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<{ blob: Blob; headers: Headers }> {
+export async function requestFile(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<{ blob: Blob; headers: Headers }> {
   init = { ...init, expectedUserId: init.expectedUserId ?? (session ? String(session.user.userId) : undefined) };
   return withDeadline(init, 120_000, async signal => {
-    const { response, bytes } = await fetchBody(path, init, session, signal, true, allowRefresh);
+    const { response, bytes } = await fetchBody(path, init, signal, true);
     return { blob: new Blob([bytes], { type: response.headers.get("Content-Type") ?? "" }), headers: response.headers };
   });
 }
 
-export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession(), allowRefresh = true): Promise<Blob> {
-  return (await requestFile(path, init, session, allowRefresh)).blob;
-}
-
-let refreshInFlight: { token: string; promise: Promise<AuthSession> } | null = null;
-function refreshSession(accessToken: string): Promise<AuthSession> {
-  if (refreshInFlight?.token === accessToken) return refreshInFlight.promise;
-  const promise = refreshSessionOnce(accessToken).finally(() => {
-    if (refreshInFlight?.promise === promise) refreshInFlight = null;
-  });
-  refreshInFlight = { token: accessToken, promise };
-  return promise;
-}
-
-async function refreshSessionOnce(accessToken: string): Promise<AuthSession> {
-  const owner = String(loadSession()?.user.userId);
-  const current = () => loadSession()?.accessToken === accessToken && String(loadSession()?.user.userId) === owner;
-  if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
-  try {
-    const next = validateSession(await request<unknown>("/api/v1/auth/browser/refresh", {
-      method: "POST", body: "{}"
-    }, null, false));
-    if (!current()) throw new ApiError(401, "登录会话已变化，请重新打开当前页面。", null);
-    if (String(next.user.userId) !== String(loadSession()?.user.userId)) throw new Error("刷新身份与当前账号不一致，请重新登录。");
-    saveSession(next);
-    return next;
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403) && current()) saveSession(null);
-    throw error;
-  }
+export async function requestBlob(path: string, init: AdminRequestInit = {}, session = loadSession()): Promise<Blob> {
+  return (await requestFile(path, init, session)).blob;
 }

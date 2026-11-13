@@ -65,7 +65,7 @@ await context.route(
     let status = 200,
       data = {};
     if (url.pathname.endsWith("/csrf")) data={token:"test-only-csrf"};
-    else if(url.pathname.endsWith("/browser/refresh")) data={accessToken:"admin-withdrawal-fixture",browserSession:true,accessTokenExpiresAt:"2030-01-01T00:00:00Z",refreshTokenExpiresAt:"2030-01-01T00:00:00Z",user:{userId:"1",username:"管理员",roles:["SUPER_ADMIN"],status:"ACTIVE",createdAt:"2026-01-01T00:00:00Z"}};
+    else if(url.pathname.endsWith("/auth/session")) data={accessToken:"admin-withdrawal-fixture",browserSession:true,accessTokenExpiresAt:"2030-01-01T00:00:00Z",refreshTokenExpiresAt:"2030-01-01T00:00:00Z",user:{userId:"1",username:"管理员",roles:["SUPER_ADMIN"],status:"ACTIVE",createdAt:"2026-01-01T00:00:00Z"}};
     else if (url.pathname === "/api/v1/admin/wallet/withdrawals") {
       const selected = url.searchParams.get("status") || "PENDING_APPROVAL";
       if (holdStatus === selected) await new Promise((resolve) => (releaseRead = resolve));

@@ -42,11 +42,10 @@ export interface AuthenticatedUser {
 
 export interface AuthSession {
   user: AuthenticatedUser;
-  accessToken: string;
-  refreshToken?: string | null;
+  /** 浏览器会话标记；令牌本身只在 HttpOnly Cookie 里，不会出现在响应体。 */
   browserSession?: boolean;
-  accessTokenExpiresAt: string;
-  refreshTokenExpiresAt: string;
+  /** 会话是滑动有效期，这里只是登录时给出的参考上限。 */
+  sessionExpiresAt?: string | null;
 }
 
 export interface QueryState<T> {

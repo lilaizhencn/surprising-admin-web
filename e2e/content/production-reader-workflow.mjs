@@ -18,7 +18,7 @@ try {
     },theme);
     await context.route("**/api/v1/auth/**",route=>{
       const path=new URL(route.request().url()).pathname;
-      return route.fulfill({status:path.endsWith("/refresh")?401:200,contentType:"application/json",body:JSON.stringify(path.endsWith("/csrf")?{token:"controlled-csrf"}:{enabled:false,webClientId:null})});
+      return route.fulfill({status:path.endsWith("/session")?401:200,contentType:"application/json",body:JSON.stringify(path.endsWith("/csrf")?{token:"controlled-csrf"}:{enabled:false,webClientId:null})});
     });
     const page=await context.newPage(),errors=[];page.on("pageerror",error=>errors.push(error.message));
     page.on("requestfailed",request=>console.log("Failed request",request.url(),request.failure()?.errorText));
