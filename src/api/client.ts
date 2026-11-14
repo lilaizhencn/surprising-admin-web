@@ -87,7 +87,36 @@ async function csrfToken(signal: AbortSignal): Promise<string> {
 
 export function adminGatewayPath(service: string, path = "") {
   const normalizedPath = path && path.startsWith("/") ? path : `/${path}`;
-  return `/api/v1/admin/gateway/${service}${path ? normalizedPath : ""}`;
+  const suffix = path ? normalizedPath : "";
+  switch (service) {
+    case "instrument":
+      return `/api/v1/instruments${suffix}`;
+    case "instrument-admin":
+      return `/api/v1/instruments/admin${suffix}`;
+    case "trading":
+    case "trading-orders":
+      return `/api/v1/admin/trading/orders${suffix}`;
+    case "trading-leverage":
+      return `/api/v1/admin/trading/leverage${suffix}`;
+    case "trading-fees":
+      return `/api/v1/admin/trading/fees${suffix}`;
+    case "trading-market":
+      return `/api/v1/trading/market${suffix}`;
+    case "trading-trigger":
+      return `/api/v1/admin/trading/trigger-orders${suffix}`;
+    case "account":
+      return `/api/v1/admin/accounts${suffix}`;
+    case "account-public":
+      return `/api/v1/accounts${suffix}`;
+    case "market-maker":
+      return `/api/v1/admin/market-maker${suffix}`;
+    case "wallet":
+      return `/wallet/v1${suffix}`;
+    case "wallet-admin":
+      return `/wallet/v1/admin${suffix}`;
+    default:
+      return `/api/v1/admin/${service}${suffix}`;
+  }
 }
 
 export function queryString(params: Record<string, unknown>) {
