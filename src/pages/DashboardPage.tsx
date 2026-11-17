@@ -1,124 +1,216 @@
-import { positiveInt32 } from "../lib/integers";
-import { useState, useEffect, useRef } from "react";
-import { instruments as instrumentList, gatewayGet } from "../api/admin";
-import { type UnknownRecord, type Instrument } from "../types";
-import { formatValue } from "../config";
-import { RefreshCw } from "lucide-react";
-import { productLineForInstrument } from "../lib/products";
-import { ADL_QUEUE_SORT } from "../lib/queryOptions";
-import { errorMessage, records } from "../lib/adminData";
-import { Page, Metric, TwoColumn, Panel, DataTable, Empty } from "../components/AdminUi";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight } from "lucide-react";
+import { request } from "../api/client";
+import { Metric, Page, Panel } from "../components/AdminUi";
+import { errorMessage } from "../lib/adminData";
+import type { ProductLine, RouteKey } from "../types";
+import "./DashboardPage.css";
 
-export default function DashboardPage() {
-  const [state, setState] = useState(loadable<DashboardData>());
-  const [instrumentId, setInstrumentId] = useState("");
-  const [asset, setAsset] = useState("USDT");
-  const requestVersion = useRef(0);
+interface ProductLineSummary {
+  productLine: ProductLine;
+  totalInstruments: number;
+  tradingInstruments: number;
+}
+
+interface SystemOverviewResponse {
+  generatedAt: string;
+  totalUsers: number;
+  todayRegistrations: number;
+  totalDepositsUsdt: number | string;
+  todayWithdrawalsUsdt: number | string;
+  totalWithdrawalsUsdt: number | string;
+  productLines: ProductLineSummary[];
+}
+
+interface RuntimeStatusResponse {
+  productLines?: string[];
+}
+
+const PRODUCT_LINE_META: ReadonlyArray<{
+  productLine: ProductLine;
+  title: string;
+  subtitle: string;
+  route: RouteKey;
+}> = [
+  { productLine: "SPOT", title: "现货", subtitle: "Spot 币币交易对", route: "markets-spot" },
+  {
+    productLine: "LINEAR_PERPETUAL",
+    title: "U本位永续",
+    subtitle: "USDT 结算永续合约",
+    route: "markets-linear-perp",
+  },
+  {
+    productLine: "INVERSE_PERPETUAL",
+    title: "币本位永续",
+    subtitle: "币本位反向永续合约",
+    route: "markets-inverse-perp",
+  },
+  {
+    productLine: "LINEAR_DELIVERY",
+    title: "U本位交割",
+    subtitle: "USDT 结算交割合约",
+    route: "markets-linear-delivery",
+  },
+  {
+    productLine: "INVERSE_DELIVERY",
+    title: "币本位交割",
+    subtitle: "币本位反向交割合约",
+    route: "markets-inverse-delivery",
+  },
+  { productLine: "OPTION", title: "期权", subtitle: "欧式/美式期权合约", route: "markets-option" },
+];
+
+function formatUsdt(value: number | string | undefined): string {
+  const num = Number(value ?? 0);
+  if (!Number.isFinite(num)) return "0.00";
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+}
+
+export default function DashboardPage({
+  onNavigate,
+}: {
+  onNavigate: (route: RouteKey) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<SystemOverviewResponse | null>(null);
+  const [activeLines, setActiveLines] = useState<Set<string>>(new Set());
   const pending = useRef(false);
 
   async function load() {
     if (pending.current) return;
     pending.current = true;
-    const version = ++requestVersion.current;
-    setState({ loading: true, error: null, data: null });
+    setLoading(true);
+    setError(null);
     try {
-      const selectedId = instrumentId.trim() ? positiveInt32(instrumentId) : "";
-      const instruments = await instrumentList({ limit: 200, sort: "symbol.asc" });
-      if (version !== requestVersion.current) return;
-      const instrumentRows = instruments.instruments ?? instruments.items ?? [];
-      const selectedInstrument = instrumentRows.find((item) => String(item.instrumentId) === selectedId);
-      if (selectedId && !selectedInstrument) throw new Error("当前合约目录未找到此 ID，请在产品市场确认合约及产品线。");
-      const productLine = productLineForInstrument(selectedInstrument);
-      const shouldLoadFunding = !selectedInstrument || isFundingInstrument(selectedInstrument);
-      const fundingRequest = shouldLoadFunding
-        ? gatewayGet<UnknownRecord>("funding", "/admin/rates/latest", { instrumentId, productLine }).catch(() => null)
-        : Promise.resolve(null);
-      const [candidates, liquidations, insurance, adl, makers, funding] = await Promise.all([
-        gatewayGet<{ candidates?: UnknownRecord[]; items?: UnknownRecord[] }>("risk-admin", "/liquidation-candidates", { status: "NEW", productLine, limit: 50 }),
-        gatewayGet<{ orders?: UnknownRecord[]; items?: UnknownRecord[] }>("liquidation-admin", "/orders", { productLine, limit: 50 }),
-        gatewayGet<{ balances?: UnknownRecord[]; items?: UnknownRecord[] }>("insurance-admin", "/balances", { asset, productLine }),
-        gatewayGet<{ positions?: UnknownRecord[]; items?: UnknownRecord[] }>("adl", "/admin/queue", { asset, productLine, limit: 50, sort: ADL_QUEUE_SORT }),
-        gatewayGet<{ strategies?: UnknownRecord[]; items?: UnknownRecord[] }>("market-maker", "/strategies", { productLine }),
-        fundingRequest
+      const [overviewRes, runtimeRes] = await Promise.all([
+        request<SystemOverviewResponse>("/api/v1/admin/system/overview"),
+        request<RuntimeStatusResponse>("/api/v1/runtime").catch(() => ({ productLines: [] })),
       ]);
-      if (version !== requestVersion.current) return;
-      setState({
-        loading: false,
-        error: null,
-        data: {
-          instruments: instrumentRows,
-          candidates: candidates.candidates ?? candidates.items ?? [],
-          liquidations: liquidations.orders ?? liquidations.items ?? [],
-          insurance: insurance.balances ?? insurance.items ?? [],
-          adl: adl.positions ?? adl.items ?? [],
-          makers: makers.strategies ?? makers.items ?? [],
-          funding
-        }
-      });
+      setOverview(overviewRes);
+      setActiveLines(new Set(runtimeRes.productLines ?? []));
     } catch (err) {
-      if (version === requestVersion.current) setState({ loading: false, error: errorMessage(err), data: null });
+      setError(errorMessage(err));
     } finally {
-      if (version === requestVersion.current) pending.current = false;
+      pending.current = false;
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     void load();
-    return () => { requestVersion.current++; pending.current = false; };
   }, []);
 
-  const data = state.data;
-  const selectedInstrument = data?.instruments.find((item) => String(item.instrumentId) === instrumentId);
-  const fundingMetric = selectedInstrument && !isFundingInstrument(selectedInstrument)
-    ? "非永续"
-    : formatValue(data?.funding?.fundingRatePpm ?? data?.funding?.fundingRate);
+  const lineMap = new Map(
+    (overview?.productLines ?? []).map((item) => [item.productLine, item]),
+  );
+
   return (
-    <Page title="运营总览" description="查看当前查询范围内的产品、资金与风险状态。未成功载入的数据以横线显示。" onRefresh={load} loading={state.loading} error={state.error}>
-      <div className="filters compact">
-        <label>合约 ID<input inputMode="numeric" placeholder="永久合约 ID，可留空" value={instrumentId} onChange={(event) => setInstrumentId(event.target.value.toUpperCase())} /></label>
-        <label>Asset<input value={asset} onChange={(event) => setAsset(event.target.value.toUpperCase())} /></label>
-        <button onClick={load} disabled={state.loading}><RefreshCw size={16} />刷新</button>
+    <Page
+      title="平台运营总览"
+      description="展示平台全局用户与资金核心指标，以及 6 条产品线各自的币对统计。点击产品线卡片可直达对应币对管理页。"
+      loading={loading}
+      error={error}
+    >
+      <div className="dashboard-toolbar">
+        <span className="dashboard-timestamp">
+          {overview?.generatedAt
+            ? `统计时间：${new Date(overview.generatedAt).toLocaleString()}`
+            : "正在同步平台统计…"}
+        </span>
       </div>
-      <div className="metrics">
-        <Metric label="上线产品" value={data?.instruments.filter((item) => item.status === "TRADING").length ?? "—"} tone={data ? "ok" : "muted"} />
-        <Metric label="爆仓候选" value={data?.candidates.length ?? "—"} tone={!data ? "muted" : data.candidates.length > 0 ? "danger" : "ok"} />
-        <Metric label="强平订单" value={data?.liquidations.length ?? "—"} tone={!data ? "muted" : data.liquidations.length > 0 ? "warn" : "ok"} />
-        <Metric label="ADL 队列" value={data?.adl.length ?? "—"} tone={!data ? "muted" : data.adl.length > 0 ? "warn" : "ok"} />
-        <Metric label="做市策略" value={data?.makers.length ?? "—"} tone="muted" />
-        <Metric label="资金费率" value={fundingMetric} tone="muted" />
+
+      <div className="dashboard-metrics">
+        <Metric
+          label="用户总数"
+          value={overview ? overview.totalUsers.toLocaleString("en-US") : "—"}
+          tone="ok"
+        />
+        <Metric
+          label="今日注册总数"
+          value={overview ? overview.todayRegistrations.toLocaleString("en-US") : "—"}
+          tone="muted"
+        />
+        <button
+          type="button"
+          className="dashboard-kpi-link"
+          onClick={() => onNavigate("wallet")}
+          title="点击进入钱包管理页面查看各币种充提汇总"
+        >
+          <Metric
+            label="平台充值总资产 (USDT) →"
+            value={overview ? formatUsdt(overview.totalDepositsUsdt) : "—"}
+            tone="ok"
+          />
+        </button>
+        <button
+          type="button"
+          className="dashboard-kpi-link"
+          onClick={() => onNavigate("wallet")}
+          title="点击进入钱包管理页面查看各币种充提汇总"
+        >
+          <Metric
+            label="今日累计提现 (USDT) →"
+            value={overview ? formatUsdt(overview.todayWithdrawalsUsdt) : "—"}
+            tone="warn"
+          />
+        </button>
+        <button
+          type="button"
+          className="dashboard-kpi-link"
+          onClick={() => onNavigate("wallet")}
+          title="点击进入钱包管理页面查看各币种充提汇总"
+        >
+          <Metric
+            label="历史累计提现 (USDT) →"
+            value={overview ? formatUsdt(overview.totalWithdrawalsUsdt) : "—"}
+            tone="muted"
+          />
+        </button>
       </div>
-      <TwoColumn>
-        <Panel title="保险基金">
-          {data ? <DataTable rows={records(data.insurance)} maxColumns={8} /> : <Empty text={state.loading ? "正在加载保险基金…" : "保险基金尚未载入，请重新加载。"} />}
-        </Panel>
-        <Panel title="风险候选">
-          {data ? <DataTable rows={records(data.candidates)} maxColumns={8} /> : <Empty text={state.loading ? "正在加载风险候选…" : "风险候选尚未载入，请重新加载。"} />}
-        </Panel>
-      </TwoColumn>
+
+      <Panel title="六大产品线币对总览">
+        <div className="product-line-grid">
+          {PRODUCT_LINE_META.map((meta) => {
+            const summary = lineMap.get(meta.productLine);
+            const trading = summary?.tradingInstruments ?? 0;
+            const total = summary?.totalInstruments ?? 0;
+            const enabled = activeLines.has(meta.productLine);
+            return (
+              <button
+                key={meta.productLine}
+                type="button"
+                className="product-line-card"
+                onClick={() => onNavigate(meta.route)}
+              >
+                <div className="product-line-card-head">
+                  <span className="product-line-title">{meta.title}</span>
+                  <span className={`product-line-status${enabled ? " active" : ""}`}>
+                    <span className="product-line-status-dot" aria-hidden="true" />
+                    {enabled ? "运行中" : "未启动"}
+                  </span>
+                </div>
+                <span className="product-line-meta">
+                  {meta.subtitle} · {meta.productLine}
+                </span>
+                <div className="product-line-card-foot">
+                  <span className="product-line-count">
+                    <strong>{overview ? `${trading} / ${total}` : "—"}</strong>
+                    <span>可交易 / 总币对</span>
+                  </span>
+                  <span className="product-line-action">
+                    币对管理
+                    <ArrowRight size={14} aria-hidden="true" />
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Panel>
     </Page>
   );
-}
-
-function isFundingInstrument(instrument?: Instrument | null): boolean {
-  const instrumentType = String(instrument?.instrumentType ?? "");
-  const contractType = String(instrument?.contractType ?? "");
-  return instrumentType === "PERPETUAL"
-    || contractType === "LINEAR_PERPETUAL"
-    || contractType === "INVERSE_PERPETUAL"
-    || contractType === "LINEAR"
-    || contractType === "INVERSE";
-}
-
-function loadable<T>() {
-  return { loading: false, error: null, data: null } as { loading: boolean; error: string | null; data: T | null };
-}
-
-interface DashboardData {
-  instruments: Instrument[];
-  candidates: UnknownRecord[];
-  liquidations: UnknownRecord[];
-  insurance: UnknownRecord[];
-  adl: UnknownRecord[];
-  makers: UnknownRecord[];
-  funding: UnknownRecord | null;
 }

@@ -1,10 +1,12 @@
+import { Select } from "../components/CustomSelect";
 import { assetCode } from "../lib/formValues";
 import { useState, useEffect } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { gatewayGet, gatewayPost } from "../api/admin";
 import { type UnknownRecord } from "../types";
 import { int64String } from "../lib/integers";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, KeyValue, CursorPager, DataTable, TwoColumn } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, KeyValue, CursorPager, DataTable, TwoColumn, TabBar } from "../components/AdminUi";
 import { errorMessage, records } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
 import { EVENT_TIME_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
@@ -13,6 +15,7 @@ import { RuntimeConfigPanel } from "../components/RuntimeConfigPanel";
 const isFundingProductLine = (productLine: string) => !productLine || productLine === "LINEAR_PERPETUAL" || productLine === "INVERSE_PERPETUAL";
 
 export default function FundingInsurancePage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [instrumentId, setInstrumentId] = useState("");
   const [asset, setAsset] = useState("USDT");
   const [fundingUserId, setFundingUserId] = useState("");
@@ -28,6 +31,7 @@ export default function FundingInsurancePage() {
     coverageCursor: ""
   });
   const [ratePageInfo, setRatePageInfo] = useState(cursorInfo());
+  const [tab, setTab] = useState<"funding" | "insurance" | "runtime">("funding");
   const [paymentPageInfo, setPaymentPageInfo] = useState(cursorInfo());
   const [ledgerPageInfo, setLedgerPageInfo] = useState(cursorInfo());
   const [coveragePageInfo, setCoveragePageInfo] = useState(cursorInfo());
@@ -139,7 +143,7 @@ export default function FundingInsurancePage() {
       const amountUnits = int64String(adjust.amountUnits, "调整金额");
       const selectedAsset = assetCode(asset);
       if (!adjust.referenceId.trim() || !adjust.reason.trim()) throw new Error("请填写唯一业务编号和调整原因。");
-      if (!window.confirm(`确认调整 ${listFilters.productLine || "全部产品线"} ${selectedAsset} 保险基金 ${amountUnits} 最小单位？`)) return;
+      if (!(await confirm({ title: "确认调整保险基金", description: `${listFilters.productLine || "全部产品线"} ${selectedAsset} 保险基金调整 ${amountUnits} 最小单位。`, danger: true }))) return;
       await gatewayPost("insurance-admin", "/fund-adjustments", {
         asset: selectedAsset, amountUnits, referenceId: adjust.referenceId.trim(), reason: adjust.reason.trim()
       }, { productLine: listFilters.productLine });
@@ -154,7 +158,7 @@ export default function FundingInsurancePage() {
   return (
     <Page title="资金费与保险基金" onRefresh={() => load()} loading={loading} error={error}>
       <div className="filters">
-        <label>产品线<select value={listFilters.productLine} onChange={(event) => updateListFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
+        <label>产品线<Select value={listFilters.productLine} onChange={(event) => updateListFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</Select></label>
         <TextFilter label="币对 ID" value={instrumentId} onChange={(value) => { setInstrumentId(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetFundingCursors(); }} />
         <TextFilter label="付款 User ID" value={fundingUserId} onChange={(value) => { setFundingUserId(value); resetFundingCursors(); }} />
@@ -164,61 +168,82 @@ export default function FundingInsurancePage() {
         <SortSelect label="保险排序" value={listFilters.insuranceSort} options={CREATED_AT_SORTS} onChange={(value) => updateListFilters({ insuranceSort: value })} />
         <button onClick={() => void load()}><Search size={16} />查询</button>
       </div>
-      <div className="two-grid">
-        <Panel title="最新资金费"><KeyValue data={data?.latest ?? {}} /></Panel>
-        <Panel title="最新结算"><KeyValue data={data?.settlement ?? {}} /></Panel>
-        <Panel title="资金费历史">
-          <CursorPager
-            page={ratePageInfo}
-            cursor={listFilters.rateCursor}
-            onNext={() => void load(ratePageInfo.nextCursor || "", listFilters.paymentCursor, listFilters.ledgerCursor, listFilters.coverageCursor)}
-            onReset={() => void load("", listFilters.paymentCursor, listFilters.ledgerCursor, listFilters.coverageCursor)}
-          />
-          <DataTable rows={records(data?.history)} maxColumns={9} />
-        </Panel>
-        <Panel title="资金费付款">
-          <CursorPager
-            page={paymentPageInfo}
-            cursor={listFilters.paymentCursor}
-            onNext={() => void load(listFilters.rateCursor, paymentPageInfo.nextCursor || "", listFilters.ledgerCursor, listFilters.coverageCursor)}
-            onReset={() => void load(listFilters.rateCursor, "", listFilters.ledgerCursor, listFilters.coverageCursor)}
-          />
-          <DataTable rows={records(data?.payments)} maxColumns={9} />
-        </Panel>
-        <Panel title="保险基金余额"><DataTable rows={records(data?.balances)} /></Panel>
-        <Panel title="保险基金流水">
-          <CursorPager
-            page={ledgerPageInfo}
-            cursor={listFilters.ledgerCursor}
-            onNext={() => void load(listFilters.rateCursor, listFilters.paymentCursor, ledgerPageInfo.nextCursor || "", listFilters.coverageCursor)}
-            onReset={() => void load(listFilters.rateCursor, listFilters.paymentCursor, "", listFilters.coverageCursor)}
-          />
-          <DataTable rows={records(data?.ledger)} maxColumns={9} />
-        </Panel>
-        <Panel title="亏损覆盖">
-          <CursorPager
-            page={coveragePageInfo}
-            cursor={listFilters.coverageCursor}
-            onNext={() => void load(listFilters.rateCursor, listFilters.paymentCursor, listFilters.ledgerCursor, coveragePageInfo.nextCursor || "")}
-            onReset={() => void load(listFilters.rateCursor, listFilters.paymentCursor, listFilters.ledgerCursor, "")}
-          />
-          <DataTable rows={records(data?.coverages)} maxColumns={9} />
-        </Panel>
-      </div>
-      <Panel title="保险基金人工调整">
-        <div className="filters">
-          <label>金额 Units<input value={adjust.amountUnits} onChange={(event) => setAdjust({ ...adjust, amountUnits: event.target.value })} /></label>
-          <label>Reference ID<input value={adjust.referenceId} onChange={(event) => setAdjust({ ...adjust, referenceId: event.target.value })} /></label>
-          <label>原因<input value={adjust.reason} onChange={(event) => setAdjust({ ...adjust, reason: event.target.value })} /></label>
-          <button className="primary" disabled={loading} onClick={() => void adjustFund()}>调整保险基金</button>
+      <TabBar
+        label="资金费与保险基金视图"
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { key: "funding", label: "资金费率与结算", badge: records(data?.history).length },
+          { key: "insurance", label: "保险基金与人工调账", badge: records(data?.balances).length },
+          { key: "runtime", label: "引擎运行时配置" },
+        ]}
+      />
+      {tab === "funding" && (
+        <div className="two-grid">
+          <Panel title="最新资金费"><KeyValue data={data?.latest ?? {}} /></Panel>
+          <Panel title="最新结算"><KeyValue data={data?.settlement ?? {}} /></Panel>
+          <Panel title="资金费历史">
+            <CursorPager
+              page={ratePageInfo}
+              cursor={listFilters.rateCursor}
+              onNext={() => void load(ratePageInfo.nextCursor || "", listFilters.paymentCursor, listFilters.ledgerCursor, listFilters.coverageCursor)}
+              onReset={() => void load("", listFilters.paymentCursor, listFilters.ledgerCursor, listFilters.coverageCursor)}
+            />
+            <DataTable rows={records(data?.history)} maxColumns={9} />
+          </Panel>
+          <Panel title="资金费付款">
+            <CursorPager
+              page={paymentPageInfo}
+              cursor={listFilters.paymentCursor}
+              onNext={() => void load(listFilters.rateCursor, paymentPageInfo.nextCursor || "", listFilters.ledgerCursor, listFilters.coverageCursor)}
+              onReset={() => void load(listFilters.rateCursor, "", listFilters.ledgerCursor, listFilters.coverageCursor)}
+            />
+            <DataTable rows={records(data?.payments)} maxColumns={9} />
+          </Panel>
         </div>
-      </Panel>
-      <TwoColumn>
-        {isFundingProductLine(listFilters.productLine) && (
-          <RuntimeConfigPanel key={`funding-${listFilters.productLine}`} title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} productLine={listFilters.productLine} />
-        )}
-        <RuntimeConfigPanel key={`insurance-admin-${listFilters.productLine}`} title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} productLine={listFilters.productLine} />
-      </TwoColumn>
+      )}
+      {tab === "insurance" && (
+        <>
+          <div className="two-grid">
+            <Panel title="保险基金余额"><DataTable rows={records(data?.balances)} /></Panel>
+            <Panel title="保险基金流水">
+              <CursorPager
+                page={ledgerPageInfo}
+                cursor={listFilters.ledgerCursor}
+                onNext={() => void load(listFilters.rateCursor, listFilters.paymentCursor, ledgerPageInfo.nextCursor || "", listFilters.coverageCursor)}
+                onReset={() => void load(listFilters.rateCursor, listFilters.paymentCursor, "", listFilters.coverageCursor)}
+              />
+              <DataTable rows={records(data?.ledger)} maxColumns={9} />
+            </Panel>
+            <Panel title="亏损覆盖">
+              <CursorPager
+                page={coveragePageInfo}
+                cursor={listFilters.coverageCursor}
+                onNext={() => void load(listFilters.rateCursor, listFilters.paymentCursor, listFilters.ledgerCursor, coveragePageInfo.nextCursor || "")}
+                onReset={() => void load(listFilters.rateCursor, listFilters.paymentCursor, listFilters.ledgerCursor, "")}
+              />
+              <DataTable rows={records(data?.coverages)} maxColumns={9} />
+            </Panel>
+          </div>
+          <Panel title="保险基金人工调整">
+            <div className="filters">
+              <label>金额 Units<input value={adjust.amountUnits} onChange={(event) => setAdjust({ ...adjust, amountUnits: event.target.value })} /></label>
+              <label>Reference ID<input value={adjust.referenceId} onChange={(event) => setAdjust({ ...adjust, referenceId: event.target.value })} /></label>
+              <label>原因<input value={adjust.reason} onChange={(event) => setAdjust({ ...adjust, reason: event.target.value })} /></label>
+              <button className="primary" disabled={loading} onClick={() => void adjustFund()}>调整保险基金</button>
+            </div>
+          </Panel>
+        </>
+      )}
+      {tab === "runtime" && (
+        <TwoColumn>
+          {isFundingProductLine(listFilters.productLine) && (
+            <RuntimeConfigPanel key={`funding-${listFilters.productLine}`} title="资金费运行时配置" service="funding" path="/admin/runtime-config" template={{ calculationEnabled: false, settlementEnabled: false }} productLine={listFilters.productLine} />
+          )}
+          <RuntimeConfigPanel key={`insurance-admin-${listFilters.productLine}`} title="保险基金运行时配置" service="insurance-admin" path="/runtime-config" template={{ coverageEnabled: false }} productLine={listFilters.productLine} />
+        </TwoColumn>
+      )}
+      {dialog}
     </Page>
   );
 }

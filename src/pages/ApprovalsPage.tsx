@@ -1,4 +1,6 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect, useRef } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { approvalRequests, approveApproval, rejectApproval } from "../api/admin";
 import { loadSession } from "../api/client";
 import { Search } from "lucide-react";
@@ -23,6 +25,7 @@ import {
 } from "../lib/securityReview";
 import { REQUESTED_AT_SORTS } from "../lib/queryOptions";
 export default function ApprovalsPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [filters, setFilters] = useState({
     status: "PENDING",
     requesterUserId: "",
@@ -112,9 +115,11 @@ export default function ApprovalsPage() {
     }
     const row = selected;
     if (
-      !window.confirm(
-        `${decision === "approve" ? "批准" : "驳回"}审批 ${row.approvalId}\n申请人：${row.requesterUsername} (${row.requesterUserId})\n目标：${row.service} · ${row.httpMethod} ${row.requestPath}\n查询：${row.queryString || "无"}\n正文 SHA-256：${row.requestBodySha256 || "无"}\n意见：${reason.trim()}\n本决定不自动执行业务操作，是否继续？`,
-      )
+      !(await confirm({
+        title: `${decision === "approve" ? "批准" : "驳回"}审批 ${row.approvalId}`,
+        description: `申请人：${row.requesterUsername} (${row.requesterUserId})\n目标：${row.service} · ${row.httpMethod} ${row.requestPath}\n查询：${row.queryString || "无"}\n正文 SHA-256：${row.requestBodySha256 || "无"}\n意见：${reason.trim()}\n本决定不自动执行业务操作，是否继续？`,
+        danger: decision === "reject",
+      }))
     )
       return;
     lock.current = true;
@@ -194,7 +199,7 @@ export default function ApprovalsPage() {
         <div className="filters">
           <label>
             状态
-            <select
+            <Select
               value={filters.status}
               onChange={(event) => filter({ status: event.target.value })}
             >
@@ -203,7 +208,7 @@ export default function ApprovalsPage() {
               <option>APPROVED</option>
               <option>REJECTED</option>
               <option>CONSUMED</option>
-            </select>
+            </Select>
           </label>
           <TextFilter
             label="申请人 ID"
@@ -348,6 +353,7 @@ export default function ApprovalsPage() {
           </Panel>
         )}
       </fieldset>
+      {dialog}
     </Page>
   );
 }

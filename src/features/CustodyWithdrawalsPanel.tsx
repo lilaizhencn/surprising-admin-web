@@ -1,4 +1,6 @@
+import { Select } from "../components/CustomSelect";
 import { useEffect, useRef, useState } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { Check, RefreshCw, Search, ShieldCheck, X } from "lucide-react";
 import {
   actOnCustodyWithdrawal,
@@ -58,6 +60,7 @@ const actionLabels: Record<CustodyWithdrawalAction, string> = {
 };
 
 export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: number }) {
+  const { confirm, dialog } = useConfirmDialog();
   const [status, setStatus] = useState("PENDING_APPROVAL");
   const [limit, setLimit] = useState("50");
   const [query, setQuery] = useState("");
@@ -144,9 +147,11 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
       return;
     }
     if (
-      !window.confirm(
-        `确认${actionLabels[action]}？\n用户：${row.userId}\n来源：SPOT 资金账户\n总扣款：${row.amount} ${row.assetSymbol}\n平台手续费（内扣）：${row.platformFee} ${row.assetSymbol}\n收款金额：${row.receivedAmount} ${row.assetSymbol}\n网络：${row.chain}\n收款地址：${row.toAddress}\n申请：${row.withdrawalId}\n原因：${reason.trim()}`,
-      )
+      !(await confirm({
+        title: `确认${actionLabels[action]}？`,
+        description: `用户：${row.userId}\n来源：SPOT 资金账户\n总扣款：${row.amount} ${row.assetSymbol}\n平台手续费（内扣）：${row.platformFee} ${row.assetSymbol}\n收款金额：${row.receivedAmount} ${row.assetSymbol}\n网络：${row.chain}\n收款地址：${row.toAddress}\n申请：${row.withdrawalId}\n原因：${reason.trim()}`,
+        danger: true,
+      }))
     )
       return;
     pendingWrite.current = true;
@@ -182,7 +187,7 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
           <div className="filters">
             <label>
               平台提现状态
-              <select
+              <Select
                 value={status}
                 onChange={(event) => {
                   setStatus(event.target.value);
@@ -196,17 +201,17 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
                     {statusLabels[status]} · {status}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label>
               最多读取
-              <select value={limit} onChange={(event) => setLimit(event.target.value)}>
+              <Select value={limit} onChange={(event) => setLimit(event.target.value)}>
                 {[50, 100, 200].map((value) => (
                   <option key={value} value={value}>
                     {value} 条
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="custody-withdrawal-search">
               筛选已加载申请
@@ -436,6 +441,7 @@ export function CustodyWithdrawalsPanel({ refreshKey = 0 }: { refreshKey?: numbe
           ) : null}
         </fieldset>
       </Panel>
+      {dialog}
     </div>
   );
 }

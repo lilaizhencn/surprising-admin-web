@@ -1,3 +1,4 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { queryTasks, queryTaskLimits, createQueryTask, archiveExpiredQueryTasks, queryTask } from "../api/admin";
@@ -173,15 +174,15 @@ export default function QueryTasksPage() {
     <Page title="查询任务" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
         <label>状态
-          <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, cursor: "" })}>
+          <Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, cursor: "" })}>
             {JOB_STATUSES.map((status) => <option key={status || "ALL"} value={status}>{status || "全部"}</option>)}
-          </select>
+          </Select>
         </label>
         <label>查询类型
-          <select value={filters.queryType} onChange={(event) => setFilters({ ...filters, queryType: event.target.value, cursor: "" })}>
+          <Select value={filters.queryType} onChange={(event) => setFilters({ ...filters, queryType: event.target.value, cursor: "" })}>
             <option value="">全部</option>
             {QUERY_TASK_TYPES.map((item) => <option key={item}>{item}</option>)}
-          </select>
+          </Select>
         </label>
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => setFilters({ ...filters, limit: value, cursor: "" })} />
         <SortSelect value={filters.sort} options={REQUESTED_AT_SORTS} onChange={(value) => setFilters({ ...filters, sort: value, cursor: "" })} />
@@ -236,9 +237,9 @@ export default function QueryTasksPage() {
         <Panel title="创建查询任务">
           <div className="stack">
             <label>查询类型
-              <select value={createState.queryType} onChange={(event) => chooseType(event.target.value)}>
+              <Select value={createState.queryType} onChange={(event) => chooseType(event.target.value)}>
                 {QUERY_TASK_TYPES.map((item) => <option key={item}>{item}</option>)}
-              </select>
+              </Select>
             </label>
             <textarea
               className="json-editor"

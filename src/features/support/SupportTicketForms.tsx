@@ -1,4 +1,6 @@
+import { Select } from "../../components/CustomSelect";
 import { useEffect, useRef, useState } from "react";
+import { useConfirmDialog } from "../../components/ConfirmDialog";
 import { Check, MessageSquarePlus, Plus, RefreshCw } from "lucide-react";
 import {
   addSupportTicketNote,
@@ -131,7 +133,7 @@ export function SupportTicketCreate({
               </label>
               <label>
                 优先级
-                <select
+                <Select
                   aria-label="优先级"
                   value={form.priority}
                   onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
@@ -141,7 +143,7 @@ export function SupportTicketCreate({
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <label>
@@ -192,6 +194,7 @@ export function SupportTicketPanel({
   workspaceBusy: boolean;
   onChanged: (ticket: SupportTicket) => void;
 }) {
+  const { confirm, dialog } = useConfirmDialog();
   const [page, setPage] = useState<SupportPage<SupportNote> | null>(null);
   const [filters, setFilters] = useState({ limit: 50, cursor: "", sort: "createdAt.asc" });
   const [revision, setRevision] = useState(0);
@@ -253,9 +256,7 @@ export function SupportTicketPanel({
     lock.current = true;
     if (
       kind === "status" &&
-      !window.confirm(
-        `确认变更工单状态？\n用户：${ticket.userId}\n工单：${ticket.ticketId}\n标题：${ticket.title}\n${SUPPORT_STATUSES[ticket.status]} → ${SUPPORT_STATUSES[status]}\n原因：${message}`,
-      )
+      !(await confirm({ title: "确认变更工单状态", description: `用户：${ticket.userId}\n工单：${ticket.ticketId}\n标题：${ticket.title}\n${SUPPORT_STATUSES[ticket.status]} → ${SUPPORT_STATUSES[status]}\n原因：${message}` }))
     ) {
       lock.current = false;
       return;
@@ -341,7 +342,7 @@ export function SupportTicketPanel({
         <div className="support-filters">
           <label>
             备注排序
-            <select
+            <Select
               aria-label="备注排序"
               value={filters.sort}
               onChange={(event) =>
@@ -350,11 +351,11 @@ export function SupportTicketPanel({
             >
               <option value="createdAt.asc">最早记录优先</option>
               <option value="createdAt.desc">最新记录优先</option>
-            </select>
+            </Select>
           </label>
           <label>
             备注每页条数
-            <select
+            <Select
               aria-label="备注每页条数"
               value={filters.limit}
               onChange={(event) =>
@@ -366,7 +367,7 @@ export function SupportTicketPanel({
                   {value}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         {loading ? (
@@ -454,7 +455,7 @@ export function SupportTicketPanel({
         <fieldset className="support-fieldset support-form" disabled={disabled}>
           <label>
             处理状态
-            <select
+            <Select
               aria-label="处理状态"
               value={status}
               onChange={(event) => setStatus(event.target.value as SupportStatus)}
@@ -464,7 +465,7 @@ export function SupportTicketPanel({
                   {label}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label>
             状态变更原因
@@ -483,6 +484,7 @@ export function SupportTicketPanel({
           </button>
         </fieldset>
       </form>
+      {dialog}
     </Panel>
   );
 }

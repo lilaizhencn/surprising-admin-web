@@ -97,7 +97,6 @@ export function RuntimeConfigPanel({ title, service, path, template, productLine
       body.reason = reason.trim();
       if (service === "adl" && Number(body.maxDeleveragesPerDeficit) * Number(body.candidateMultiplier) > 1000)
         throw new Error("最大减仓数与候选倍数的乘积不能超过 1000。");
-      if (!window.confirm(`确认更新 ${productLine ?? "当前产品线"} 的${title}？保存后立即生效。`)) return;
       await gatewayPost<UnknownRecord>(service, path, body, { productLine });
       await load();
     } catch (err) { setError(errorMessage(err)); }
@@ -107,12 +106,22 @@ export function RuntimeConfigPanel({ title, service, path, template, productLine
   return <Panel title={title}><div className="stack">
     {error && <div role="alert" className="alert danger">{error}</div>}
     {config && <p>按产品线独立保存，保存后热生效。修改原因会进入审计；版本冲突时请重新读取后再保存。</p>}
-    {config && <div className="form-grid">{Object.entries(draft).map(([key, value]) => <label key={key}>{labels[key] ?? key}
-      {typeof value === "boolean" ? <input type="checkbox" checked={value} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
-        : <input inputMode="numeric" value={String(value ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
-      {bounds[key] && <small>{bounds[key][2]}。范围 {bounds[key][0]}–{bounds[key][1]}。</small>}
-      {key.endsWith("Ms") && <small>单位为毫秒，1000 毫秒等于 1 秒。</small>}
-    </label>)}</div>}
+    {config && <div className="form-grid">{Object.entries(draft).map(([key, value]) => typeof value === "boolean" ? (
+      <div key={key} style={{ display: "grid", gap: 6 }}>
+        <label className="assets-switch">
+          <input type="checkbox" checked={value} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
+          <span className="assets-switch-track" />
+          <span className="assets-switch-label" style={{ fontWeight: 600, color: "var(--color-ink)" }}>{labels[key] ?? key}</span>
+        </label>
+        {bounds[key] && <small className="muted">{bounds[key][2]}</small>}
+      </div>
+    ) : (
+      <label key={key}>{labels[key] ?? key}
+        <input inputMode="numeric" value={String(value ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />
+        {bounds[key] && <small>{bounds[key][2]}。范围 {bounds[key][0]}–{bounds[key][1]}。</small>}
+        {key.endsWith("Ms") && <small>单位为毫秒，1000 毫秒等于 1 秒。</small>}
+      </label>
+    ))}</div>}
     <label>修改原因<input required maxLength={service === "risk" ? 500 : 1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
     <div className="button-row"><button onClick={() => void load()} disabled={loading}>重新读取</button>
       <button className="primary" onClick={() => void save()} disabled={loading || !config || !Object.keys(draft).length}>保存设置</button></div>

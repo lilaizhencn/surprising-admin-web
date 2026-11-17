@@ -10,18 +10,21 @@
   border: 0;
 }
 .admin-table-region {
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
+  border: var(--hairline-width) solid var(--border-subtle);
+  background: var(--bg-elevated-1);
   overscroll-behavior-inline: contain;
   scrollbar-width: thin;
 }
 .admin-table-region:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 3px;
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 .admin-data-table th {
   padding-block: 12px;
-  color: var(--color-ink-muted);
-  background: var(--color-canvas);
+  color: var(--text-secondary);
+  background: var(--bg-elevated-2);
+  border-bottom: var(--hairline-width) solid var(--border-default);
 }
 .admin-data-table td {
   padding-block: 12px;
@@ -33,15 +36,19 @@
   right: 0;
   z-index: 1;
   max-width: none;
-  border-left: 1px solid var(--color-border-soft);
-  background: var(--color-surface);
+  border-left: var(--hairline-width) solid var(--border-subtle);
+  background: var(--bg-elevated-1);
 }
 .admin-data-table th.admin-actions-cell {
   z-index: 2;
-  background: var(--color-canvas);
+  background: var(--bg-elevated-2);
 }
-.admin-data-table tr[data-selected="true"] td {
-  background: var(--color-surface-active);
+.admin-data-table tr:hover .admin-actions-cell {
+  background: color-mix(in oklab, var(--aurora-cyan) 8%, var(--bg-elevated-2));
+}
+.admin-data-table tr[data-selected="true"] td,
+.admin-data-table tr[data-selected="true"] .admin-actions-cell {
+  background: color-mix(in oklab, var(--aurora-cyan) 14%, var(--bg-elevated-2));
 }
 .admin-row-actions {
   display: flex;

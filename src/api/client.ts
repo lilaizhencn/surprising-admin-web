@@ -114,6 +114,18 @@ export function adminGatewayPath(service: string, path = "") {
       return `/wallet/v1${suffix}`;
     case "wallet-admin":
       return `/wallet/v1/admin${suffix}`;
+    case "adl":
+      return `/api/v1/adl${suffix}`;
+    case "funding":
+      return `/api/v1/funding${suffix}`;
+    case "risk-admin":
+      return `/api/v1/admin/risk${suffix}`;
+    case "liquidation-admin":
+      return `/api/v1/admin/liquidations${suffix}`;
+    case "insurance-admin":
+      return `/api/v1/insurance/admin${suffix}`;
+    case "price-index":
+      return `/api/v1/price/index${suffix}`;
     default:
       return `/api/v1/admin/${service}${suffix}`;
   }

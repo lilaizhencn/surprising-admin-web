@@ -1,6 +1,6 @@
 import type { AuthenticatedUser, UnknownRecord } from "../types";
 import { positiveInt64, serializeAdminBody } from "../lib/integers";
-import { adminLocalWrite, type CursorListParams, type CursorPage } from "./adminCore";
+import { adminLocalWrite, type CursorListParams, type CursorPage, gatewayGet } from "./adminCore";
 import { loadSession, queryString, request } from "./client";
 
 export function adminUsers(params: { query?: string; status?: string; limit?: number } & CursorListParams) {
@@ -28,8 +28,48 @@ export function userSessions(userId: number | string, params: { active?: boolean
   );
 }
 
-export function userProfile(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}, signal?: AbortSignal) {
-  return request<UnknownRecord>(`/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/profile${queryString(params)}`, { signal });
+export async function userProfile(userId: number | string, params: { settleAsset?: string; productLine?: string; limit?: number } = {}, signal?: AbortSignal) {
+  const uid = positiveInt64(userId, "用户 ID");
+  try {
+    return await request<UnknownRecord>(`/api/v1/admin/users/${uid}/profile${queryString(params)}`, { signal });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "");
+    if (!msg.includes("404")) throw err;
+    const productLine = params.productLine || "LINEAR_PERPETUAL";
+    const limit = params.limit ?? 50;
+    const [balances, productBalances, positions, orders, trades, triggerOrders, sessionsRes, logsRes] = await Promise.allSettled([
+      gatewayGet<UnknownRecord>("account", "/balances", { userId: uid, productLine }, signal),
+      gatewayGet<UnknownRecord>("account", "/product-balances", { userId: uid, productLine }, signal),
+      gatewayGet<UnknownRecord>("account", "/positions", { userId: uid, productLine }, signal),
+      gatewayGet<UnknownRecord>("trading-orders", "", { userId: uid, productLine, limit }, signal),
+      gatewayGet<UnknownRecord>("trading-orders", "/trades", { userId: uid, productLine, limit }, signal),
+      gatewayGet<UnknownRecord>("trading-trigger", "", { userId: uid, productLine, limit }, signal),
+      userSessions(uid, { limit }, signal),
+      loginLogs({ userId: uid, limit })
+    ]);
+    return {
+      userId: uid,
+      productLine,
+      settleAsset: params.settleAsset ?? "USDT",
+      account: {
+        balances: balances.status === "fulfilled" ? balances.value : { balances: [] },
+        productBalances: productBalances.status === "fulfilled" ? productBalances.value : { balances: [] },
+        positions: positions.status === "fulfilled" ? positions.value : { positions: [] },
+        accountLedger: { entries: [] },
+        productLedger: { entries: [] },
+        transfers: { transfers: [] }
+      },
+      trading: {
+        orders: orders.status === "fulfilled" ? orders.value : { orders: [] },
+        trades: trades.status === "fulfilled" ? trades.value : { trades: [] },
+        triggerOrders: triggerOrders.status === "fulfilled" ? triggerOrders.value : { orders: [] }
+      },
+      risk: { accountLatest: [], positionsLatest: [] },
+      sessions: sessionsRes.status === "fulfilled" ? sessionsRes.value : { sessions: [] },
+      loginLogs: logsRes.status === "fulfilled" ? logsRes.value : { logs: [] },
+      errors: []
+    };
+  }
 }
 
 export function supportUserOverview(userId: number | string, signal?: AbortSignal) {

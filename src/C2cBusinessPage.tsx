@@ -1,3 +1,5 @@
+import { Select } from "./components/CustomSelect";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 import { useEffect, useRef, useState } from "react";
 import { c2cBusinessRead, c2cBusinessWrite, type C2cRow } from "./api/c2cBusiness";
 import { C2cChatPage } from "./C2cChatPage";
@@ -76,6 +78,7 @@ export function C2cBusinessPage({ session }: { session: AuthSession }) {
   );
 }
 function Business({ session, owner }: { session: AuthSession; owner: string }) {
+  const { confirm, dialog } = useConfirmDialog();
   const [identityChecked, setIdentityChecked] = useState(false);
   const [section, setSection] = useState<Section>("merchants"),
     [revision, refresh] = useState(0);
@@ -335,30 +338,39 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
       section === "appeals" && details
         ? `\n原订单：${details.orderId}\n买方：${details.buyerUserId}\n卖方：${details.sellerUserId}\n数量：${details.quantity} ${String((details.market as C2cRow).asset)}\n金额：${details.fiatAmount} ${String((details.market as C2cRow).fiat)}\n沿用另一管理员审批，不修改原收款人或金额。`
         : `\n当前状态：${label(row.status)}\n版本：${row.revision}`;
-    if (
-      !window.confirm(
-        `确认${decisionLabels[decision]}？\n对象：${id}${target}\n原因：${reason.trim()}`,
+    void (async () => {
+      if (
+        !(await confirm({
+          title: `确认${decisionLabels[decision]}？`,
+          description: `对象：${id}${target}\n原因：${reason.trim()}`,
+          confirmLabel: decisionLabels[decision] || "确认",
+          danger:
+            decision === "REJECT" ||
+            decision === "SUSPEND" ||
+            decision === "CLOSE" ||
+            decision === "PAUSE",
+        }))
       )
-    )
-      return;
-    void run(async () => {
-      const result = await c2cBusinessWrite(owner, `/${section}/${id}/${suffix}`, body);
-      if (section === "appeals") c2cAppealOrder(result, row.orderId);
-      else if (
-        String(
-          result[
-            section === "merchants"
-              ? "userId"
-              : section === "payment-accounts"
-                ? "accountId"
-                : "adId"
-          ],
-        ) !== id ||
-        !result.status ||
-        !result.revision
-      )
-        throw Error("操作响应与原目标不匹配。");
-    });
+        return;
+      await run(async () => {
+        const result = await c2cBusinessWrite(owner, `/${section}/${id}/${suffix}`, body);
+        if (section === "appeals") c2cAppealOrder(result, row.orderId);
+        else if (
+          String(
+            result[
+              section === "merchants"
+                ? "userId"
+                : section === "payment-accounts"
+                  ? "accountId"
+                  : "adId"
+            ],
+          ) !== id ||
+          !result.status ||
+          !result.revision
+        )
+          throw Error("操作响应与原目标不匹配。");
+      });
+    })();
   };
 
   return (
@@ -431,11 +443,17 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                   <button
                     disabled={busy}
                     onClick={() => {
-                      if (
-                        !window.confirm("确认初始化 C2C 内部账户？该入口不接受金额或其他账户参数。")
-                      )
-                        return;
-                      void run(() => c2cBusinessWrite(owner, "/initialization", undefined));
+                      void (async () => {
+                        if (
+                          !(await confirm({
+                            title: "确认初始化 C2C 内部账户？",
+                            description: "该入口不接受金额或其他账户参数。",
+                            confirmLabel: "确认初始化",
+                          }))
+                        )
+                          return;
+                        await run(() => c2cBusinessWrite(owner, "/initialization", undefined));
+                      })();
                     }}
                   >
                     初始化内部账户（零金额）
@@ -448,25 +466,30 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                         (!ready.reconciliation || reconciliation.status !== "MATCHED"))
                     }
                     onClick={() => {
-                      if (
-                        !window.confirm(
-                          `确认${config.enabled ? "停止新交易" : "开放 C2C 新交易"}？\n配置版本：${config.revision}\n原因：${reason.trim()}`,
+                      void (async () => {
+                        if (
+                          !(await confirm({
+                            title: `确认${config.enabled ? "停止新交易" : "开放 C2C 新交易"}？`,
+                            description: `配置版本：${config.revision}\n原因：${reason.trim()}`,
+                            confirmLabel: config.enabled ? "停止新交易" : "开放新交易",
+                            danger: Boolean(config.enabled),
+                          }))
                         )
-                      )
-                        return;
-                      void run(() =>
-                        c2cBusinessWrite(
-                          owner,
-                          "/configuration",
-                          {
-                            revision: config.revision,
-                            enabled: !config.enabled,
-                            maxActiveAds: config.maxActiveAds,
-                            reason,
-                          },
-                          "PUT",
-                        ),
-                      );
+                          return;
+                        await run(() =>
+                          c2cBusinessWrite(
+                            owner,
+                            "/configuration",
+                            {
+                              revision: config.revision,
+                              enabled: !config.enabled,
+                              maxActiveAds: config.maxActiveAds,
+                              reason,
+                            },
+                            "PUT",
+                          ),
+                        );
+                      })();
                     }}
                   >
                     {config.enabled ? "停止新交易" : "核对后开放交易"}
@@ -520,27 +543,31 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                   className="panel"
                   onSubmit={(e) => {
                     e.preventDefault();
+                    if (!ready.policy) return;
                     const form = new FormData(e.currentTarget);
-                    if (
-                      !ready.policy ||
-                      !window.confirm(
-                        `确认保存质押规则？\n资产：${form.get("asset")}\n金额：${form.get("amount")}\n版本：${policy.revision}\n原因：${reason.trim()}`,
+                    void (async () => {
+                      if (
+                        !(await confirm({
+                          title: "确认保存质押规则？",
+                          description: `资产：${form.get("asset")}\n金额：${form.get("amount")}\n版本：${policy.revision}\n原因：${reason.trim()}`,
+                          confirmLabel: "保存质押规则",
+                        }))
                       )
-                    )
-                      return;
-                    void run(() =>
-                      c2cBusinessWrite(
-                        owner,
-                        "/merchant-bond-policy",
-                        {
-                          revision: policy.revision,
-                          asset: form.get("asset"),
-                          amount: form.get("amount"),
-                          reason,
-                        },
-                        "PUT",
-                      ),
-                    );
+                        return;
+                      await run(() =>
+                        c2cBusinessWrite(
+                          owner,
+                          "/merchant-bond-policy",
+                          {
+                            revision: policy.revision,
+                            asset: form.get("asset"),
+                            amount: form.get("amount"),
+                            reason,
+                          },
+                          "PUT",
+                        ),
+                      );
+                    })();
                   }}
                 >
                   <h2>商户质押规则</h2>
@@ -568,14 +595,17 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                   onSubmit={(e) => {
                     e.preventDefault();
                     const f = new FormData(e.currentTarget);
-                    if (
-                      !window.confirm(
-                        `确认新增 C2C 市场？\n市场：${f.get("asset")}/${f.get("fiat")}\n法币限额：${f.get("min")} – ${f.get("max")}\n买方费率：${f.get("fee")} PPM\n付款窗口：${f.get("window")} 秒\n原因：${reason.trim()}`,
+                    void (async () => {
+                      if (
+                        !(await confirm({
+                          title: "确认新增 C2C 市场？",
+                          description: `市场：${f.get("asset")}/${f.get("fiat")}\n法币限额：${f.get("min")} – ${f.get("max")}\n买方费率：${f.get("fee")} PPM\n付款窗口：${f.get("window")} 秒\n原因：${reason.trim()}`,
+                          confirmLabel: "确认新增",
+                        }))
                       )
-                    )
-                      return;
-                    void run(() =>
-                      c2cBusinessWrite(owner, "/markets", {
+                        return;
+                      await run(() =>
+                        c2cBusinessWrite(owner, "/markets", {
                         marketId: null,
                         revision: "0",
                         asset: f.get("asset"),
@@ -593,7 +623,8 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                         vipMinCompleted: 100,
                         reason,
                       }),
-                    );
+                      );
+                    })();
                   }}
                 >
                   <h2>新增市场</h2>
@@ -648,27 +679,32 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                       <button
                         disabled={busy || reason.trim().length < 5}
                         onClick={() => {
-                          if (
-                            !window.confirm(
-                              `确认${m.enabled ? "停用" : "启用"}收款方式 ${m.label} (${m.code})？\n适用法币：${(Array.isArray(m.currencies) && m.currencies.length ? m.currencies : items(config.markets).map((row) => row.fiat)).join(" / ")}\n原因：${reason.trim()}`,
+                          void (async () => {
+                            if (
+                              !(await confirm({
+                                title: `确认${m.enabled ? "停用" : "启用"}收款方式 ${m.label} (${m.code})？`,
+                                description: `适用法币：${(Array.isArray(m.currencies) && m.currencies.length ? m.currencies : items(config.markets).map((row) => row.fiat)).join(" / ")}\n原因：${reason.trim()}`,
+                                confirmLabel: m.enabled ? "停用" : "启用",
+                                danger: Boolean(m.enabled),
+                              }))
                             )
-                          )
-                            return;
-                          void run(() =>
-                            c2cBusinessWrite(owner, "/payment-methods", {
-                              code: m.code,
-                              revision: m.revision,
-                              label: m.label,
-                              enabled: !m.enabled,
-                              currencies:
-                                Array.isArray(m.currencies) && m.currencies.length
-                                  ? m.currencies
-                                  : items(config.markets).map((row) => row.fiat),
-                              requiresBankName: m.requiresBankName,
-                              supportsQr: m.supportsQr,
-                              reason,
-                            }),
-                          );
+                              return;
+                            await run(() =>
+                              c2cBusinessWrite(owner, "/payment-methods", {
+                                code: m.code,
+                                revision: m.revision,
+                                label: m.label,
+                                enabled: !m.enabled,
+                                currencies:
+                                  Array.isArray(m.currencies) && m.currencies.length
+                                    ? m.currencies
+                                    : items(config.markets).map((row) => row.fiat),
+                                requiresBankName: m.requiresBankName,
+                                supportsQr: m.supportsQr,
+                                reason,
+                              }),
+                            );
+                          })();
                         }}
                       >
                         {m.enabled ? "停用" : "按当前市场开启"}
@@ -684,7 +720,7 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
             <div className="toolbar">
               <label>
                 业务状态
-                <select
+                <Select
                   value={statusFilter}
                   onChange={(event) => {
                     setRows([]);
@@ -699,7 +735,7 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                       {label(status)}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
             </div>
             <DataTable
@@ -963,6 +999,7 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
           </>
         )}
       </fieldset>
+      {dialog}
     </div>
   );
 }

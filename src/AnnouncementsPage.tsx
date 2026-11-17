@@ -1,3 +1,5 @@
+import { Select } from "./components/CustomSelect";
+import { useConfirmDialog } from "./components/ConfirmDialog";
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw, Plus } from "lucide-react";
 import { RichArticleEditor } from "./components/RichArticleEditor";
@@ -39,6 +41,8 @@ function emptyDraft(): Draft {
 }
 
 export default function AnnouncementsPage() {
+  const { confirm, dialog } = useConfirmDialog();
+  const allowLeave = useRef(false);
   const [rows, setRows] = useState<AnnouncementSummary[]>([]);
   const [count, setCount] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -76,11 +80,27 @@ export default function AnnouncementsPage() {
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => { if (dirty && !saving) { event.preventDefault(); event.returnValue = ""; } };
     const navigate = (event: MouseEvent) => {
+      if (allowLeave.current) { allowLeave.current = false; return; }
       const button = event.target instanceof Element ? event.target.closest('nav[aria-label="后台导航"] button, nav[aria-label="移动端后台导航"] button, button[aria-label="退出登录"]') : null;
       if (!button || button.getAttribute("aria-current") === "page") return;
-      if (saving || (dirty && !window.confirm("当前公告有未保存的修改，确定离开并放弃修改？"))) {
+      if (saving) {
         event.preventDefault(); event.stopPropagation();
-        if (saving) setError("公告操作正在处理中，请等待结果后再离开。");
+        setError("公告操作正在处理中，请等待结果后再离开。");
+        return;
+      }
+      if (dirty) {
+        event.preventDefault(); event.stopPropagation();
+        void confirm({
+          title: "放弃未保存的修改？",
+          description: "当前公告有未保存的修改，确定离开并放弃修改？",
+          confirmLabel: "离开并放弃",
+          danger: true,
+        }).then(ok => {
+          if (ok && button instanceof HTMLElement) {
+            allowLeave.current = true;
+            button.click();
+          }
+        });
       }
     };
     window.addEventListener("beforeunload", warn);
@@ -113,18 +133,22 @@ export default function AnnouncementsPage() {
     const timer = window.setTimeout(() => void load(0), 200);
     return () => { window.clearTimeout(timer); readRequest.current?.abort(); };
   }, [status, query]);
-  function canLeaveEditor() { return !writeLock.current && !mediaBusy && (!dirty || window.confirm("当前公告有未保存的修改，确定放弃这些修改？")); }
-  function closeEditor() {
-    if (!canLeaveEditor()) return;
+  async function canLeaveEditor() {
+    if (writeLock.current || mediaBusy) return false;
+    if (!dirty) return true;
+    return confirm({ title: "放弃未保存的修改？", description: "当前公告有未保存的修改，确定放弃这些修改？", confirmLabel: "放弃修改", danger: true });
+  }
+  async function closeEditor() {
+    if (!(await canLeaveEditor())) return;
     detailRequest.current?.abort(); setDetailLoading(false); setEditing(null); setCreating(false); setWriteBlocked(false); setError("");
   }
   function closeAudit() { auditRequest.current?.abort(); setAuditFor(null); setAuditRows([]); setAuditLoading(false); setAuditError(""); }
-  function beginCreate() {
-    if (!canLeaveEditor()) return;
+  async function beginCreate() {
+    if (!(await canLeaveEditor())) return;
     detailRequest.current?.abort(); setDetailLoading(false); setEditing(null); setCreating(true); setDraft(emptyDraft()); closeAudit(); setError(""); setNotice(""); setWriteBlocked(false);
   }
   async function beginEdit(summary: AnnouncementSummary) {
-    if (!canLeaveEditor()) return;
+    if (!(await canLeaveEditor())) return;
     detailRequest.current?.abort();
     const abort = new AbortController(); detailRequest.current = abort;
     setDetailLoading(true); setError("");
@@ -136,7 +160,8 @@ export default function AnnouncementsPage() {
     finally { if (!abort.signal.aborted && mounted.current) setDetailLoading(false); }
   }
   async function reloadEditor() {
-    if (!editing || writeLock.current || (dirty && !window.confirm("重新载入将以服务端最新内容覆盖本地修改，是否继续？"))) return;
+    if (!editing || writeLock.current) return;
+    if (dirty && !(await confirm({ title: "重新载入当前公告？", description: "重新载入将以服务端最新内容覆盖本地修改，是否继续？", confirmLabel: "覆盖并载入", danger: true }))) return;
     detailRequest.current?.abort();
     const abort = new AbortController(); detailRequest.current = abort;
     setWriteBlocked(true); setError("");
@@ -155,7 +180,11 @@ export default function AnnouncementsPage() {
     if (writeLock.current || writeBlocked) return;
     let body: AnnouncementSave;
     try { body = announcementSave(draft, editing); } catch (reason) { setError(errorText(reason)); return; }
-    if (editing?.status === "PUBLISHED" && !window.confirm(`修改已发布公告 #${editing.announcementId} · 版本 ${editing.version}\n${titleFor(editing)}\n保存将直接更新投放内容，并重置该公告的用户已读记录。\n确定保存当前修改？`)) return;
+    if (editing?.status === "PUBLISHED" && !(await confirm({
+      title: `修改已发布公告 #${editing.announcementId} · 版本 ${editing.version}`,
+      description: `${titleFor(editing)}\n保存将直接更新投放内容，并重置该公告的用户已读记录。\n确定保存当前修改？`,
+      confirmLabel: "确认保存",
+    }))) return;
     writeLock.current = true; setSaving(true); setError(""); setNotice(""); closeAudit();
     try {
       const result = editing ? await updateAnnouncement(editing.announcementId, { ...body, version: editing.version }) : await createAnnouncement(body);
@@ -177,7 +206,11 @@ export default function AnnouncementsPage() {
     const reason = window.prompt("发布原因（可选，最多 1000 字）", "");
     if (reason === null) return;
     if (reason.trim().length > 1000) { setError("发布原因最多 1000 字。"); return; }
-    if (!window.confirm(`发布已保存公告 #${row.announcementId} · 版本 ${row.version}\n${titleFor(row)}\n展示位置：${row.placements.join(", ")}\n产品线：${row.productLines.join(", ")}\n客户端：${row.platforms.join(", ")}\n生效：${formatDate(row.startsAt)}\n结束：${formatDate(row.expiresAt)}\n仅发布该已保存版本，是否继续？`)) return;
+    if (!(await confirm({
+      title: `发布已保存公告 #${row.announcementId} · 版本 ${row.version}`,
+      description: `${titleFor(row)}\n展示位置：${row.placements.join(", ")}\n产品线：${row.productLines.join(", ")}\n客户端：${row.platforms.join(", ")}\n生效：${formatDate(row.startsAt)}\n结束：${formatDate(row.expiresAt)}\n仅发布该已保存版本，是否继续？`,
+      confirmLabel: "确认发布",
+    }))) return;
     writeLock.current = true; setSaving(true); setError(""); setNotice(""); closeAudit();
     try {
       const result = await publishAnnouncement(row.announcementId, { version: row.version, reason: reason.trim() });
@@ -193,7 +226,12 @@ export default function AnnouncementsPage() {
     const reason = window.prompt("请输入撤回原因（1–1000 字）", "");
     if (reason === null) return;
     if (!reason.trim() || reason.trim().length > 1000) { setError("请填写 1–1000 字撤回原因。"); return; }
-    if (!window.confirm(`撤回公告 #${row.announcementId} · 版本 ${row.version}\n${titleFor(row)}\n产品线：${row.productLines.join(", ")}\n客户端：${row.platforms.join(", ")}${editing?.announcementId === row.announcementId && dirty ? "\n当前未保存的修改会被放弃。" : ""}\n撤回后停止投放，是否继续？`)) return;
+    if (!(await confirm({
+      title: `撤回公告 #${row.announcementId} · 版本 ${row.version}`,
+      description: `${titleFor(row)}\n产品线：${row.productLines.join(", ")}\n客户端：${row.platforms.join(", ")}${editing?.announcementId === row.announcementId && dirty ? "\n当前未保存的修改会被放弃。" : ""}\n撤回后停止投放，是否继续？`,
+      confirmLabel: "确认撤回",
+      danger: true,
+    }))) return;
     writeLock.current = true; setSaving(true); setError(""); setNotice(""); closeAudit();
     try {
       const result = await withdrawAnnouncement(row.announcementId, { version: row.version, reason: reason.trim() });
@@ -234,16 +272,16 @@ export default function AnnouncementsPage() {
   return <div className="page announcement-admin-page">
     <div className="page-heading">
       <div><h2>公告中心</h2><p>管理多语言公告、投放范围、生效时间和发布审计。</p></div>
-      <div className="button-row"><button onClick={() => void load(0)} disabled={loading || saving}><RefreshCw size={15} aria-hidden="true" />刷新</button><button className="primary" onClick={beginCreate} disabled={saving}><Plus size={15} aria-hidden="true" />新建公告</button></div>
+      <div className="button-row"><button onClick={() => void load(0)} disabled={loading || saving}><RefreshCw size={15} aria-hidden="true" />刷新</button><button className="primary" onClick={() => void beginCreate()} disabled={saving}><Plus size={15} aria-hidden="true" />新建公告</button></div>
     </div>
     {detailLoading && <p role="status">正在载入公告正文…</p>}
     {error && <div className="alert danger" role="alert">{error}</div>}
     {notice && <div className="alert" role="status">{notice}</div>}
     <fieldset className="announcement-workspace" disabled={saving}>
     <div className="filters">
-      <label>状态<select value={status} onChange={event => setStatus(event.target.value)}>
+      <label>状态<Select value={status} onChange={event => setStatus(event.target.value)}>
         <option value="">全部状态</option><option value="DRAFT">草稿</option><option value="PUBLISHED">已发布</option><option value="WITHDRAWN">已撤回</option>
-      </select></label>
+      </Select></label>
       <label>搜索<input value={query} onChange={event => setQuery(event.target.value)} placeholder="标题、摘要或正文" /></label>
       <span className="status" role="status">{count === null ? (loading ? "正在查询…" : "公告总数不可用") : `共 ${count} 条`}</span>
     </div>
@@ -267,15 +305,15 @@ export default function AnnouncementsPage() {
     </section>
 
     {(editing || creating) && <section className="panel announcement-edit-panel" ref={editor} tabIndex={-1} aria-label="公告编辑">
-      <div className="panel-title"><h3>{editing ? `编辑公告 #${editing.announcementId} · ${statusLabel(editing.effectiveStatus)}` : "新建公告"}</h3><button onClick={closeEditor}>关闭编辑</button></div>
+      <div className="panel-title"><h3>{editing ? `编辑公告 #${editing.announcementId} · ${statusLabel(editing.effectiveStatus)}` : "新建公告"}</h3><button onClick={() => void closeEditor()}>关闭编辑</button></div>
       <div className="announcement-editor">
         <p className="muted">{editing ? `当前公告 #${editing.announcementId} · 已保存版本 ${editing.version}` : "新公告尚未保存"}{dirty ? " · 有未保存修改" : " · 与已保存内容一致"}</p>
         <p className="muted">支持 12 种语言，可按需添加翻译。发布前须完成所有已填写语言的内容；未提供的语言将明确展示可用译文。开始和结束时间均使用浏览器本地时区。</p>
         {writeBlocked && <div className="alert danger" role="alert">操作结果需要重新核对。{editing ? <button onClick={() => void reloadEditor()}>重新载入当前公告</button> : <span>请先刷新列表核对是否已创建，再决定后续操作。</span>}</div>}
         <div className="filters">
-          <label>公告类型<select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value }))}>
+          <label>公告类型<Select value={draft.category} onChange={event => setDraft(current => ({ ...current, category: event.target.value }))}>
             <option value="GENERAL">普通公告</option><option value="PRODUCT">产品更新</option><option value="MAINTENANCE">维护通知</option><option value="SECURITY">安全通知</option><option value="RISK">风险提示</option>
-          </select></label>
+          </Select></label>
           <label>优先级（0–100）<input type="number" min="0" max="100" value={draft.priority} onChange={event => setDraft(current => ({ ...current, priority: event.target.value }))} /></label>
           <label>开始时间<input type="datetime-local" value={draft.startsAt} onChange={event => setDraft(current => ({ ...current, startsAt: event.target.value }))} /></label>
           <label>结束时间（可选）<input type="datetime-local" value={draft.expiresAt} onChange={event => setDraft(current => ({ ...current, expiresAt: event.target.value }))} /></label>
@@ -284,12 +322,14 @@ export default function AnnouncementsPage() {
         <fieldset><legend>客户端</legend><Check value="ALL" checked={draft.platforms.includes("ALL")} onChange={() => setDraft(current => ({ ...current, platforms: ["ALL"] }))} />{!draft.platforms.includes("ALL") && PLATFORMS.map(value => <Check key={value} value={value} checked={draft.platforms.includes(value)} onChange={() => toggleTarget("platforms", value)} />)}{draft.platforms.includes("ALL") && <button onClick={() => setDraft(current => ({ ...current, platforms: PLATFORMS }))}>指定客户端</button>}</fieldset>
         <fieldset><legend>交易产品线</legend><Check value="ALL" checked={draft.productLines.includes("ALL")} onChange={() => setDraft(current => ({ ...current, productLines: ["ALL"] }))} />{!draft.productLines.includes("ALL") && LINES.map(value => <Check key={value} value={value} checked={draft.productLines.includes(value)} onChange={() => toggleTarget("productLines", value)} />)}{draft.productLines.includes("ALL") && <button onClick={() => setDraft(current => ({ ...current, productLines: LINES }))}>指定产品线</button>}</fieldset>
         <div className="article-language-controls">
-          <label>编辑语言<select aria-label="编辑语言" value={editLocale} disabled={mediaBusy} onChange={event => setEditLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}{draft.translations[locale.code]?.title.trim() && draft.translations[locale.code]?.body.trim() ? " ✓" : ""}</option>)}</select></label>
+          <label>编辑语言<Select aria-label="编辑语言" value={editLocale} disabled={mediaBusy} onChange={event => setEditLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}{draft.translations[locale.code]?.title.trim() && draft.translations[locale.code]?.body.trim() ? " ✓" : ""}</option>)}</Select></label>
           <span className="muted">已填写 {Object.values(draft.translations).filter(item => item.title.trim() && item.body.trim()).length} / 12 种语言</span>
           <button type="button" disabled={mediaBusy} onClick={() => {
-            if (!window.confirm(`清空 ${localeLabel(editLocale)} 的内容？保存前可关闭编辑放弃本轮修改。`)) return;
-            setDraft(current => ({ ...current, translations: { ...current.translations, [editLocale]: { locale: editLocale, title: "", summary: "", body: "", bodyHtml: null } } }));
-            setEditLocale(current => current === "zh-CN" ? "en-US" : "zh-CN");
+            void (async () => {
+              if (!(await confirm({ title: `清空 ${localeLabel(editLocale)} 的内容？`, description: "保存前可关闭编辑放弃本轮修改。", confirmLabel: "清空", danger: true }))) return;
+              setDraft(current => ({ ...current, translations: { ...current.translations, [editLocale]: { locale: editLocale, title: "", summary: "", body: "", bodyHtml: null } } }));
+              setEditLocale(current => current === "zh-CN" ? "en-US" : "zh-CN");
+            })();
           }}>清空当前语言</button>
         </div>
         <section className="announcement-language" lang={editLocale} dir={editLocale.startsWith("ar") ? "rtl" : "auto"}>
@@ -305,7 +345,7 @@ export default function AnnouncementsPage() {
             } }))} />
         </section>
         <section className="announcement-language announcement-user-preview"><h4>用户预览</h4>
-          <label>预览语言<select value={previewLocale} onChange={event => setPreviewLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}</option>)}</select></label>
+          <label>预览语言<Select value={previewLocale} onChange={event => setPreviewLocale(event.target.value)}>{CONTENT_LOCALES.map(locale => <option key={locale.code} value={locale.code}>{locale.label}</option>)}</Select></label>
           <strong dir="auto">{draft.translations[previewLocale]?.title || "此语言尚未填写标题"}</strong><p dir="auto">{draft.translations[previewLocale]?.summary}</p>
           <ArticleView locale={previewLocale} html={draft.translations[previewLocale]?.bodyHtml} text={draft.translations[previewLocale]?.body || "此语言尚未填写正文"} />
         </section>
@@ -320,6 +360,7 @@ export default function AnnouncementsPage() {
       {auditError && <button onClick={() => { const row = rows.find(item => item.announcementId === auditFor) ?? editing; if (row?.announcementId === auditFor) void showAudit(row); }}>重试审计查询</button>}
     </section>}
     </fieldset>
+    {dialog}
   </div>;
 }
 

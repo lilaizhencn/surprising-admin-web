@@ -1,3 +1,4 @@
+import { Select } from "../../components/CustomSelect";
 import { type UnknownRecord } from "../../types";
 import { RefreshCw } from "lucide-react";
 import { objectValue, extractRows } from "../../lib/adminData";
@@ -47,7 +48,7 @@ export function UserProfileView({
     <div className="stack">
       <div className="filters compact">
         {onProductLineChange && (
-          <label>产品线<select value={productLine ?? ""} onChange={(event) => onProductLineChange(event.target.value)}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>产品线<Select value={productLine ?? ""} onChange={(event) => onProductLineChange(event.target.value)}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</Select></label>
         )}
         <label>结算资产<input value={settleAsset} onChange={(event) => onSettleAssetChange(event.target.value.toUpperCase())} /></label>
         <button onClick={onRefresh}><RefreshCw size={16} />{refreshLabel}</button>

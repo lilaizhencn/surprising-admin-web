@@ -1,3 +1,4 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { exportJobs, createExportJob, downloadExportFile } from "../api/admin";
@@ -132,15 +133,15 @@ export default function ExportsPage() {
     <Page title="导出中心" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
         <label>状态
-          <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, cursor: "" })}>
+          <Select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, cursor: "" })}>
             {EXPORT_STATUSES.map((status) => <option key={status || "ALL"} value={status}>{status || "全部"}</option>)}
-          </select>
+          </Select>
         </label>
         <label>类型
-          <select value={filters.exportType} onChange={(event) => setFilters({ ...filters, exportType: event.target.value, cursor: "" })}>
+          <Select value={filters.exportType} onChange={(event) => setFilters({ ...filters, exportType: event.target.value, cursor: "" })}>
             <option value="">全部</option>
             {EXPORT_TYPES.map((item) => <option key={item}>{item}</option>)}
-          </select>
+          </Select>
         </label>
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => setFilters({ ...filters, limit: value, cursor: "" })} />
         <SortSelect value={filters.sort} options={REQUESTED_AT_SORTS} onChange={(value) => setFilters({ ...filters, sort: value, cursor: "" })} />
@@ -164,9 +165,9 @@ export default function ExportsPage() {
         <Panel title="创建导出任务">
           <div className="stack">
             <label>导出类型
-              <select value={createState.exportType} onChange={(event) => chooseType(event.target.value)}>
+              <Select value={createState.exportType} onChange={(event) => chooseType(event.target.value)}>
                 {EXPORT_TYPES.map((item) => <option key={item}>{item}</option>)}
-              </select>
+              </Select>
             </label>
             <textarea
               className="json-editor"

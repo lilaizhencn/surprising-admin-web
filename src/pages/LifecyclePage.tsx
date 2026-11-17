@@ -1,3 +1,4 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect } from "react";
 import { type Instrument, type UnknownRecord, type PositionRecord, type ProductLine } from "../types";
 import { instruments as instrumentList, gatewayGet } from "../api/admin";
@@ -119,16 +120,16 @@ export default function LifecyclePage() {
   return (
     <Page title="交割 / 行权核查" onRefresh={() => load(filters.instrumentCursor, filters.ledgerCursor)} loading={loading} error={error}>
       <div className="filters">
-        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>
+        <label>产品线<Select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>
           {LIFECYCLE_PRODUCT_LINES.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select></label>
-        <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
+        </Select></label>
+        <label>状态<Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
           <option value="">全部</option>
           {INSTRUMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
-        </select></label>
+        </Select></label>
         <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
-        <label>账户类型<select value={filters.accountType} onChange={(event) => updateFilters({ accountType: event.target.value })}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
+        <label>账户类型<Select value={filters.accountType} onChange={(event) => updateFilters({ accountType: event.target.value })}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</Select></label>
         <TextFilter label="Asset" value={filters.asset} onChange={(value) => updateFilters({ asset: value.toUpperCase() })} />
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
         <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(value) => updateFilters({ sort: value })} />

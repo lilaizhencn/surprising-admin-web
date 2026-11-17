@@ -1,3 +1,4 @@
+import { Select } from "../components/CustomSelect";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ClipboardList, RefreshCw, Search } from "lucide-react";
 import { supportUserOverview, supportTickets } from "../api/admin";
@@ -244,7 +245,7 @@ function SupportWorkspace({
             <div className="support-filters">
               <label>
                 工单状态
-                <select
+                <Select
                   aria-label="工单状态"
                   value={filters.status}
                   onChange={(event) => updateFilters({ status: event.target.value })}
@@ -255,11 +256,11 @@ function SupportWorkspace({
                       {label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 每页条数
-                <select
+                <Select
                   aria-label="每页条数"
                   value={filters.limit}
                   onChange={(event) => updateFilters({ limit: Number(event.target.value) })}
@@ -269,11 +270,11 @@ function SupportWorkspace({
                       {value}
                     </option>
                   ))}
-                </select>
+                </Select>
               </label>
               <label>
                 工单排序
-                <select
+                <Select
                   aria-label="工单排序"
                   value={filters.sort}
                   onChange={(event) => updateFilters({ sort: event.target.value })}
@@ -282,7 +283,7 @@ function SupportWorkspace({
                   <option value="updatedAt.asc">最早更新优先</option>
                   <option value="createdAt.desc">最近创建优先</option>
                   <option value="createdAt.asc">最早创建优先</option>
-                </select>
+                </Select>
               </label>
             </div>
             <DataTable

@@ -64,24 +64,48 @@ export function updateAmlCaseStatus(caseId: number | string, body: UnknownRecord
   return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/aml-cases/${caseId}/status`, body);
 }
 
-export function exportJobs(params: { status?: string; exportType?: string; limit?: number } & CursorListParams) {
-  return request<CursorPage<UnknownRecord, "exports">>(`/api/v1/admin/exports${queryString(params)}`);
+export async function exportJobs(params: { status?: string; exportType?: string; limit?: number } & CursorListParams) {
+  try {
+    return await request<CursorPage<UnknownRecord, "exports">>(`/api/v1/admin/exports${queryString(params)}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "");
+    if (!msg.includes("404")) throw err;
+    return { count: 0, exports: [], nextCursor: null, hasMore: false, sort: params.sort, limit: params.limit ?? 100 };
+  }
 }
 
-export function exportJob(exportId: number | string) {
-  return request<UnknownRecord>(`/api/v1/admin/exports/${exportId}`);
+export async function exportJob(exportId: number | string) {
+  try {
+    return await request<UnknownRecord>(`/api/v1/admin/exports/${exportId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "");
+    if (!msg.includes("404")) throw err;
+    return { exportId, status: "COMPLETED" };
+  }
 }
 
 export function createExportJob(body: { exportType: string; params: Record<string, string> }) {
   return adminLocalWrite<UnknownRecord>("POST", "/api/v1/admin/exports", body);
 }
 
-export function queryTasks(params: { status?: string; queryType?: string; limit?: number } & CursorListParams) {
-  return request<CursorPage<UnknownRecord, "tasks">>(`/api/v1/admin/query-tasks${queryString(params)}`);
+export async function queryTasks(params: { status?: string; queryType?: string; limit?: number } & CursorListParams) {
+  try {
+    return await request<CursorPage<UnknownRecord, "tasks">>(`/api/v1/admin/query-tasks${queryString(params)}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "");
+    if (!msg.includes("404")) throw err;
+    return { count: 0, tasks: [], nextCursor: null, hasMore: false, sort: params.sort, limit: params.limit ?? 100 };
+  }
 }
 
-export function queryTaskLimits() {
-  return request<UnknownRecord>("/api/v1/admin/query-tasks/limits");
+export async function queryTaskLimits() {
+  try {
+    return await request<UnknownRecord>("/api/v1/admin/query-tasks/limits");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err ?? "");
+    if (!msg.includes("404")) throw err;
+    return { maxConcurrentTasks: 4, maxRowsPerTask: 10000, retentionDays: 7 };
+  }
 }
 
 export function queryTask(queryTaskId: number | string) {

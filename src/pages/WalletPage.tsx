@@ -1,10 +1,11 @@
+import { Select } from "../components/CustomSelect";
 import { parseApiJson } from "../api/client";
 import { useState, useEffect, useRef } from "react";
-import { type UnknownRecord } from "../types";
+import { type RouteKey, type UnknownRecord } from "../types";
 import { gatewayGet, walletFinanceSummary, walletOperationsOverview, walletOperationAddresses, walletOperationBalances, walletOperationExceptions, walletFinanceDeposits, walletFinanceWithdrawals, walletFinanceWithdrawalReviews, approveWalletWithdrawal, rejectWalletWithdrawal, gatewayPatch } from "../api/admin";
 import { CustodyWithdrawalsPanel } from "../features/CustodyWithdrawalsPanel";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TwoColumn, KeyValue } from "../components/AdminUi";
+import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TwoColumn, KeyValue, TabBar } from "../components/AdminUi";
 import { errorMessage, records, fieldText } from "../lib/adminData";
 import { UPDATED_AT_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 
@@ -35,8 +36,9 @@ const WALLET_OPERATION_EXCEPTION_STATUSES = [
   "REJECTED"
 ];
 
-export default function WalletPage() {
+export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteKey) => void } = {}) {
   const reads = useRef<AbortController | null>(null);
+  const [tab, setTab] = useState<"withdrawals" | "onchain" | "infra" | "governance">("withdrawals");
   const [withdrawalsRevision, setWithdrawalsRevision] = useState(0);
   const [dashboard, setDashboard] = useState<WalletDashboard | null>(null);
   const [admin, setAdmin] = useState<WalletAdminConfig | null>(null);
@@ -356,9 +358,85 @@ export default function WalletPage() {
   const tableMeta = walletMetadata(admin, selectedTable);
   const editableColumns = walletEditableColumns(admin, selectedTable);
 
+  const [listedAssets, setListedAssets] = useState<UnknownRecord[]>([]);
+  useEffect(() => {
+    const abort = new AbortController();
+    import("../api/client").then(({ request }) =>
+      request<UnknownRecord[]>("/api/v1/admin/assets", { signal: abort.signal })
+        .then(setListedAssets)
+        .catch(() => {}),
+    );
+    return () => abort.abort();
+  }, []);
+
+  const assetSummaryRows = (() => {
+    const map = new Map<string, { asset: string; name: string; status: string; depositCount: number; depositAmount: number; withdrawalCount: number; withdrawalAmount: number }>();
+    for (const a of listedAssets) {
+      const code = String(a.asset ?? a.symbol ?? a.code ?? "");
+      if (!code) continue;
+      map.set(code, {
+        asset: code,
+        name: String(a.name ?? a.displayName ?? code),
+        status: a.listed === false ? "UNLISTED" : String(a.status ?? "LISTED"),
+        depositCount: 0,
+        depositAmount: 0,
+        withdrawalCount: 0,
+        withdrawalAmount: 0,
+      });
+    }
+    for (const d of financeDeposits) {
+      const code = String(d.assetSymbol ?? d.asset ?? "");
+      if (!code) continue;
+      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmount: 0, withdrawalCount: 0, withdrawalAmount: 0 };
+      entry.depositCount += 1;
+      entry.depositAmount += Number(d.amount ?? d.usdtValue ?? 0) || 0;
+      map.set(code, entry);
+    }
+    for (const w of financeWithdrawals) {
+      const code = String(w.assetSymbol ?? w.asset ?? "");
+      if (!code) continue;
+      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmount: 0, withdrawalCount: 0, withdrawalAmount: 0 };
+      entry.withdrawalCount += 1;
+      entry.withdrawalAmount += Number(w.amount ?? w.usdtValue ?? 0) || 0;
+      map.set(code, entry);
+    }
+    return [...map.values()].map((item) => ({
+      币种: item.asset,
+      名称: item.name,
+      上线状态: item.status,
+      充值笔数: item.depositCount,
+      累计充值量: item.depositAmount.toFixed(4),
+      提现笔数: item.withdrawalCount,
+      累计提现量: item.withdrawalAmount.toFixed(4),
+    }));
+  })();
+
   return (
     <Page title="钱包运营" onRefresh={async () => { setWithdrawalsRevision(value => value + 1); await load(); }} loading={loading} error={error}>
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: "withdrawals", label: "提现申请与资金审核", count: assetSummaryRows.length },
+          { key: "onchain", label: "链上运营与地址账本", count: operationAddresses.length },
+          { key: "infra", label: "公链与 RPC 节点配置" },
+          { key: "governance", label: "托管安全与配置治理", count: tableNames.length }
+        ]}
+      />
+      {tab === "withdrawals" && (<>
+      <Panel title="各币种充提汇总与上线币种管理">
+        <div className="stack">
+          {onNavigate && (
+            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <span>共 {assetSummaryRows.length} 个平台币种；可在此查看充提汇总或前往币种配置页上/下线币种。</span>
+              <button type="button" className="primary" onClick={() => onNavigate("assets")}>管理平台上线币种 →</button>
+            </div>
+          )}
+          <DataTable rows={assetSummaryRows} columns={["币种", "名称", "上线状态", "充值笔数", "累计充值量", "提现笔数", "累计提现量"]} />
+        </div>
+      </Panel>
       <CustodyWithdrawalsPanel refreshKey={withdrawalsRevision}/>
+      </>)}
       {loading || !dashboard || !admin || !finance || !operations ? <Panel title="托管钱包连接状态"><p role="status">{loading ? "正在同步托管钱包运营数据…" : "托管钱包运营数据尚未就绪，平台提现申请可在上方独立查询。"}</p></Panel> : <>
       <div className="metrics">
         <Metric label="启用链" value={counts.enabledChains ?? "—"} tone="ok" />
@@ -369,6 +447,7 @@ export default function WalletPage() {
         <Metric label="提现记录" value={counts.withdrawals ?? "—"} tone="warn" />
       </div>
 
+      {tab === "onchain" && (
       <Panel title="链上运营总览">
         <div className="stack">
           <div className="metrics">
@@ -388,14 +467,14 @@ export default function WalletPage() {
             <TextFilter label="Role" value={operationFilters.walletRole} onChange={(value) => updateOperationFilters({ walletRole: value.toUpperCase() })} />
             <TextFilter label="Address" value={operationFilters.address} onChange={(value) => updateOperationFilters({ address: value })} />
             <label>异常类型
-              <select value={operationFilters.eventType} onChange={(event) => updateOperationFilters({ eventType: event.target.value })}>
+              <Select value={operationFilters.eventType} onChange={(event) => updateOperationFilters({ eventType: event.target.value })}>
                 {WALLET_OPERATION_EVENT_TYPES.map((type) => <option key={type} value={type}>{type || "ALL"}</option>)}
-              </select>
+              </Select>
             </label>
             <label>异常状态
-              <select value={operationFilters.exceptionStatus} onChange={(event) => updateOperationFilters({ exceptionStatus: event.target.value })}>
+              <Select value={operationFilters.exceptionStatus} onChange={(event) => updateOperationFilters({ exceptionStatus: event.target.value })}>
                 {WALLET_OPERATION_EXCEPTION_STATUSES.map((status) => <option key={status} value={status}>{status || "ALL"}</option>)}
-              </select>
+              </Select>
             </label>
             <TextFilter label="Limit" value={operationFilters.limit} onChange={(value) => updateOperationFilters({ limit: value })} />
             <SortSelect label="列表排序" value={operationFilters.sort} options={UPDATED_AT_SORTS} onChange={(value) => updateOperationFilters({ sort: value })} />
@@ -427,7 +506,9 @@ export default function WalletPage() {
           </div>
         </div>
       </Panel>
+      )}
 
+      {tab === "withdrawals" && (
       <Panel title="资金审核">
         <div className="stack">
           <div className="metrics">
@@ -440,33 +521,33 @@ export default function WalletPage() {
             <TextFilter label="Chain" value={withdrawalFilters.chain} onChange={(value) => updateWithdrawalFilters({ chain: value.toUpperCase() })} />
             <TextFilter label="Asset" value={withdrawalFilters.assetSymbol} onChange={(value) => updateWithdrawalFilters({ assetSymbol: value.toUpperCase() })} />
             <label>充值状态
-              <select value={withdrawalFilters.depositStatus} onChange={(event) => updateWithdrawalFilters({ depositStatus: event.target.value })}>
+              <Select value={withdrawalFilters.depositStatus} onChange={(event) => updateWithdrawalFilters({ depositStatus: event.target.value })}>
                 <option value="">ALL</option>
                 <option value="CONFIRMED">CONFIRMED</option>
                 <option value="PENDING">PENDING</option>
                 <option value="FAILED">FAILED</option>
                 <option value="REJECTED">REJECTED</option>
                 <option value="BROADCAST_UNKNOWN">BROADCAST_UNKNOWN</option>
-              </select>
+              </Select>
             </label>
             <label>已入账
-              <select value={withdrawalFilters.depositCredited} onChange={(event) => updateWithdrawalFilters({ depositCredited: event.target.value })}>
+              <Select value={withdrawalFilters.depositCredited} onChange={(event) => updateWithdrawalFilters({ depositCredited: event.target.value })}>
                 <option value="">ALL</option>
                 <option value="true">true</option>
                 <option value="false">false</option>
-              </select>
+              </Select>
             </label>
             <label>状态
-              <select value={withdrawalFilters.status} onChange={(event) => updateWithdrawalFilters({ status: event.target.value })}>
+              <Select value={withdrawalFilters.status} onChange={(event) => updateWithdrawalFilters({ status: event.target.value })}>
                 {WALLET_WITHDRAWAL_STATUSES.map((status) => <option key={status} value={status}>{status || "ALL"}</option>)}
-              </select>
+              </Select>
             </label>
             <label>审核结果
-              <select value={withdrawalFilters.decision} onChange={(event) => updateWithdrawalFilters({ decision: event.target.value })}>
+              <Select value={withdrawalFilters.decision} onChange={(event) => updateWithdrawalFilters({ decision: event.target.value })}>
                 <option value="">ALL</option>
                 <option value="APPROVED">APPROVED</option>
                 <option value="REJECTED">REJECTED</option>
-              </select>
+              </Select>
             </label>
             <TextFilter label="Admin ID" value={withdrawalFilters.adminUserId} onChange={(value) => updateWithdrawalFilters({ adminUserId: value })} />
             <TextFilter label="User ID" value={withdrawalFilters.userId} onChange={(value) => updateWithdrawalFilters({ userId: value })} />
@@ -542,7 +623,9 @@ export default function WalletPage() {
           </div>
         </div>
       </Panel>
+      )}
 
+      {tab === "governance" && (
       <TwoColumn>
         <Panel title="项目状态">
           <KeyValue data={(dashboard?.project ?? {}) as UnknownRecord} />
@@ -551,7 +634,9 @@ export default function WalletPage() {
           <DataTable rows={records(admin?.secretStatus)} maxColumns={6} />
         </Panel>
       </TwoColumn>
+      )}
 
+      {tab === "infra" && (
       <div className="three-grid">
         <Panel title="链配置">
           <DataTable rows={walletChainRows(runtime.chainProfiles as UnknownRecord[] | undefined)} maxColumns={9} />
@@ -566,7 +651,9 @@ export default function WalletPage() {
           ]} maxColumns={9} />
         </Panel>
       </div>
+      )}
 
+      {tab === "onchain" && (<>
       <div className="three-grid">
         <Panel title="余额快照">
           <DataTable rows={records(runtime.balances as UnknownRecord[] | undefined)} maxColumns={8} />
@@ -615,7 +702,9 @@ export default function WalletPage() {
           />
         </Panel>
       </div>
+      </>)}
 
+      {tab === "withdrawals" && (
       <Panel title="充值提现异常流水">
         <CursorPager
           page={operationExceptionPageInfo}
@@ -629,18 +718,20 @@ export default function WalletPage() {
           maxColumns={14}
         />
       </Panel>
+      )}
 
+      {tab === "governance" && (
       <Panel title="钱包配置治理">
         <div className="stack">
           <div className="filters">
             <label>配置表
-              <select value={selectedTable} onChange={(event) => {
+              <Select value={selectedTable} onChange={(event) => {
                 setSelectedTable(event.target.value);
                 setSelectedRow(null);
                 setUpdateJson("{}");
               }}>
                 {tableNames.map((name) => <option key={name}>{name}</option>)}
-              </select>
+              </Select>
             </label>
             <label>主键<input value={walletIdColumn(admin, selectedTable)} readOnly /></label>
             <label>可编辑字段<input value={editableColumns.join(", ")} readOnly /></label>
@@ -660,6 +751,7 @@ export default function WalletPage() {
           </div>
         </div>
       </Panel>
+      )}
       </> }
     </Page>
   );

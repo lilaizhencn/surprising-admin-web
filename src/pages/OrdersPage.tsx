@@ -1,10 +1,11 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useRef, useEffect } from "react";
 import { type UnknownRecord, type OrderRecord } from "../types";
 import { tradingMetrics, gatewayGet, gatewayPost } from "../api/admin";
 import { optionalPositiveInt64 } from "../lib/integers";
 import { Search } from "lucide-react";
 import { formatDate } from "../config";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, JsonBlock, TwoColumn, CursorPager, DataTable, Empty, Metric, KeyValue } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, JsonBlock, TwoColumn, CursorPager, DataTable, Empty, Metric, KeyValue, TabBar, SlideDrawer } from "../components/AdminUi";
 import { errorMessage, objectValue, extractRows, ppmPercent } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
 import { CREATED_AT_SORTS, EVENT_TIME_SORTS } from "../lib/queryOptions";
@@ -32,6 +33,7 @@ export default function OrdersPage() {
   });
   const [metricsWindowMinutes, setMetricsWindowMinutes] = useState("1440");
   const [metrics, setMetrics] = useState<UnknownRecord | null>(null);
+  const [tab, setTab] = useState<"orders" | "triggers" | "trades">("orders");
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [orderPageInfo, setOrderPageInfo] = useState(cursorInfo());
   const [timeline, setTimeline] = useState<UnknownRecord | null>(null);
@@ -259,17 +261,17 @@ export default function OrdersPage() {
   return (
     <Page title="订单审计" onRefresh={async () => { await load(); }} loading={loading} error={error}>
       <div className="filters">
-        <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
+        <label>产品线<Select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</Select></label>
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
         <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
         <TextFilter label="Order / Trigger ID" value={filters.orderId} onChange={(value) => updateFilters({ orderId: value })} />
-        <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>{AUDIT_STATUS_FILTERS.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
-        <label>统计窗口<select value={metricsWindowMinutes} onChange={(event) => { updateFilters({}); setMetricsWindowMinutes(event.target.value); }}>
+        <label>状态<Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>{AUDIT_STATUS_FILTERS.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</Select></label>
+        <label>统计窗口<Select value={metricsWindowMinutes} onChange={(event) => { updateFilters({}); setMetricsWindowMinutes(event.target.value); }}>
           <option value="60">1 小时</option>
           <option value="360">6 小时</option>
           <option value="1440">24 小时</option>
           <option value="10080">7 天</option>
-        </select></label>
+        </Select></label>
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
         <SortSelect label="订单排序" value={filters.orderSort} options={CREATED_AT_SORTS} onChange={(value) => updateFilters({ orderSort: value })} />
         <SortSelect label="条件单排序" value={filters.triggerSort} options={CREATED_AT_SORTS} onChange={(value) => updateFilters({ triggerSort: value })} />
@@ -280,9 +282,18 @@ export default function OrdersPage() {
         <button className="primary" onClick={() => void batchCancel()}>批量撤单</button>
         <button className="primary" onClick={() => void cancelByInstrumentId()}>按合约 ID 撤单</button>
       </div>
-      {metrics && <TradingMetricsOverview metrics={metrics} />}
+      <TabBar
+        label="订单与成交审计视图"
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { key: "orders", label: "委托单与撤单", badge: orders.length },
+          { key: "triggers", label: "条件单审计", badge: triggerOrders.length },
+          { key: "trades", label: "成交审计与链路指标", badge: trades.length },
+        ]}
+      />
       {cancelPreview && <Panel title="撤单影响预览"><JsonBlock value={cancelPreview} /></Panel>}
-      <TwoColumn>
+      {tab === "orders" && (
         <Panel title="订单列表">
           <CursorPager loading={loading}
             page={orderPageInfo}
@@ -297,11 +308,8 @@ export default function OrdersPage() {
             actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
           />
         </Panel>
-        <Panel title="订单时间线">
-          {timeline ? <JsonBlock value={timeline} /> : <Empty text="选择订单查看事件、撮合结果和成交" />}
-        </Panel>
-      </TwoColumn>
-      <TwoColumn>
+      )}
+      {tab === "triggers" && (
         <Panel title="条件单列表">
           <CursorPager loading={loading}
             page={triggerPageInfo}
@@ -315,22 +323,42 @@ export default function OrdersPage() {
             onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")} rowActionLabel="查看时间线" label="条件单"
           />
         </Panel>
-        <Panel title="条件单时间线">
-          {triggerTimeline ? <JsonBlock value={triggerTimeline} /> : <Empty text="选择条件单查看触发、执行和拒绝原因" />}
-        </Panel>
-      </TwoColumn>
-      <Panel title="成交审计">
-        <CursorPager loading={loading}
-          page={tradePageInfo}
-          cursor={filters.tradeCursor}
-          onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}
-          onReset={() => void load(filters.orderCursor, filters.triggerCursor, "")}
-        />
-        <DataTable
-          rows={trades}
-          columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
-        />
-      </Panel>
+      )}
+      {tab === "trades" && (
+        <>
+          <Panel title="成交审计">
+            <CursorPager loading={loading}
+              page={tradePageInfo}
+              cursor={filters.tradeCursor}
+              onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}
+              onReset={() => void load(filters.orderCursor, filters.triggerCursor, "")}
+            />
+            <DataTable
+              rows={trades}
+              columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+            />
+          </Panel>
+          {metrics && <TradingMetricsOverview metrics={metrics} />}
+        </>
+      )}
+      <SlideDrawer
+        open={Boolean(timeline)}
+        title="普通订单时间线详情"
+        subtitle="展示订单生命周期事件、撮合结果与成交明细"
+        onClose={() => setTimeline(null)}
+        width={620}
+      >
+        {timeline && <JsonBlock value={timeline} />}
+      </SlideDrawer>
+      <SlideDrawer
+        open={Boolean(triggerTimeline)}
+        title="条件单时间线详情"
+        subtitle="展示条件单触发、下单执行与拒绝原因"
+        onClose={() => setTriggerTimeline(null)}
+        width={620}
+      >
+        {triggerTimeline && <JsonBlock value={triggerTimeline} />}
+      </SlideDrawer>
     </Page>
   );
 }

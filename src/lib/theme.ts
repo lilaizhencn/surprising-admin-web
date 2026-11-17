@@ -1,5 +1,5 @@
 export type Theme = "light" | "dark"
-const storageKey = "surprising-admin.theme"
+const storageKey = "surprising-admin.aurora-theme"
 
 export function initialTheme(): Theme {
   try {
@@ -8,7 +8,7 @@ export function initialTheme(): Theme {
   } catch {
     /* Theme switching remains available without browser storage. */
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+  return "dark"
 }
 
 export function saveTheme(theme: Theme) {

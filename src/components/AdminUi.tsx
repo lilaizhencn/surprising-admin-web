@@ -1,7 +1,116 @@
-import { RefreshCw, BookOpen, ChevronsLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, BookOpen, ChevronsLeft, ChevronRight, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { type UnknownRecord, type StatusTone } from "../types";
 export { DataTable } from "./AdminDataTable";
 import { formatValue } from "../config";
+import { tableColumnLabel } from "../lib/tableRows";
+
+export type AdminTabItem<K extends string = string> = {
+  key: K;
+  label: string;
+  badge?: string | number;
+  count?: string | number;
+};
+
+export function TabBar<K extends string>({
+  tabs,
+  items,
+  active,
+  onChange,
+  label = "页面视图切换",
+}: {
+  tabs?: readonly AdminTabItem<NoInfer<K>>[];
+  items?: readonly AdminTabItem<NoInfer<K>>[];
+  active: K;
+  onChange: (key: K) => void;
+  label?: string;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const resolvedTabs = tabs ?? items ?? [];
+  useEffect(() => {
+    const selected = listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]');
+    selected?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [active]);
+
+  return (
+    <div ref={listRef} className="admin-tabs" role="tablist" aria-label={label}>
+      {resolvedTabs.map((tab) => {
+        const selected = tab.key === active;
+        const badgeValue = tab.badge ?? tab.count;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onChange(tab.key)}
+          >
+            <span>{tab.label}</span>
+            {badgeValue !== undefined && badgeValue !== "" && (
+              <em className="admin-tab-badge">{badgeValue}</em>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SlideDrawer({
+  open,
+  title,
+  subtitle,
+  onClose,
+  width = 560,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  width?: number;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="admin-drawer-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside className="admin-drawer" style={{ width: `min(${width}px, 100vw)` }}>
+        <header className="admin-drawer-header">
+          <div>
+            <h3>{title}</h3>
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="关闭详情抽屉"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <div className="admin-drawer-body">{children}</div>
+      </aside>
+    </div>
+  );
+}
 
 export function Page({ title, children, onRefresh, loading, error, description }: { description?: string; title: string; children: React.ReactNode; onRefresh?: () => void | Promise<void>; loading?: boolean; error?: string | null }) {
   return (
@@ -36,7 +145,7 @@ export function KeyValue({ data }: { data: UnknownRecord }) {
     <div className="kv">
       {entries.map(([key, value]) => (
         <div key={key}>
-          <span>{key}</span>
+          <span title={key}>{tableColumnLabel(key)}</span>
           <strong>{formatValue(value)}</strong>
         </div>
       ))}
@@ -72,6 +181,9 @@ export function TextFilter({ label, value, onChange }: { label: string; value: s
   return <label>{label}<input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
+import { Select } from "./CustomSelect";
+export { Select } from "./CustomSelect";
+
 export function SortSelect({ label = "排序", value, options, onChange }: {
   label?: string;
   value: string;
@@ -80,9 +192,9 @@ export function SortSelect({ label = "排序", value, options, onChange }: {
 }) {
   return (
     <label>{label}
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+      </Select>
     </label>
   );
 }

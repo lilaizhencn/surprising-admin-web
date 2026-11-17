@@ -1,5 +1,7 @@
+import { Select } from "../components/CustomSelect";
 import { FEE_STATUSES, FEE_SOURCE_TYPES, feeScheduleFormTemplate, feeScheduleFormFromRecord, feeSchedulePayload } from "../features/fees/feeScheduleForm";
 import { useState, useEffect } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { gatewayGet, gatewayPost, adminVipLevels, adminUserVipStatus, adminUpdateUserVip } from "../api/admin";
 import { type UnknownRecord } from "../types";
 import { Search, Crown, Award, SlidersHorizontal } from "lucide-react";
@@ -10,6 +12,7 @@ import { jsonObject } from "../lib/formValues";
 import { PRODUCT_LINES } from "../lib/products";
 
 export default function FeesPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<"schedules" | "vip">("schedules");
   const [filters, setFilters] = useState({
     productLine: "LINEAR_PERPETUAL",
@@ -141,7 +144,7 @@ export default function FeesPage() {
         throw new Error("请选择有效的产品线、费率状态和来源。");
       const payload = feeSchedulePayload(feeScheduleFormFromRecord(raw));
       const productLine = String(payload.productLine);
-      if (!window.confirm(`确认保存用户 ${payload.userId} 在 ${productLine} / ${payload.instrumentId ?? "全部合约"} 的费率计划？`)) return;
+      if (!(await confirm({ title: "确认保存费率计划", description: `用户 ${payload.userId} 在 ${productLine} / ${payload.instrumentId ?? "全部合约"} 的费率计划将被保存。` }))) return;
       await gatewayPost("trading-fees", "/schedules", payload, { productLine });
       await load();
       setNotice("费率计划已保存。");
@@ -155,7 +158,7 @@ export default function FeesPage() {
     try {
       const feeScheduleId = positiveInt64(row.feeScheduleId ?? row.id, "费率计划 ID");
       const productLine = fieldText(row.productLine) || filters.productLine;
-      if (!window.confirm(`确认禁用 ${productLine} 的费率计划 ${feeScheduleId}？禁用后重新解析该用户的有效费率。`)) return;
+      if (!(await confirm({ title: `确认禁用费率计划 ${feeScheduleId}`, description: `${productLine} 的该费率计划禁用后，将重新解析该用户的有效费率。`, danger: true }))) return;
       await gatewayPost("trading-fees", `/schedules/${feeScheduleId}/disable`, undefined, { productLine });
       await load(filters.scheduleCursor);
       setNotice("费率计划已禁用。");
@@ -189,10 +192,10 @@ export default function FeesPage() {
       {activeTab === "schedules" ? (
         <>
           <div className="filters">
-            <label>产品线<select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>产品线<Select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</Select></label>
             <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
             <TextFilter label="币对 ID" value={filters.instrumentId} onChange={(value) => updateFilters({ instrumentId: value.toUpperCase() })} />
-            <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></select></label>
+            <label>状态<Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}><option value="">全部</option><option>ACTIVE</option><option>DISABLED</option></Select></label>
             <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
             <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
             <button onClick={() => void load("")}><Search size={16} />查询</button>
@@ -223,12 +226,12 @@ export default function FeesPage() {
               <div className="stack">
                 <div className="form-grid">
                   <TextFilter label="Schedule ID" value={scheduleForm.feeScheduleId} onChange={(value) => updateScheduleForm({ feeScheduleId: value })} />
-                  <label>产品线<select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+                  <label>产品线<Select value={scheduleForm.productLine} onChange={(event) => updateScheduleForm({ productLine: event.target.value })}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</Select></label>
                   <TextFilter label="User ID" value={scheduleForm.userId} onChange={(value) => updateScheduleForm({ userId: value })} />
                   <TextFilter label="币对 ID" value={scheduleForm.instrumentId} onChange={(value) => updateScheduleForm({ instrumentId: value.toUpperCase() })} />
-                  <label>来源<select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>来源<Select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="档位标签（可选）" value={scheduleForm.tierCode} onChange={(value) => updateScheduleForm({ tierCode: value.toUpperCase() })} />
-                  <label>状态<select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>状态<Select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="Maker ppm" value={scheduleForm.makerFeeRatePpm} onChange={(value) => updateScheduleForm({ makerFeeRatePpm: value })} />
                   <TextFilter label="Taker ppm" value={scheduleForm.takerFeeRatePpm} onChange={(value) => updateScheduleForm({ takerFeeRatePpm: value })} />
                   <TextFilter label="生效时间 ISO" value={scheduleForm.effectiveTime} onChange={(value) => updateScheduleForm({ effectiveTime: value })} />
@@ -287,13 +290,13 @@ export default function FeesPage() {
               <div className="form-grid">
                 <label>
                   指定 VIP 等级
-                  <select value={vipFormLevel} onChange={(e) => setVipFormLevel(Number(e.target.value))}>
+                  <Select value={vipFormLevel} onChange={(e) => setVipFormLevel(Number(e.target.value))}>
                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((lvl) => (
                       <option key={lvl} value={lvl}>
                         VIP {lvl} {lvl === 9 ? "(做市商负费率)" : ""}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <TextFilter label="Maker 额外折扣 (ppm)" value={vipMakerDiscount} onChange={setVipMakerDiscount} />
                 <TextFilter label="Taker 额外折扣 (ppm)" value={vipTakerDiscount} onChange={setVipTakerDiscount} />
@@ -315,6 +318,7 @@ export default function FeesPage() {
           </Panel>
         </div>
       )}
+      {dialog}
     </Page>
   );
 }

@@ -23,7 +23,8 @@ const fields: Field[] = [
 export function OrderBusinessSettings({ productLine }: { productLine: string }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState<Record<string, string | boolean>>({});
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState("更新产品线订单规则");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   function install(value: Snapshot) {
@@ -31,13 +32,13 @@ export function OrderBusinessSettings({ productLine }: { productLine: string }) 
     setDraft(Object.fromEntries(fields.map(f => [f.key, f.boolean ? Boolean(value.settings[f.section][f.key]) : String(value.settings[f.section][f.key])])));
   }
   async function read() {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setNotice("");
     try { install(await gatewayGet<Snapshot>("instrument-admin", "/order-settings", { productLine })); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
   async function save() {
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setNotice("");
     try {
       if (!snapshot) throw new Error("请先读取订单设置。");
       if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
@@ -50,21 +51,36 @@ export function OrderBusinessSettings({ productLine }: { productLine: string }) 
       }
       if (Number(settings.algo.minIntervalSeconds) > Number(settings.algo.maxIntervalSeconds) || Number(settings.algo.minDurationSeconds) > Number(settings.algo.maxDurationSeconds))
         throw new Error("最短间隔和执行时长不得大于对应最长值。");
-      if (!window.confirm(`保存 ${productLine} 的订单规则？价格保护将在交易核心确认同步后生效。`)) return;
       install(await gatewayPost<Snapshot>("instrument-admin", "/order-settings", { settings, expectedVersion: snapshot.configurationVersion, reason: reason.trim() }, { productLine }));
+      setNotice(`${productLine} 订单规则已保存并同步。`);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   }
-  return <details className="profile-section instrument-section"><summary>产品线订单规则</summary>
-    <p>当前产品线：{productLine || "请先选择产品线"}。规则由后台统一维护，保存后自动同步；合约的“生效状态”确认后使用新价格保护规则。</p>
-    <button disabled={busy || !productLine} onClick={() => void read()}>读取订单设置</button>
-    {error && <p role="alert">{error}</p>}
-    {snapshot && <><p>配置版本：{snapshot.configurationVersion}；最近保存：{snapshot.updatedAt}</p>
-      <div className="form-grid">{fields.map(f => <label key={f.key}>{f.label}
-        {f.boolean ? <input type="checkbox" checked={Boolean(draft[f.key])} onChange={e => setDraft({ ...draft, [f.key]: e.target.checked })} />
-          : <input type="number" min={f.min} max={f.max} step={1} value={String(draft[f.key] ?? "")} onChange={e => setDraft({ ...draft, [f.key]: e.target.value })} />}
-        <small>{f.help}</small></label>)}</div>
-      <label>修改原因<input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
-      <button disabled={busy} onClick={() => void save()}>保存订单设置</button></>}
+  return <details className="panel profile-section instrument-section"><summary>产品线订单规则</summary>
+    <div className="stack" style={{ marginTop: 10 }}>
+      <p className="muted">当前产品线：{productLine || "请先选择产品线"}。规则由后台统一维护，保存后自动同步；合约的“生效状态”确认后使用新价格保护规则。</p>
+      <div><button type="button" disabled={busy || !productLine} onClick={() => void read()}>读取订单设置</button></div>
+      {notice && <div className="alert" role="status">{notice}</div>}
+      {error && <div className="alert danger" role="alert">{error}</div>}
+      {snapshot && <><p className="muted">配置版本：{snapshot.configurationVersion}；最近保存：{snapshot.updatedAt}</p>
+        <div className="form-grid">{fields.map(f => f.boolean ? (
+          <div key={f.key} style={{ display: "grid", gap: 6 }}>
+            <label className="assets-switch">
+              <input type="checkbox" checked={Boolean(draft[f.key])} onChange={e => setDraft({ ...draft, [f.key]: e.target.checked })} />
+              <span className="assets-switch-track" />
+              <span className="assets-switch-label" style={{ fontWeight: 600, color: "var(--color-ink)" }}>{f.label}</span>
+            </label>
+            <small className="muted">{f.help}</small>
+          </div>
+        ) : (
+          <label key={f.key}>{f.label}
+            <input type="number" min={f.min} max={f.max} step={1} value={String(draft[f.key] ?? "")} onChange={e => setDraft({ ...draft, [f.key]: e.target.value })} />
+            <small>{f.help}</small></label>
+        ))}</div>
+        <label>修改原因<input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
+        <div className="button-row" style={{ justifyContent: "flex-end" }}>
+          <button type="button" className="primary" disabled={busy} onClick={() => void save()}>保存订单设置</button>
+        </div></>}
+    </div>
   </details>;
 }

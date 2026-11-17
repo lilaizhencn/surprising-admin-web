@@ -1,9 +1,10 @@
+import { Select } from "../components/CustomSelect";
 import { safeInteger } from "../lib/integers";
 import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost } from "../api/admin";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, TabBar, SlideDrawer } from "../components/AdminUi";
 import { ADL_QUEUE_SORT, EVENT_TIME_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 import { errorMessage, records, objectValue } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
@@ -32,6 +33,7 @@ export default function RiskPage() {
   const [adlEventPageInfo, setAdlEventPageInfo] = useState(cursorInfo());
   const [data, setData] = useState<RiskData | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<UnknownRecord | null>(null);
+  const [tab, setTab] = useState<"liquidation" | "adl" | "config">("liquidation");
   const [timeline, setTimeline] = useState<UnknownRecord | null>(null);
   const [riskRuleForm, setRiskRuleForm] = useState({
     warningMarginRatioPpm: "",
@@ -267,7 +269,7 @@ export default function RiskPage() {
   return (
     <Page title="风控强平" onRefresh={() => load()} loading={loading} error={error}>
       <div className="filters">
-        <label>产品线<select value={listFilters.productLine} onChange={(event) => updateRiskFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</select></label>
+        <label>产品线<Select value={listFilters.productLine} onChange={(event) => updateRiskFilters({ productLine: event.target.value })}>{PRODUCT_LINES.map((item) => <option key={item} value={item}>{item || "全部"}</option>)}</Select></label>
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetRiskCursors(); }} />
         <TextFilter label="User ID" value={userId} onChange={(value) => { setUserId(value); resetRiskCursors(); }} />
         <TextFilter label="Limit" value={listFilters.limit} onChange={(value) => updateRiskFilters({ limit: value })} />
@@ -277,115 +279,140 @@ export default function RiskPage() {
         <SortSelect label="ADL 事件排序" value={listFilters.adlEventSort} options={CREATED_AT_SORTS} onChange={(value) => updateRiskFilters({ adlEventSort: value })} />
         <button onClick={() => { resetRiskCursors(); void load("", "", "", "", ""); }}><Search size={16} />查询</button>
       </div>
-      <TwoColumn>
-        <Panel title="高风险账户">
-          <div className="stack">
-            <DataTable
-              rows={records(data?.highRiskAccounts)}
-              columns={["riskLevel", "userId", "settleAsset", "status", "marginRatioPpm", "equityUnits", "maintenanceMarginUnits", "activeCandidateCount", "topSymbol", "topPositionMarginRatioPpm", "eventTime"]}
-            />
-            <CursorPager
-              page={highRiskPageInfo}
-              cursor={listFilters.highRiskCursor}
-              onNext={() => void load(listFilters.candidateCursor, highRiskPageInfo.nextCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-              onReset={() => void load(listFilters.candidateCursor, "", listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-            />
-          </div>
-        </Panel>
-        <Panel title="风控规则">
-          <div className="stack">
-            <DataTable
-              rows={records(data?.riskRules)}
-              columns={["ruleCode", "ruleType", "enabled", "warningMarginRatioPpm", "liquidationMarginRatioPpm", "scanDelayMs", "scanBatchSize", "source", "updatedAt"]}
-            />
-            <div className="filters">
-              <TextFilter label="Warning PPM" value={riskRuleForm.warningMarginRatioPpm} onChange={(value) => setRiskRuleForm((current) => ({ ...current, warningMarginRatioPpm: value }))} />
-              <TextFilter label="Liquidation PPM" value={riskRuleForm.liquidationMarginRatioPpm} onChange={(value) => setRiskRuleForm((current) => ({ ...current, liquidationMarginRatioPpm: value }))} />
-              <button className="primary" onClick={() => void updateMarginRule()}>更新阈值</button>
+      <TabBar
+        label="风控强平视图"
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { key: "liquidation", label: "高危账户与强平监控", badge: records(data?.highRiskAccounts).length },
+          { key: "adl", label: "ADL 自动减仓监控", badge: records(data?.adlQueue).length },
+          { key: "config", label: "风控规则与引擎参数" },
+        ]}
+      />
+      {tab === "liquidation" && (
+        <>
+          <Panel title="高风险账户">
+            <div className="stack">
+              <DataTable
+                rows={records(data?.highRiskAccounts)}
+                columns={["riskLevel", "userId", "settleAsset", "status", "marginRatioPpm", "equityUnits", "maintenanceMarginUnits", "activeCandidateCount", "topSymbol", "topPositionMarginRatioPpm", "eventTime"]}
+              />
+              <CursorPager
+                page={highRiskPageInfo}
+                cursor={listFilters.highRiskCursor}
+                onNext={() => void load(listFilters.candidateCursor, highRiskPageInfo.nextCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+                onReset={() => void load(listFilters.candidateCursor, "", listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+              />
             </div>
-            <div className="filters">
-              <label className="toggle"><input type="checkbox" checked={riskRuleForm.scanEnabled} onChange={(event) => setRiskRuleForm((current) => ({ ...current, scanEnabled: event.target.checked }))} />扫描启用</label>
-              <TextFilter label="Scan Delay MS" value={riskRuleForm.scanDelayMs} onChange={(value) => setRiskRuleForm((current) => ({ ...current, scanDelayMs: value }))} />
-              <TextFilter label="Batch Size" value={riskRuleForm.scanBatchSize} onChange={(value) => setRiskRuleForm((current) => ({ ...current, scanBatchSize: value }))} />
-              <button className="primary" onClick={() => void updateScanRule()}>更新扫描</button>
+          </Panel>
+          <TwoColumn>
+            <Panel title="爆仓候选">
+              <div className="stack">
+                <DataTable
+                  rows={records(data?.candidates)}
+                  maxColumns={10}
+                  onRowClick={(row) => void loadTimeline(row)} rowActionLabel="查看风险时间线" label="爆仓候选"
+                />
+                <CursorPager
+                  page={candidatePageInfo}
+                  cursor={listFilters.candidateCursor}
+                  onNext={() => void load(candidatePageInfo.nextCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+                  onReset={() => void load("", listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+                />
+              </div>
+            </Panel>
+            <Panel title="强平订单">
+              <div className="stack">
+                <DataTable rows={records(data?.liquidations)} maxColumns={10} />
+                <CursorPager
+                  page={liquidationPageInfo}
+                  cursor={listFilters.liquidationCursor}
+                  onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, liquidationPageInfo.nextCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+                  onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, "", listFilters.adlQueueCursor, listFilters.adlEventCursor)}
+                />
+              </div>
+            </Panel>
+          </TwoColumn>
+        </>
+      )}
+      {tab === "adl" && (
+        <TwoColumn>
+          <Panel title="ADL 队列">
+            <div className="stack">
+              <DataTable rows={records(data?.adlQueue)} maxColumns={10} />
+              <CursorPager
+                page={adlQueuePageInfo}
+                cursor={listFilters.adlQueueCursor}
+                onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, adlQueuePageInfo.nextCursor, listFilters.adlEventCursor)}
+                onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, "", listFilters.adlEventCursor)}
+              />
             </div>
-            <TextFilter label="Reason" value={riskRuleForm.reason} onChange={(value) => setRiskRuleForm((current) => ({ ...current, reason: value }))} />
-          </div>
-        </Panel>
-      </TwoColumn>
-      <div className="two-grid">
-        <Panel title="爆仓候选">
-          <div className="stack">
-            <DataTable
-              rows={records(data?.candidates)}
-              maxColumns={10}
-              onRowClick={(row) => void loadTimeline(row)} rowActionLabel="查看风险时间线" label="爆仓候选"
-            />
-            <CursorPager
-              page={candidatePageInfo}
-              cursor={listFilters.candidateCursor}
-              onNext={() => void load(candidatePageInfo.nextCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-              onReset={() => void load("", listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-            />
-          </div>
-        </Panel>
-        <Panel title="强平订单">
-          <div className="stack">
-            <DataTable rows={records(data?.liquidations)} maxColumns={10} />
-            <CursorPager
-              page={liquidationPageInfo}
-              cursor={listFilters.liquidationCursor}
-              onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, liquidationPageInfo.nextCursor, listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-              onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, "", listFilters.adlQueueCursor, listFilters.adlEventCursor)}
-            />
-          </div>
-        </Panel>
-        <Panel title="ADL 队列">
-          <div className="stack">
-            <DataTable rows={records(data?.adlQueue)} maxColumns={10} />
-            <CursorPager
-              page={adlQueuePageInfo}
-              cursor={listFilters.adlQueueCursor}
-              onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, adlQueuePageInfo.nextCursor, listFilters.adlEventCursor)}
-              onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, "", listFilters.adlEventCursor)}
-            />
-          </div>
-        </Panel>
-        <Panel title="ADL 事件">
-          <div className="stack">
-            <DataTable rows={records(data?.adlEvents)} maxColumns={10} />
-            <CursorPager
-              page={adlEventPageInfo}
-              cursor={listFilters.adlEventCursor}
-              onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, adlEventPageInfo.nextCursor)}
-              onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, "")}
-            />
-          </div>
-        </Panel>
-      </div>
-      <TwoColumn>
-        <Panel title="强平时间线">
-          <div className="stack">
-            <div className="button-row">
-              <TextFilter label="取消原因" value={cancelCandidateReason} onChange={setCancelCandidateReason} />
-              <button onClick={() => selectedCandidate && void loadTimeline(selectedCandidate)} disabled={!selectedCandidate}><Search size={16} />刷新时间线</button>
-              <button className="danger" onClick={() => void cancelCandidate()} disabled={!selectedCandidate && !timeline}>取消候选</button>
+          </Panel>
+          <Panel title="ADL 事件">
+            <div className="stack">
+              <DataTable rows={records(data?.adlEvents)} maxColumns={10} />
+              <CursorPager
+                page={adlEventPageInfo}
+                cursor={listFilters.adlEventCursor}
+                onNext={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, adlEventPageInfo.nextCursor)}
+                onReset={() => void load(listFilters.candidateCursor, listFilters.highRiskCursor, listFilters.liquidationCursor, listFilters.adlQueueCursor, "")}
+              />
             </div>
-            <DataTable rows={timelineRows} columns={["eventTime", "source", "eventType", "subject", "summary"]} />
+          </Panel>
+        </TwoColumn>
+      )}
+      {tab === "config" && (
+        <>
+          <Panel title="风控规则">
+            <div className="stack">
+              <DataTable
+                rows={records(data?.riskRules)}
+                columns={["ruleCode", "ruleType", "enabled", "warningMarginRatioPpm", "liquidationMarginRatioPpm", "scanDelayMs", "scanBatchSize", "source", "updatedAt"]}
+              />
+              <div className="filters">
+                <TextFilter label="Warning PPM" value={riskRuleForm.warningMarginRatioPpm} onChange={(value) => setRiskRuleForm((current) => ({ ...current, warningMarginRatioPpm: value }))} />
+                <TextFilter label="Liquidation PPM" value={riskRuleForm.liquidationMarginRatioPpm} onChange={(value) => setRiskRuleForm((current) => ({ ...current, liquidationMarginRatioPpm: value }))} />
+                <button className="primary" onClick={() => void updateMarginRule()}>更新阈值</button>
+              </div>
+              <div className="filters">
+                <label className="toggle"><input type="checkbox" checked={riskRuleForm.scanEnabled} onChange={(event) => setRiskRuleForm((current) => ({ ...current, scanEnabled: event.target.checked }))} />扫描启用</label>
+                <TextFilter label="Scan Delay MS" value={riskRuleForm.scanDelayMs} onChange={(value) => setRiskRuleForm((current) => ({ ...current, scanDelayMs: value }))} />
+                <TextFilter label="Batch Size" value={riskRuleForm.scanBatchSize} onChange={(value) => setRiskRuleForm((current) => ({ ...current, scanBatchSize: value }))} />
+                <button className="primary" onClick={() => void updateScanRule()}>更新扫描</button>
+              </div>
+              <TextFilter label="Reason" value={riskRuleForm.reason} onChange={(value) => setRiskRuleForm((current) => ({ ...current, reason: value }))} />
+            </div>
+          </Panel>
+          <div className="three-grid">
+            <RuntimeConfigPanel key={`risk-${listFilters.productLine}`} title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} productLine={listFilters.productLine} />
+            <RuntimeConfigPanel key={`liquidation-${listFilters.productLine}`} title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} productLine={listFilters.productLine} />
+            <RuntimeConfigPanel key={`adl-${listFilters.productLine}`} title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} productLine={listFilters.productLine} />
           </div>
-        </Panel>
-        <Panel title="时间线详情">
+        </>
+      )}
+      <SlideDrawer
+        open={Boolean(selectedCandidate || timeline)}
+        title="强平时间线与候选详情"
+        subtitle="核查爆仓候选触发轨迹、关联强平订单并支持人工取消候选"
+        onClose={() => {
+          setSelectedCandidate(null);
+          setTimeline(null);
+        }}
+        width={680}
+      >
+        <div className="stack">
+          <div className="button-row">
+            <TextFilter label="取消原因" value={cancelCandidateReason} onChange={setCancelCandidateReason} />
+            <button onClick={() => selectedCandidate && void loadTimeline(selectedCandidate)} disabled={!selectedCandidate}><Search size={16} />刷新时间线</button>
+            <button className="danger" onClick={() => void cancelCandidate()} disabled={!selectedCandidate && !timeline}>取消候选</button>
+          </div>
           <KeyValue data={objectValue(timeline?.candidate)} />
+          <DataTable rows={timelineRows} columns={["eventTime", "source", "eventType", "subject", "summary"]} />
           {records(timeline?.orders as UnknownRecord[] | undefined).length > 0 && (
             <DataTable rows={records(timeline?.orders as UnknownRecord[] | undefined)} maxColumns={8} />
           )}
-        </Panel>
-      </TwoColumn>
-      <div className="three-grid">
-        <RuntimeConfigPanel key={`risk-${listFilters.productLine}`} title="风控运行时配置" service="risk" path="/admin/runtime-config" template={{ calculationEnabled: false, coordinationEnabled: false }} productLine={listFilters.productLine} />
-        <RuntimeConfigPanel key={`liquidation-${listFilters.productLine}`} title="强平运行时配置" service="liquidation" path="/admin/runtime-config" template={{ executionEnabled: false }} productLine={listFilters.productLine} />
-        <RuntimeConfigPanel key={`adl-${listFilters.productLine}`} title="ADL 运行时配置" service="adl" path="/admin/runtime-config" template={{ scannerEnabled: false }} productLine={listFilters.productLine} />
-      </div>
+        </div>
+      </SlideDrawer>
     </Page>
   );
 }

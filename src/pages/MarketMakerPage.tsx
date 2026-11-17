@@ -1,9 +1,11 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost, adminGridStrategies, adminStopGridStrategy } from "../api/admin";
-import { RefreshCw, Search, Bot, Activity } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import { positiveInt64 } from "../lib/integers";
-import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, TwoColumn, DataTable, CursorPager, KeyValue } from "../components/AdminUi";
+import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, TwoColumn, DataTable, CursorPager, KeyValue, TabBar } from "../components/AdminUi";
 import { errorMessage, objectValue, records, ppmPercent } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
@@ -11,6 +13,7 @@ import { CREATED_AT_SORTS } from "../lib/queryOptions";
 const MARKET_MAKER_EVENT_TYPES = ["", "CYCLE_SUCCESS", "CYCLE_FAILED", "QUOTE_RECONCILED", "TRADE_SUBMITTED", "TRADE_REJECTED", "SKIPPED"];
 
 export default function MarketMakerPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [strategies, setStrategies] = useState<UnknownRecord[]>([]);
   const [metrics, setMetrics] = useState<UnknownRecord | null>(null);
   const [pnl, setPnl] = useState<UnknownRecord | null>(null);
@@ -28,7 +31,7 @@ export default function MarketMakerPage() {
     logSort: "createdAt.desc"
   });
   const [logPageInfo, setLogPageInfo] = useState(cursorInfo());
-  const [activeTab, setActiveTab] = useState<"maker" | "grid">("maker");
+  const [activeTab, setActiveTab] = useState<"control" | "attribution" | "quality" | "grid">("control");
   const [gridStrategies, setGridStrategies] = useState<UnknownRecord[]>([]);
   const [gridSymbol, setGridSymbol] = useState("");
   const [gridStatus, setGridStatus] = useState("");
@@ -53,7 +56,7 @@ export default function MarketMakerPage() {
   }
 
   async function handleStopGrid(strategyId: string) {
-    if (!window.confirm(`确认终止网格策略 ${strategyId} 并撤销所有未成交挂单？`)) return;
+    if (!(await confirm({ title: `终止网格策略 ${strategyId}`, description: "将撤销所有未成交挂单，操作不可撤回。", danger: true }))) return;
     setGridLoading(true); setError(""); setNotice("");
     try {
       await adminStopGridStrategy(strategyId);
@@ -156,22 +159,19 @@ export default function MarketMakerPage() {
     <Page title="做市与策略机器人管理" onRefresh={() => { void load(); void loadGrid(); }} loading={loading || gridLoading} error={error}>
       {notice && <p role="status">{notice}</p>}
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-        <button
-          className={activeTab === "maker" ? "primary" : ""}
-          onClick={() => setActiveTab("maker")}
-        >
-          <Activity size={14} style={{ marginRight: "4px" }} />
-          做市商流动性与归因
-        </button>
-        <button
-          className={activeTab === "grid" ? "primary" : ""}
-          onClick={() => { setActiveTab("grid"); void loadGrid(); }}
-        >
-          <Bot size={14} style={{ marginRight: "4px" }} />
-          网格策略机器人全网监控
-        </button>
-      </div>
+      <TabBar
+        active={activeTab}
+        onChange={(next) => {
+          setActiveTab(next);
+          if (next === "grid") void loadGrid();
+        }}
+        items={[
+          { key: "control", label: "做市策略与运行控制", count: strategies.length },
+          { key: "attribution", label: "收益归因与运行日志", count: pnlRows.length },
+          { key: "quality", label: "深度与报价质量监控", count: metricRows.length },
+          { key: "grid", label: "网格策略机器人监控", count: gridStrategies.length || undefined }
+        ]}
+      />
 
       {activeTab === "grid" ? (
         <div className="stack">
@@ -179,11 +179,11 @@ export default function MarketMakerPage() {
             <TextFilter label="交易对" value={gridSymbol} onChange={setGridSymbol} />
             <label>
               状态
-              <select value={gridStatus} onChange={(e) => setGridStatus(e.target.value)}>
+              <Select value={gridStatus} onChange={(e) => setGridStatus(e.target.value)}>
                 <option value="">全部</option>
                 <option value="RUNNING">RUNNING (运行中)</option>
                 <option value="STOPPED">STOPPED (已终止)</option>
-              </select>
+              </Select>
             </label>
             <button className="primary" disabled={gridLoading} onClick={() => void loadGrid()}>
               <Search size={16} /> 查询网格策略
@@ -240,17 +240,17 @@ export default function MarketMakerPage() {
       </div>
       <Panel title="收益归因与运行日志筛选">
         <div className="filters">
-          <label>产品线<select value={insightFilters.productLine} onChange={(event) => {
+          <label>产品线<Select value={insightFilters.productLine} onChange={(event) => {
             setSelectedStrategyId("");
             updateInsightFilters({ productLine: event.target.value });
-          }}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          }}>{PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}</Select></label>
           <TextFilter label="Strategy" value={insightFilters.strategyId} onChange={(value) => updateInsightFilters({ strategyId: value })} />
           <TextFilter label="币对 ID" value={insightFilters.instrumentId} onChange={(value) => updateInsightFilters({ instrumentId: value.toUpperCase() })} />
           <TextFilter label="Account ID" value={insightFilters.accountId} onChange={(value) => updateInsightFilters({ accountId: value })} />
           <label>事件类型
-            <select value={insightFilters.eventType} onChange={(event) => updateInsightFilters({ eventType: event.target.value })}>
+            <Select value={insightFilters.eventType} onChange={(event) => updateInsightFilters({ eventType: event.target.value })}>
               {MARKET_MAKER_EVENT_TYPES.map((item) => <option key={item || "ALL"} value={item}>{item || "全部"}</option>)}
-            </select>
+            </Select>
           </label>
           <TextFilter label="Window Hours" value={insightFilters.windowHours} onChange={(value) => updateInsightFilters({ windowHours: value })} />
           <TextFilter label="Limit" value={insightFilters.limit} onChange={(value) => updateInsightFilters({ limit: value })} />
@@ -258,14 +258,7 @@ export default function MarketMakerPage() {
           <button onClick={() => void load("")}><Search size={16} />查询归因</button>
         </div>
       </Panel>
-      <div className="metrics">
-        <Metric label="归因行数" value={pnlTotals.rowCount ?? pnlRows.length} tone="muted" />
-        <Metric label="总成交" value={pnlTotals.totalTrades ?? 0} tone="ok" />
-        <Metric label="Maker/Taker" value={`${pnlTotals.makerTrades ?? 0}/${pnlTotals.takerTrades ?? 0}`} tone="muted" />
-        <Metric label="净手续费" value={pnlTotals.netFeeUnits ?? 0} tone={Number(pnlTotals.netFeeUnits ?? 0) >= 0 ? "ok" : "warn"} />
-        <Metric label="当前已实现 PnL" value={pnlTotals.currentRealizedPnlUnits ?? 0} tone={Number(pnlTotals.currentRealizedPnlUnits ?? 0) >= 0 ? "ok" : "warn"} />
-        <Metric label="运行日志" value={runLogs.length} tone={runLogs.some((row) => row.eventType === "CYCLE_FAILED" || row.eventType === "TRADE_REJECTED") ? "warn" : "muted"} />
-      </div>
+      {activeTab === "control" && (<>
       <TwoColumn>
         <Panel title="策略控制">
           <DataTable rows={strategies} columns={["productLine", "strategyId", "status", "configuredEnabled", "runtimePaused", "cycleSequence", "submittedOrders", "canceledOrders", "rejectedOrders", "lastError"]} actions={(row) => (
@@ -279,7 +272,18 @@ export default function MarketMakerPage() {
           <DataTable rows={anomalies} columns={["severity", "type", "productLine", "strategyId", "instrumentId", "accountId", "metricValue", "threshold", "summary"]} />
         </Panel>
       </TwoColumn>
+      <MakerLeveragePanel key={insightFilters.productLine} productLine={insightFilters.productLine} strategies={strategies} />
       <Panel title="做市配置维护"><p>在合约页面统一维护策略、行情来源和公共报价参数。</p><a href="#markets">进入合约配置</a></Panel>
+      </>)}
+      {activeTab === "attribution" && (<>
+      <div className="metrics">
+        <Metric label="归因行数" value={pnlTotals.rowCount ?? pnlRows.length} tone="muted" />
+        <Metric label="总成交" value={pnlTotals.totalTrades ?? 0} tone="ok" />
+        <Metric label="Maker/Taker" value={`${pnlTotals.makerTrades ?? 0}/${pnlTotals.takerTrades ?? 0}`} tone="muted" />
+        <Metric label="净手续费" value={pnlTotals.netFeeUnits ?? 0} tone={Number(pnlTotals.netFeeUnits ?? 0) >= 0 ? "ok" : "warn"} />
+        <Metric label="当前已实现 PnL" value={pnlTotals.currentRealizedPnlUnits ?? 0} tone={Number(pnlTotals.currentRealizedPnlUnits ?? 0) >= 0 ? "ok" : "warn"} />
+        <Metric label="运行日志" value={runLogs.length} tone={runLogs.some((row) => row.eventType === "CYCLE_FAILED" || row.eventType === "TRADE_REJECTED") ? "warn" : "muted"} />
+      </div>
       <TwoColumn>
         <Panel title="做市收益归因">
           <DataTable
@@ -332,7 +336,8 @@ export default function MarketMakerPage() {
           </div>
         </Panel>
       </TwoColumn>
-      <MakerLeveragePanel key={insightFilters.productLine} productLine={insightFilters.productLine} strategies={strategies} />
+      </>)}
+      {activeTab === "quality" && (<>
       <Panel title="价格带内可成交深度">
         <p>金额为合约报价资产的最小单位；滑点相对当前最优买卖价，不含价差和手续费。过期盘口不能作为可成交容量。</p>
         <DataTable rows={liquidityRows} columns={["strategyId", "productLine", "instrumentId", "accountId", "slippage",
@@ -368,13 +373,16 @@ export default function MarketMakerPage() {
           <DataTable rows={warnings} columns={["productLine", "strategyId", "instrumentId", "accountId", "message"]} />
         </Panel>
       )}
+      </>)}
       </>
       )}
+      {dialog}
     </Page>
   );
 }
 
 function MakerLeveragePanel({ productLine, strategies }: { productLine: string; strategies: UnknownRecord[] }) {
+  const { confirm, dialog } = useConfirmDialog();
   const choices = strategies.filter((strategy) => strategy.productLine === productLine).flatMap((strategy) => {
     const accounts = Array.isArray(strategy.accountIds) ? strategy.accountIds : [];
     const instruments = Array.isArray(strategy.instrumentIds) ? strategy.instrumentIds : [];
@@ -397,7 +405,7 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
     if (save && (!Number.isSafeInteger(leveragePpm) || leveragePpm < 1_000_000 || !reason.trim())) {
       setError("请填写至少 1 倍的有效杠杆和调整原因"); return;
     }
-    if (save && !window.confirm(`确认将 ${productLine} ${choice.label} 的全仓杠杆调整为 ${multiple} 倍？${repriceCrossMargin ? "将从可用余额补足持仓保证金；存在挂单、资金不足或提高杠杆时拒绝。" : "保证金仍由交易核心校验。"}`)) return;
+    if (save && !(await confirm({ title: `调整 ${choice.label} 杠杆为 ${multiple} 倍`, description: `${productLine} 全仓杠杆调整。${repriceCrossMargin ? "将从可用余额补足持仓保证金；存在挂单、资金不足或提高杠杆时拒绝。" : "保证金仍由交易核心校验。"}` }))) return;
     setBusy(true); setError("");
     try {
       const params = { productLine, userId: positiveInt64(choice.userId, "做市用户 ID"), instrumentId: choice.instrumentId, marginMode: "CROSS" };
@@ -410,10 +418,10 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
   }
   return <Panel title="做市账号全仓杠杆">
     <div className="filters">
-      <label>账号与合约<select value={selected} onChange={(event) => { setSelected(event.target.value); setSetting(null); }}>
+      <label>账号与合约<Select value={selected} onChange={(event) => { setSelected(event.target.value); setSetting(null); }}>
         <option value="">请选择</option>
         {choices.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-      </select></label>
+      </Select></label>
       <TextFilter label="杠杆倍数" value={multiple} onChange={setMultiple} />
       <TextFilter label="调整原因" value={reason} onChange={setReason} />
       <label><input type="checkbox" checked={repriceCrossMargin} onChange={(event) => setRepriceCrossMargin(event.target.checked)} />降低杠杆并补足持仓保证金</label>
@@ -423,6 +431,7 @@ function MakerLeveragePanel({ productLine, strategies }: { productLine: string; 
     {repriceCrossMargin && <p>请先暂停该策略并撤完该账户该合约的全仓挂单；调整成功后再恢复报价。</p>}
     {error && <div className="alert danger">{error}</div>}
     {setting && <KeyValue data={setting} />}
+    {dialog}
   </Panel>;
 }
 

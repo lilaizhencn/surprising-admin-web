@@ -1,4 +1,6 @@
+import { Select } from "../components/CustomSelect";
 import { useEffect, useState } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import {
   affiliateAdmin,
   affiliatePercent,
@@ -10,6 +12,7 @@ import { PRODUCT_LINES } from "../lib/products";
 import type { UnknownRecord } from "../types";
 
 export default function AffiliatePage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [data, setData] = useState<AffiliateAdminData | null>(null);
   const [cursor, setCursor] = useState("0");
   const [revision, setRevision] = useState(0);
@@ -118,7 +121,7 @@ export default function AffiliatePage() {
                   const h = Number(hours);
                   if (!Number.isInteger(h) || h < 1 || h > 720)
                     throw new Error("结算周期应为 1–720 小时");
-                  if (!window.confirm("确认调整未来返佣比例与结算周期？"))
+                  if (!(await confirm({ title: "调整返佣比例与结算周期", description: "确认调整未来返佣比例与结算周期？" })))
                     return false;
                   await affiliateAdmin.settings(
                     affiliatePercent(normal),
@@ -184,11 +187,7 @@ export default function AffiliatePage() {
               disabled={busy || !userId}
               onClick={() =>
                 void run(async () => {
-                  if (
-                    !window.confirm(
-                      `确认更新 UID ${userId} 的 KOL、返佣及结算设置？`,
-                    )
-                  )
+                  if (!(await confirm({ title: "更新 KOL 与返佣设置", description: `确认更新 UID ${userId} 的 KOL、返佣及结算设置？` })))
                     return false;
                   await affiliateAdmin.profile(
                     userId,
@@ -208,14 +207,14 @@ export default function AffiliatePage() {
           <div className="stack">
             <label>
               产品线
-              <select
+              <Select
                 value={product}
                 onChange={(event) => setProduct(event.target.value)}
               >
                 {PRODUCT_LINES.filter(Boolean).map((line) => (
                   <option key={line}>{line}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <TextFilter
               label="已备资的预算账户 UID"
@@ -229,11 +228,7 @@ export default function AffiliatePage() {
               disabled={busy || !budget}
               onClick={() =>
                 void run(async () => {
-                  if (
-                    !window.confirm(
-                      `确认将 ${product} 的返佣付款账户设置为 UID ${budget}？`,
-                    )
-                  )
+                  if (!(await confirm({ title: "设置返佣付款账户", description: `确认将 ${product} 的返佣付款账户设置为 UID ${budget}？` })))
                     return false;
                   await affiliateAdmin.budget(product, budget, requireReason());
                 }, "预算账户已保存")
@@ -269,7 +264,7 @@ export default function AffiliatePage() {
             disabled={busy}
             onClick={() =>
               void run(async () => {
-                if (!window.confirm("确认将已成熟的待付佣金生成结算单？"))
+                if (!(await confirm({ title: "手动结算成熟佣金", description: "确认将已成熟的待付佣金生成结算单？" })))
                   return false;
                 await affiliateAdmin.settle();
               }, "结算任务已排队，请刷新查看实际到账状态")
@@ -345,11 +340,7 @@ export default function AffiliatePage() {
                 disabled={busy}
                 onClick={() =>
                   void run(async () => {
-                    if (
-                      !window.confirm(
-                        "确认重试该结算？未知结果沿用原资金身份；明确拒绝才创建替代结算单。",
-                      )
-                    )
+                    if (!(await confirm({ title: "重试结算", description: "确认重试该结算？未知结果沿用原资金身份；明确拒绝才创建替代结算单。" })))
                       return false;
                     await affiliateAdmin.retry(String(row.payoutId));
                   }, "结算重试已排队")
@@ -361,6 +352,7 @@ export default function AffiliatePage() {
           }
         />
       </Panel>
+      {dialog}
     </Page>
   );
 }

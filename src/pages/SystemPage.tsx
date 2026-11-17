@@ -4,9 +4,10 @@ import { systemHealth, systemRoutes, systemMetrics, systemObservability, mfaStat
 import { RefreshCw, Shield } from "lucide-react";
 import { formatDate, compactNumber } from "../config";
 import { errorMessage, records, objectValue } from "../lib/adminData";
-import { Page, TextFilter, Metric, Panel, DataTable, TwoColumn, KeyValue, StatusBadge } from "../components/AdminUi";
+import { Page, TextFilter, Metric, Panel, DataTable, TwoColumn, KeyValue, StatusBadge, TabBar } from "../components/AdminUi";
 
 export default function SystemPage() {
+  const [tab, setTab] = useState<"health" | "observability" | "security">("health");
   const [health, setHealth] = useState<UnknownRecord | null>(null);
   const [routes, setRoutes] = useState<UnknownRecord | null>(null);
   const [metrics, setMetrics] = useState<UnknownRecord | null>(null);
@@ -135,6 +136,16 @@ export default function SystemPage() {
         <Metric label="路由数" value={publicRoutes.length + adminRoutes.length} tone="ok" />
         <Metric label="更新时间" value={formatDate(String(health?.generatedAt ?? ""))} tone="muted" />
       </div>
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: "health", label: "服务健康与路由拓扑", count: healthRows.length },
+          { key: "observability", label: "基础设施与可观测性", count: kafkaGroupRows.length + prometheusRows.length },
+          { key: "security", label: "管理员安全与 2FA", count: mfaEnabled ? "已启用" : "未绑定" }
+        ]}
+      />
+      {tab === "health" && (<>
       <Panel title="运行指标聚合">
         <div className="metrics">
           <Metric label="Outbox 待发布" value={outboxMetrics.totalPending ?? 0} tone={Number(outboxMetrics.totalPending ?? 0) > 0 ? "warn" : "ok"} />
@@ -153,6 +164,23 @@ export default function SystemPage() {
           </div>
         )}
       </Panel>
+      <Panel title="服务健康巡检">
+        <DataTable
+          rows={healthRows}
+          columns={["service", "routeType", "status", "httpStatus", "latencyMs", "baseUrl", "healthUrl", "targetPrefix", "error"]}
+          actions={(row) => <StatusBadge value={String(row.status ?? "UNKNOWN")} />}
+        />
+      </Panel>
+      <TwoColumn>
+        <Panel title="后台路由">
+          <DataTable rows={adminRoutes} columns={["service", "baseUrl", "targetPrefix", "privateRoute", "basicAuthConfigured"]} />
+        </Panel>
+        <Panel title="普通路由">
+          <DataTable rows={publicRoutes} columns={["service", "baseUrl", "targetPrefix", "privateRoute", "basicAuthConfigured"]} />
+        </Panel>
+      </TwoColumn>
+      </>)}
+      {tab === "observability" && (<>
       <Panel title="基础设施可观测性">
         <div className="metrics">
           <Metric label="Kafka Lag" value={kafkaMetrics.enabled === false ? "DISABLED" : kafkaMetrics.totalLag ?? 0} tone={Number(kafkaMetrics.totalLag ?? 0) > 0 ? "warn" : "ok"} />
@@ -209,22 +237,55 @@ export default function SystemPage() {
           />
         </Panel>
       </TwoColumn>
-      <Panel title="管理员安全">
+      </>)}
+      {tab === "security" && (
+      <Panel title="管理员安全 (2FA)">
         <div className="stack">
-          <KeyValue data={{
-            mfaEnabled,
-            verifiedAt: mfa?.verifiedAt ?? "",
-            policy: "SERVER_CONFIG"
-          }} />
-          <div className="button-row">
-            <TextFilter label="2FA 动态码" value={mfaCode} onChange={(value) => setMfaCode(value.replace(/\D/g, "").slice(0, 6))} />
-            <button onClick={() => void startMfaEnrollment()}><Shield size={16} />绑定 2FA</button>
-            <button className="primary" onClick={() => void confirmMfaEnrollment()} disabled={!mfaEnrollment}>确认绑定</button>
-            <button onClick={() => void turnOffMfa()} disabled={!mfaEnabled}>关闭 2FA</button>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className={`pla-badge ${mfaEnabled ? "ok" : "muted"}`}>
+                <Shield size={13} aria-hidden="true" />
+                {mfaEnabled ? "2FA 已启用" : "2FA 未绑定"}
+              </span>
+              {mfa?.verifiedAt ? (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  最近验证：{formatDate(String(mfa.verifiedAt))}
+                </span>
+              ) : null}
+            </div>
+            <div className="button-row">
+              {!mfaEnabled && !mfaEnrollment && (
+                <button type="button" className="primary" onClick={() => void startMfaEnrollment()}>
+                  <Shield size={15} />
+                  开始绑定 2FA
+                </button>
+              )}
+              {mfaEnabled && (
+                <button type="button" onClick={() => void turnOffMfa()}>
+                  关闭 2FA
+                </button>
+              )}
+            </div>
           </div>
+
+          {(mfaEnrollment || mfaEnabled) && (
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
+              <TextFilter
+                label="6 位动态验证码"
+                value={mfaCode}
+                onChange={(value) => setMfaCode(value.replace(/\D/g, "").slice(0, 6))}
+              />
+              {mfaEnrollment && (
+                <button type="button" className="primary" onClick={() => void confirmMfaEnrollment()}>
+                  确认绑定
+                </button>
+              )}
+            </div>
+          )}
+
           {mfaEnrollment && (
-            <div className="profile-section wide">
-              <h4>绑定密钥</h4>
+            <div className="profile-section wide" style={{ padding: 14, borderRadius: 10, border: "1px solid var(--color-border-soft)", background: "var(--color-surface-muted)" }}>
+              <h4 style={{ margin: "0 0 8px" }}>绑定密钥（在 Google Authenticator / 1Password 中添加）</h4>
               <KeyValue data={{
                 secret: mfaEnrollment.secret,
                 otpauthUri: mfaEnrollment.otpauthUri,
@@ -234,21 +295,7 @@ export default function SystemPage() {
           )}
         </div>
       </Panel>
-      <Panel title="服务健康巡检">
-        <DataTable
-          rows={healthRows}
-          columns={["service", "routeType", "status", "httpStatus", "latencyMs", "baseUrl", "healthUrl", "targetPrefix", "error"]}
-          actions={(row) => <StatusBadge value={String(row.status ?? "UNKNOWN")} />}
-        />
-      </Panel>
-      <TwoColumn>
-        <Panel title="后台路由">
-          <DataTable rows={adminRoutes} columns={["service", "baseUrl", "targetPrefix", "privateRoute", "basicAuthConfigured"]} />
-        </Panel>
-        <Panel title="普通路由">
-          <DataTable rows={publicRoutes} columns={["service", "baseUrl", "targetPrefix", "privateRoute", "basicAuthConfigured"]} />
-        </Panel>
-      </TwoColumn>
+      )}
     </Page>
   );
 }

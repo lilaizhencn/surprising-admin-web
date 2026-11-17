@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import type { UnknownRecord } from "../types";
 import {
@@ -29,6 +30,9 @@ export default function SecurityPage() {
   const [catalogueError, setCatalogueError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
+  const [confirmAction, setConfirmAction] = useState<
+    null | { type: "save" } | { type: "switch"; roleCode: string } | { type: "refresh" }
+  >(null);
   const roleRequest = useRef<AbortController | null>(null);
   const catalogueRequest = useRef<AbortController | null>(null);
   const selected = useRef("");
@@ -62,9 +66,11 @@ export default function SecurityPage() {
       if (!abort.signal.aborted) setRoleLoading(false);
     }
   }
-  async function load() {
-    if (dirty && !lock.current && !window.confirm("刷新将放弃当前未保存的权限修改，是否继续？"))
+  async function load(force = false) {
+    if (!force && dirty && !lock.current) {
+      setConfirmAction({ type: "refresh" });
       return;
+    }
     catalogueRequest.current?.abort();
     roleRequest.current?.abort();
     const abort = new AbortController();
@@ -102,12 +108,11 @@ export default function SecurityPage() {
     setLoading(false);
   }
   const selectRole = (roleCode: string) => {
-    if (
-      lock.current ||
-      loading ||
-      (dirty && !window.confirm("当前角色有未保存的权限修改，确定切换并放弃修改？"))
-    )
+    if (lock.current || loading) return;
+    if (dirty) {
+      setConfirmAction({ type: "switch", roleCode });
       return;
+    }
     setNotice("");
     void loadRole(roleCode);
   };
@@ -116,7 +121,18 @@ export default function SecurityPage() {
       (checked ? [...draft, code] : draft.filter((item) => item !== code)).join("\n"),
     );
   };
-  async function save() {
+  function requestSave() {
+    if (
+      lock.current ||
+      assigned === null ||
+      !permissions ||
+      selectedRole === "SUPER_ADMIN" ||
+      !dirty
+    )
+      return;
+    setConfirmAction({ type: "save" });
+  }
+  async function confirmSave() {
     if (
       lock.current ||
       assigned === null ||
@@ -127,12 +143,7 @@ export default function SecurityPage() {
       return;
     const roleCode = selectedRole,
       next = [...draft];
-    if (
-      !window.confirm(
-        `替换角色 ${roleCode} 的权限\n新增 ${difference.added.length} 项：${difference.added.join(", ") || "无"}\n移除 ${difference.removed.length} 项：${difference.removed.join(", ") || "无"}\n保存将替换该角色的完整权限集合，并沿用敏感操作审批。`,
-      )
-    )
-      return;
+    setConfirmAction(null);
     lock.current = true;
     setSaving(true);
     setError("");
@@ -140,7 +151,7 @@ export default function SecurityPage() {
     try {
       rolePermissionResult(await replaceRolePermissions(roleCode, next), roleCode);
       if (!alive.current) return;
-      await load();
+      await load(true);
       if (alive.current) setNotice("权限保存请求已完成，请核对重新读取后的授权集合。");
     } catch (reason) {
       if (alive.current) {
@@ -319,7 +330,7 @@ export default function SecurityPage() {
                 )}
                 <button
                   className="primary"
-                  onClick={() => void save()}
+                  onClick={requestSave}
                   disabled={selectedRole === "SUPER_ADMIN" || !permissions || !dirty}
                 >
                   保存权限
@@ -339,6 +350,89 @@ export default function SecurityPage() {
           />
         </Panel>
       </fieldset>
+      {confirmAction && (
+        <div
+          className="assets-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="确认权限操作"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !saving) setConfirmAction(null);
+          }}
+        >
+          <div className="assets-modal">
+            <div className="assets-modal-header">
+              <div>
+                <h3>
+                  {confirmAction.type === "save"
+                    ? `替换角色 ${selectedRole} 的权限`
+                    : confirmAction.type === "switch"
+                      ? "放弃未保存的权限修改？"
+                      : "放弃未保存的修改并刷新？"}
+                </h3>
+                <p>
+                  {confirmAction.type === "save"
+                    ? "保存将替换该角色的完整权限集合，并沿用敏感操作审批。"
+                    : "当前角色有尚未保存的权限变更，继续将丢失这些修改。"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="assets-icon-btn"
+                aria-label="关闭"
+                onClick={() => setConfirmAction(null)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {confirmAction.type === "save" && (
+              <div className="permission-difference">
+                <div>
+                  <strong>新增 ({difference.added.length})</strong>
+                  {difference.added.length ? (
+                    difference.added.map((code) => <code key={code}>{code}</code>)
+                  ) : (
+                    <span className="muted">无</span>
+                  )}
+                </div>
+                <div>
+                  <strong>移除 ({difference.removed.length})</strong>
+                  {difference.removed.length ? (
+                    difference.removed.map((code) => <code key={code}>{code}</code>)
+                  ) : (
+                    <span className="muted">无</span>
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="assets-modal-footer">
+              <button type="button" disabled={saving} onClick={() => setConfirmAction(null)}>
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={saving}
+                onClick={() => {
+                  if (confirmAction.type === "save") {
+                    void confirmSave();
+                  } else if (confirmAction.type === "switch") {
+                    const target = confirmAction.roleCode;
+                    setConfirmAction(null);
+                    setNotice("");
+                    void loadRole(target);
+                  } else {
+                    setConfirmAction(null);
+                    void load(true);
+                  }
+                }}
+              >
+                {confirmAction.type === "save" ? "确认保存" : "放弃并继续"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Page>
   );
 }

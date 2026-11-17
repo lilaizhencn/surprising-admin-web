@@ -1,4 +1,4 @@
-import { LayoutDashboard, LifeBuoy, MessageSquare, Users, Database, BarChart3, Clock3, ClipboardList, SlidersHorizontal, WalletCards, Scale, Gauge, CircleDollarSign, Activity, BadgeCheck, CheckCircle2, Download, BookOpen, Bell, Megaphone, Server, FileText, Shield } from "lucide-react";
+import { LayoutDashboard, LifeBuoy, MessageSquare, Users, Database, Layers, BarChart3, Clock3, ClipboardList, SlidersHorizontal, WalletCards, Scale, Gauge, CircleDollarSign, Activity, BadgeCheck, CheckCircle2, Download, BookOpen, Megaphone, Server, FileText, Shield } from "lucide-react";
 import { type RouteKey, type AuthSession } from "./types";
 import { type AdminApprovalRequestContext, type AdminApprovalDecision, setApprovalRequestHandler, login } from "./api/admin";
 import { useState, useEffect, useRef } from "react";
@@ -17,6 +17,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const UsersPage = lazy(() => import("./pages/UsersPage"));
 const SupportPage = lazy(() => import("./pages/SupportPage"));
 const MarketsPage = lazy(() => import("./pages/MarketsPage"));
+const ProductLinesPage = lazy(() => import("./pages/ProductLinesPage"));
 const LifecyclePage = lazy(() => import("./pages/LifecyclePage"));
 const OrdersPage = lazy(() => import("./pages/OrdersPage"));
 const AccountsPage = lazy(() => import("./pages/AccountsPage"));
@@ -31,7 +32,6 @@ const SecurityPage = lazy(() => import("./pages/SecurityPage"));
 const ApprovalsPage = lazy(() => import("./pages/ApprovalsPage"));
 const ExportsPage = lazy(() => import("./pages/ExportsPage"));
 const QueryTasksPage = lazy(() => import("./pages/QueryTasksPage"));
-const AlertsPage = lazy(() => import("./pages/AlertsPage"));
 const SystemPage = lazy(() => import("./pages/SystemPage"));
 const AuditPage = lazy(() => import("./pages/AuditPage"));
 
@@ -41,7 +41,13 @@ const NAV = [
   { key: "c2c", label: "C2C 运营", icon: MessageSquare },
   { key: "users", label: "用户权限", icon: Users },
   { key: "assets", label: "币种配置", icon: Database },
-  { key: "markets", label: "产品市场", icon: BarChart3 },
+  { key: "product-lines", label: "产品线管理", icon: Layers },
+  { key: "markets-spot", label: "现货 · 币对管理", icon: BarChart3 },
+  { key: "markets-linear-perp", label: "U本位永续 · 币对管理", icon: BarChart3 },
+  { key: "markets-inverse-perp", label: "币本位永续 · 币对管理", icon: BarChart3 },
+  { key: "markets-linear-delivery", label: "U本位交割 · 币对管理", icon: BarChart3 },
+  { key: "markets-inverse-delivery", label: "币本位交割 · 币对管理", icon: BarChart3 },
+  { key: "markets-option", label: "期权 · 合约管理", icon: BarChart3 },
   { key: "lifecycle", label: "交割行权", icon: Clock3 },
   { key: "orders", label: "订单审计", icon: ClipboardList },
   { key: "maintenance", label: "交易维护", icon: SlidersHorizontal },
@@ -57,7 +63,6 @@ const NAV = [
   { key: "approvals", label: "审批中心", icon: CheckCircle2 },
   { key: "exports", label: "导出中心", icon: Download },
   { key: "queries", label: "查询任务", icon: BookOpen },
-  { key: "alerts", label: "告警中心", icon: Bell },
   { key: "announcements", label: "公告中心", icon: Megaphone },
   { key: "legal", label: "协议管理", icon: FileText },
   { key: "system", label: "系统监控", icon: Server },
@@ -135,17 +140,24 @@ export default function App() {
         <div key={String(session.user.userId)}>
           <PageErrorBoundary key={activeRoute}>
           <Suspense fallback={<p role="status">正在加载页面…</p>}>
-          {activeRoute === "dashboard" && <DashboardPage />}
+          {activeRoute === "dashboard" && <DashboardPage onNavigate={navigate} />}
           {activeRoute === "support" && <SupportPage />}
           {activeRoute === "c2c" && <C2cBusinessPage session={session} />}
           {activeRoute === "users" && <UsersPage />}
           {activeRoute === "assets" && <AssetsPage />}
+          {activeRoute === "product-lines" && <ProductLinesPage />}
           {activeRoute === "markets" && <MarketsPage />}
+          {activeRoute === "markets-spot" && <MarketsPage key="SPOT" productLine="SPOT" />}
+          {activeRoute === "markets-linear-perp" && <MarketsPage key="LINEAR_PERPETUAL" productLine="LINEAR_PERPETUAL" />}
+          {activeRoute === "markets-inverse-perp" && <MarketsPage key="INVERSE_PERPETUAL" productLine="INVERSE_PERPETUAL" />}
+          {activeRoute === "markets-linear-delivery" && <MarketsPage key="LINEAR_DELIVERY" productLine="LINEAR_DELIVERY" />}
+          {activeRoute === "markets-inverse-delivery" && <MarketsPage key="INVERSE_DELIVERY" productLine="INVERSE_DELIVERY" />}
+          {activeRoute === "markets-option" && <MarketsPage key="OPTION" productLine="OPTION" />}
           {activeRoute === "lifecycle" && <LifecyclePage />}
           {activeRoute === "orders" && <OrdersPage />}
           {activeRoute === "maintenance" && <MaintenancePage />}
           {activeRoute === "accounts" && <AccountsPage />}
-          {activeRoute === "wallet" && <WalletPage />}
+          {activeRoute === "wallet" && <WalletPage onNavigate={navigate} />}
           {activeRoute === "compliance" && <CompliancePage />}
           {activeRoute === "risk" && <RiskPage />}
           {activeRoute === "funding" && <FundingInsurancePage />}
@@ -156,7 +168,6 @@ export default function App() {
           {activeRoute === "approvals" && <ApprovalsPage />}
           {activeRoute === "exports" && <ExportsPage />}
           {activeRoute === "queries" && <QueryTasksPage />}
-          {activeRoute === "alerts" && <AlertsPage />}
           {activeRoute === "announcements" && <AnnouncementsPage />}
           {activeRoute === "legal" && <LegalPage />}
           {activeRoute === "system" && <SystemPage />}
@@ -262,7 +273,7 @@ function ApprovalRequestDialog({ prompt, setPrompt }: {
 
 function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
   const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState("Admin@123456");
   const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -291,7 +302,7 @@ function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
         <div className="brand large">
           <Shield size={30} />
           <div>
-            <strong>Surprising Admin</strong>
+            <strong>AETERN Admin</strong>
             <span>Production Operations</span>
           </div>
         </div>
@@ -304,8 +315,8 @@ function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => void }) {
           <input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
         </label>
         <label>
-          2FA 动态码
-          <input value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" />
+          2FA 动态码（未开启可留空）
+          <input value={totpCode} onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="本地测试可直接留空登录" inputMode="numeric" autoComplete="one-time-code" />
         </label>
         {error && <div className="alert danger" role="alert">{error}</div>}
         <button className="primary" disabled={loading}>{loading ? "登录中..." : "登录后台"}</button>

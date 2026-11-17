@@ -1,32 +1,170 @@
-.product-line-access td {
-  overflow-wrap: anywhere;
-  white-space: normal;
+.pla-section {
+  display: grid;
+  gap: 14px;
 }
-.product-line-access td small {
+
+.pla-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pla-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  color: var(--color-ink);
+}
+
+.pla-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-ink-subtle);
+}
+
+.pla-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-ink-muted);
+}
+
+.pla-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pla-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  border: var(--hairline-width) solid var(--border-subtle);
+  background: var(--bg-elevated-1);
+  box-shadow: var(--shadow-glass);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.pla-card.is-enabled {
+  background:
+    linear-gradient(
+      155deg var(--in-oklch),
+      color-mix(in oklab, var(--aurora-cyan) 8%, var(--bg-elevated-2)),
+      var(--bg-elevated-1)
+    ) padding-box,
+    var(--gradient-aurora-primary) border-box;
+  border: 1px solid transparent;
+  box-shadow: var(--shadow-glass), var(--glow-1);
+}
+
+.pla-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pla-card-top strong {
   display: block;
-  margin-top: 6px;
+  font-size: 13px;
+  color: var(--color-ink);
 }
-@media (max-width: 600px) {
-  .product-line-access .table-wrap { overflow: visible; }
-  .product-line-access table { min-width: 0; }
-  .product-line-access thead { display: none; }
-  .product-line-access tbody { display: grid; gap: 12px; }
-  .product-line-access tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    border: 1px solid var(--border, var(--color-border-soft));
-    border-radius: 8px;
-    padding: 8px;
+
+.pla-code {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-ink-subtle);
+}
+
+.pla-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pla-badge.ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--color-ok, #22c55e);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.pla-badge.warn {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.pla-badge.danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-negative, #ef4444);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.pla-badge.muted {
+  background: var(--color-surface);
+  color: var(--color-ink-subtle);
+  border: 1px solid var(--color-border-soft);
+}
+
+.pla-card-meta {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--color-ink-muted);
+}
+
+.pla-card-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pla-msg {
+  color: var(--color-ink-subtle);
+}
+
+.pla-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-soft);
+}
+
+.pla-connected-note {
+  font-size: 12px;
+  color: var(--color-ok, #22c55e);
+  font-weight: 500;
+}
+
+@media (max-width: 1100px) {
+  .pla-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .product-line-access td { display: block; border: 0; padding: 8px; }
-  .product-line-access td::before {
-    content: attr(data-label);
-    display: block;
-    margin-bottom: 6px;
-    font-size: 12px;
-    opacity: .7;
+}
+
+@media (max-width: 640px) {
+  .pla-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .product-line-access td:first-child,
-  .product-line-access td:nth-child(4),
-  .product-line-access td:last-child { grid-column: 1 / -1; }
 }

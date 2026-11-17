@@ -1,3 +1,4 @@
+import { Select } from "./components/CustomSelect";
 import type { UnknownRecord } from "./types";
 
 type Field = { key: string; label: string; hint: string; kind?: "boolean" | "text" | "url" | "number"; options?: string[] };
@@ -41,7 +42,7 @@ export function InstrumentConfigurationFields({ draft, update }: {
       {rows.map((row, index) => <fieldset key={index}><legend>{title} {index + 1}</legend>
         <div className="form-grid">{fields.map(field => <label key={field.key}>{field.label}
           {field.kind === "boolean" ? <input type="checkbox" checked={Boolean(row[field.key])} onChange={e => change(index, field.key, e.target.checked)} />
-            : field.options ? <select value={String(row[field.key] ?? "")} onChange={e => change(index, field.key, e.target.value)}><option value="">请选择</option>{field.options.map(option => <option key={option}>{option}</option>)}</select>
+            : field.options ? <Select value={String(row[field.key] ?? "")} onChange={e => change(index, field.key, e.target.value)}><option value="">请选择</option>{field.options.map(option => <option key={option}>{option}</option>)}</Select>
             : <input inputMode={!field.kind || field.kind === "number" ? "numeric" : "text"} value={String(row[field.key] ?? "")} onChange={e => change(index, field.key, e.target.value)} />}
           <small>{field.hint}</small>
         </label>)}</div>

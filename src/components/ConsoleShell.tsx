@@ -9,28 +9,52 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
+import { AeternMark } from "./AeternMark"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { AuthSession, RouteKey } from "../types"
 import { initialTheme, saveTheme } from "../lib/theme"
 
 type NavigationItem = { key: RouteKey; label: string; icon: LucideIcon }
 const groups: { label: string; keys: RouteKey[] }[] = [
-  { label: "工作台", keys: ["dashboard", "support", "c2c", "users"] },
+  { label: "运营总览", keys: ["dashboard"] },
   {
-    label: "交易管理",
-    keys: ["assets", "markets", "orders", "maintenance", "lifecycle", "maker", "fees"],
+    label: "交易与市场",
+    keys: [
+      "product-lines",
+      "assets",
+      "markets-spot",
+      "markets-linear-perp",
+      "markets-inverse-perp",
+      "markets-linear-delivery",
+      "markets-inverse-delivery",
+      "markets-option",
+      "lifecycle",
+      "maker",
+      "fees",
+      "maintenance",
+    ],
   },
-  { label: "资金与风控", keys: ["accounts", "wallet", "risk", "compliance", "funding"] },
   {
-    label: "平台治理",
+    label: "订单与风控",
+    keys: ["orders", "risk", "funding"],
+  },
+  {
+    label: "资金与钱包",
+    keys: ["accounts", "wallet", "c2c"],
+  },
+  {
+    label: "用户与合规",
+    keys: ["users", "compliance", "support", "affiliate"],
+  },
+  {
+    label: "平台与系统治理",
     keys: [
       "security",
       "approvals",
-      "exports",
-      "queries",
-      "alerts",
       "announcements",
       "legal",
+      "exports",
+      "queries",
       "system",
       "audit",
     ],
@@ -130,7 +154,6 @@ export function ConsoleShell({
                 <ChevronRight size={13} aria-hidden="true" />
                 <span>{active?.label}</span>
               </div>
-              <h1>{active?.label}</h1>
             </div>
           </div>
           <div className="top-actions">
@@ -218,11 +241,11 @@ export function ConsoleShell({
 function ConsoleBrand() {
   return (
     <div className="brand">
-      <span className="console-brand-mark">
-        <Shield size={22} strokeWidth={1.8} aria-hidden="true" />
+      <span className="console-brand-mark" style={{ background: "transparent", boxShadow: "none" }}>
+        <AeternMark size={28} />
       </span>
       <div>
-        <strong>Surprising</strong>
+        <strong style={{ letterSpacing: "0.10em" }}>AETERN</strong>
         <span>管理控制台</span>
       </div>
     </div>
@@ -241,6 +264,7 @@ function ConsoleNavigation({
   mobile: boolean
 }) {
   const [query, setQuery] = useState("")
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const filtered = items.filter((item) =>
     item.label.toLowerCase().includes(query.trim().toLowerCase()),
   )
@@ -250,7 +274,7 @@ function ConsoleNavigation({
         <Search size={16} aria-hidden="true" />
         <input
           aria-label="搜索导航"
-          placeholder="搜索功能…"
+          placeholder="搜索功能模块…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -269,32 +293,58 @@ function ConsoleNavigation({
       <nav aria-label={mobile ? "移动端后台导航" : "后台导航"}>
         {groups.map((group) => {
           const entries = filtered.filter((item) => group.keys.includes(item.key))
+          const hasActive = entries.some((item) => item.key === route)
+          const isOpen = Boolean(query.trim()) || hasActive || !collapsed[group.label]
           return (
             entries.length > 0 && (
               <div className="console-nav-group" key={group.label}>
-                <p>{group.label}</p>
-                {entries.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <button
-                      type="button"
-                      key={item.key}
-                      className={route === item.key ? "active" : ""}
-                      aria-current={route === item.key ? "page" : undefined}
-                      onClick={() => onNavigate(item.key)}
-                    >
-                      <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
-                      <span>{item.label}</span>
-                      {route === item.key && (
-                        <ChevronRight
-                          className="console-nav-current"
-                          size={14}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </button>
-                  )
-                })}
+                <button
+                  type="button"
+                  className="console-nav-group-header"
+                  aria-expanded={isOpen}
+                  onClick={() =>
+                    setCollapsed((current) => ({
+                      ...current,
+                      [group.label]: isOpen,
+                    }))
+                  }
+                >
+                  <span>{group.label}</span>
+                  <span className="console-nav-group-meta">
+                    <em>{entries.length}</em>
+                    <ChevronRight
+                      size={13}
+                      className={`console-nav-group-chevron${isOpen ? " open" : ""}`}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="console-nav-group-items">
+                    {entries.map((item) => {
+                      const Icon = item.icon
+                      return (
+                        <button
+                          type="button"
+                          key={item.key}
+                          className={route === item.key ? "active" : ""}
+                          aria-current={route === item.key ? "page" : undefined}
+                          onClick={() => onNavigate(item.key)}
+                        >
+                          <Icon size={17} strokeWidth={1.75} aria-hidden="true" />
+                          <span>{item.label}</span>
+                          {route === item.key && (
+                            <ChevronRight
+                              className="console-nav-current"
+                              size={14}
+                              aria-hidden="true"
+                            />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           )

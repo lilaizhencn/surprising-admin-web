@@ -1,3 +1,5 @@
+import { Select } from "../components/CustomSelect";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { changeLegal, getLegal, legalAudit, LEGAL_TYPES, listLegal, saveLegal, type LegalAudit, type LegalRevision, type LegalRow, type LegalSave, type LegalTranslation, type LegalType } from "../api/legal";
 import { RichArticleEditor } from "../components/RichArticleEditor";
@@ -14,6 +16,7 @@ function canonical(value: LegalSave) { return JSON.stringify({ ...value, transla
 function complete(value: LegalTranslation) { const text = value.bodyHtml.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim(); return value.title.trim().length > 0 && value.title.length <= 160 && value.bodyHtml.length <= 64000 && text.length > 0 && text.length <= 60000; }
 
 export default function LegalPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [rows, setRows] = useState<LegalRow[]>([]), [offset, setOffset] = useState(0), [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [mediaBusy, setMediaBusy] = useState(false);
   const [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -38,13 +41,17 @@ export default function LegalPage() {
     const leave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", leave); return () => window.removeEventListener("beforeunload", leave);
   }, [dirty, mediaBusy]);
-  function canLeave() { return !busy && !mediaBusy && (!dirty || window.confirm("还有未保存的协议修改，确定放弃？")); }
+  async function canLeave() {
+    if (busy || mediaBusy) return false;
+    if (!dirty) return true;
+    return confirm({ title: "放弃未保存的修改？", description: "还有未保存的协议修改，确定放弃？", confirmLabel: "放弃修改", danger: true });
+  }
   function display(next: LegalRevision | null, value: LegalSave) {
     setRevision(next); setDraft(value); setSaved(next || !value.translations.some(complete) ? canonical(value) : ""); setLocale(value.translations[0]?.locale ?? "zh-CN");
     setReason(""); setPreview(false); setAudit([]); setGeneration(value => value + 1);
   }
   async function open(id: string) {
-    if (!canLeave()) return;
+    if (!(await canLeave())) return;
     detailRequest.current?.abort(); const request = new AbortController(); detailRequest.current = request;
     setBusy(true); setError(""); setNotice("");
     try { const next = await getLegal(id, request.signal); if (!request.signal.aborted && alive.current) display(next, content(next)); }
@@ -71,32 +78,33 @@ export default function LegalPage() {
   const allComplete = draft && CONTENT_LOCALES.every(item => draft.translations.some(translation => translation.locale === item.code && complete(translation)));
   return <div className="legal-page">
     <div className="page-header"><div><h1>协议管理</h1><p>编辑草稿、核对译文并审批发布。已发布正文不可修改；新版本发布后用户需重新确认必需协议。</p></div>
-      <button className="primary" disabled={busy || mediaBusy} onClick={() => { if (canLeave()) { display(null, blank()); setError(""); setNotice(""); } }}>新建修订</button></div>
+      <button className="primary" disabled={busy || mediaBusy} onClick={() => void (async () => { if (await canLeave()) { display(null, blank()); setError(""); setNotice(""); } })()}>新建修订</button></div>
     {error && <div className="alert danger" role="alert">{error}</div>}{notice && <div className="alert" role="status">{notice}</div>}
     <div className="panel table-scroll"><table><thead><tr><th>协议</th><th>修订标识</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>
       {rows.map(row => <tr key={row.revisionId}><td>{LEGAL_TYPES.find(([type]) => type === row.type)?.[1]}</td><td>{row.revisionLabel}</td><td><StatusBadge value={row.status} /></td><td>{new Date(row.updatedAt).toLocaleString()}</td><td><button disabled={busy || mediaBusy} onClick={() => void open(row.revisionId)}>查看与管理</button></td></tr>)}
       {!rows.length && <tr><td colSpan={5}>{loading ? "正在加载…" : "还没有协议修订"}</td></tr>}
     </tbody></table></div>
-    <div className="button-row"><button disabled={loading || busy || offset === 0} onClick={() => { if (canLeave()) setOffset(value => Math.max(0, value - 25)); }}>上一页</button><span>第 {offset / 25 + 1} 页</span><button disabled={loading || busy || !hasMore} onClick={() => { if (canLeave()) setOffset(value => value + 25); }}>下一页</button><button disabled={loading || busy} onClick={() => void load(offset)}>刷新列表</button></div>
+    <div className="button-row"><button disabled={loading || busy || offset === 0} onClick={() => void (async () => { if (await canLeave()) setOffset(value => Math.max(0, value - 25)); })()}>上一页</button><span>第 {offset / 25 + 1} 页</span><button disabled={loading || busy || !hasMore} onClick={() => void (async () => { if (await canLeave()) setOffset(value => value + 25); })()}>下一页</button><button disabled={loading || busy} onClick={() => void load(offset)}>刷新列表</button></div>
     {draft && <section className="panel legal-editor" aria-label="协议修订编辑器">
-      <div className="page-header"><h2>{revision ? `修订 ${revision.revisionId}` : "新协议修订"}{dirty ? " · 未保存" : ""}</h2><button disabled={busy || mediaBusy} onClick={() => { if (canLeave()) { setDraft(null); setAudit([]); } }}>关闭</button></div>
-      <div className="form-grid"><label>协议类型<select value={draft.type} disabled={disabled || !!revision} onChange={event => setDraft({ ...draft, type: event.target.value as LegalType })}>{LEGAL_TYPES.map(([type, name]) => <option key={type} value={type}>{name}</option>)}</select></label>
+      <div className="page-header"><h2>{revision ? `修订 ${revision.revisionId}` : "新协议修订"}{dirty ? " · 未保存" : ""}</h2><button disabled={busy || mediaBusy} onClick={() => void (async () => { if (await canLeave()) { setDraft(null); setAudit([]); } })()}>关闭</button></div>
+      <div className="form-grid"><label>协议类型<Select value={draft.type} disabled={disabled || !!revision} onChange={event => setDraft({ ...draft, type: event.target.value as LegalType })}>{LEGAL_TYPES.map(([type, name]) => <option key={type} value={type}>{name}</option>)}</Select></label>
         <label>修订标识<input value={draft.revisionLabel} maxLength={40} pattern="[A-Za-z0-9._-]+" disabled={disabled} onChange={event => setDraft({ ...draft, revisionLabel: event.target.value })} /><small>使用字母、数字、点、下划线或连字符，如 2026-10-31.1</small></label></div>
       {immutable && <p role="status">此版本正文已锁定。需要修改时，请复制为新修订。</p>}
       <fieldset disabled={busy || mediaBusy} className="legal-locales"><legend>译文 · {draft.translations.filter(complete).length} / {CONTENT_LOCALES.length} 完成</legend>{CONTENT_LOCALES.map(item => <button key={item.code} type="button" aria-pressed={locale === item.code} onClick={() => { setLocale(item.code); setPreview(false); }}>{item.label} {draft.translations.some(value => value.locale === item.code && complete(value)) ? "✓" : "○"}</button>)}</fieldset>
       <label>标题 · {localeLabel(locale)}<input dir={locale.startsWith("ar") ? "rtl" : "auto"} lang={locale} value={current.title} maxLength={160} disabled={disabled} onChange={event => updateTranslation({ title: event.target.value })} /></label>
       <div className="button-row"><button type="button" aria-pressed={preview} onClick={() => setPreview(value => !value)}>{preview ? "返回编辑" : "预览正文"}</button>
-        {!immutable && draft.translations.some(item => item.locale === locale) && <button disabled={busy || mediaBusy || draft.translations.length === 1} onClick={() => { if (window.confirm(`清空 ${localeLabel(locale)} 的译文？`)) { setDraft({ ...draft, translations: draft.translations.filter(item => item.locale !== locale) }); setGeneration(value => value + 1); } }}>清空此语言</button>}</div>
+        {!immutable && draft.translations.some(item => item.locale === locale) && <button disabled={busy || mediaBusy || draft.translations.length === 1} onClick={() => void (async () => { if (await confirm({ title: `清空 ${localeLabel(locale)} 的译文？`, confirmLabel: "清空", danger: true })) { setDraft({ ...draft, translations: draft.translations.filter(item => item.locale !== locale) }); setGeneration(value => value + 1); } })()}>清空此语言</button>}</div>
       {preview || immutable ? <ArticleView html={current.bodyHtml} text="" locale={locale} /> : <RichArticleEditor key={`${generation}:${locale}`} html={current.bodyHtml} text="" locale={locale} maxTextLength={60000} editorLabel="协议正文" disabled={busy} onBusyChange={setMediaBusy} onChange={value => updateTranslation({ bodyHtml: value.bodyHtml })} />}
       {!immutable && <div className="button-row"><button className="primary" disabled={busy || mediaBusy || !dirty || !/^[A-Za-z0-9._-]{1,40}$/.test(draft.revisionLabel) || !draft.translations.every(complete)} onClick={() => void run(() => saveLegal(draft, revision), "草稿已保存，发布前请核对所有译文。")}>保存草稿</button></div>}
       {revision && <><label>操作原因<input value={reason} maxLength={1000} disabled={busy} onChange={event => setReason(event.target.value)} placeholder="说明本次发布或撤回的原因" /></label><div className="button-row">
-        {revision.status === "DRAFT" && <button className="primary" disabled={busy || mediaBusy || dirty || !allComplete || !reason.trim()} onClick={() => { if (window.confirm("发布后将替换同类型现行协议，正文不可修改。确认已核对全部译文？")) void run(() => changeLegal(revision, "publish", reason.trim()), "协议已发布。必需协议的新版本将在用户下一次登录或刷新会话时要求确认。"); }}>审批并发布</button>}
+        {revision.status === "DRAFT" && <button className="primary" disabled={busy || mediaBusy || dirty || !allComplete || !reason.trim()} onClick={() => void (async () => { if (await confirm({ title: "审批并发布协议？", description: "发布后将替换同类型现行协议，正文不可修改。确认已核对全部译文？", confirmLabel: "审批并发布" })) await run(() => changeLegal(revision, "publish", reason.trim()), "协议已发布。必需协议的新版本将在用户下一次登录或刷新会话时要求确认。"); })()}>审批并发布</button>}
         {revision.status === "DRAFT" && <small>发布需要全部 {CONTENT_LOCALES.length} 种语言完成并先保存。</small>}
-        {revision.status === "PUBLISHED" && <button disabled={busy || !reason.trim()} onClick={() => { if (window.confirm("确认撤回此协议？必需协议需先发布替代版本，服务端会阻止无替代撤回。")) void run(() => changeLegal(revision, "withdraw", reason.trim()), "协议已撤回。"); }}>审批并撤回</button>}
-        <button disabled={busy || mediaBusy} onClick={() => { if (canLeave()) display(null, { ...content(revision), revisionLabel: label() }); }}>复制为新修订</button>
+        {revision.status === "PUBLISHED" && <button disabled={busy || !reason.trim()} onClick={() => void (async () => { if (await confirm({ title: "确认撤回此协议？", description: "必需协议需先发布替代版本，服务端会阻止无替代撤回。", confirmLabel: "审批并撤回", danger: true })) await run(() => changeLegal(revision, "withdraw", reason.trim()), "协议已撤回。"); })()}>审批并撤回</button>}
+        <button disabled={busy || mediaBusy} onClick={() => void (async () => { if (await canLeave()) display(null, { ...content(revision), revisionLabel: label() }); })()}>复制为新修订</button>
         <button disabled={busy} onClick={() => void showAudit()}>查看审计</button>
       </div></>}
       {!!audit.length && <div className="legal-audit">{audit.map(item => <details key={item.auditId}><summary>{item.action} · {new Date(item.createdAt).toLocaleString()} · 管理员 {item.adminUserId}</summary><p>{item.reason}</p><pre>{item.snapshot}</pre></details>)}</div>}
     </section>}
+    {dialog}
   </div>;
 }

@@ -1,3 +1,4 @@
+import { Select } from "./components/CustomSelect";
 import { Download, FileText, MessageSquare, RefreshCw, Send, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
@@ -161,7 +162,7 @@ function C2cWorkspace({ owner }: { owner: string }) {
         </label>
         <label>
           订单状态
-          <select
+          <Select
             value={draft.status}
             onChange={(event) => setDraft({ ...draft, status: event.target.value })}
           >
@@ -171,7 +172,7 @@ function C2cWorkspace({ owner }: { owner: string }) {
                 {c2cStatus(state)}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         <button className="primary" disabled={loading} type="submit">
           查询订单

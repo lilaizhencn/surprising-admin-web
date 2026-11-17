@@ -1,11 +1,13 @@
+import { Select } from "../components/CustomSelect";
 import { positiveInt64, safeInteger } from "../lib/integers";
 import { useState, useRef, useEffect } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { type UnknownRecord } from "../types";
 import { decideMfaRecovery, complianceUsers, complianceRiskTags, complianceAmlCases, complianceMfaRecoveryRequests, complianceUser, updateKyc, createRiskTag, resolveRiskTag, createAmlCase, updateAmlCaseStatus, complianceKycDocument, adminLatestPorSnapshot, adminTriggerPorSnapshot, adminPorSnapshots } from "../api/admin";
-import { Search, Eye, Download, ShieldCheck, Scale, RefreshCw } from "lucide-react";
+import { Search, Eye, Download, RefreshCw } from "lucide-react";
 import { compactNumber } from "../config";
 import { optionalPositiveInt64 } from "../lib/integers";
-import { cursorInfo, Page, TextFilter, SortSelect, Metric, Panel, DataTable, TwoColumn, CursorPager, KeyValue, Empty, StatusBadge } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Metric, Panel, DataTable, TwoColumn, CursorPager, KeyValue, Empty, StatusBadge, TabBar } from "../components/AdminUi";
 import { errorMessage, fieldText, objectValue, records } from "../lib/adminData";
 import { enumOrDefault, jsonObject, textOrNull } from "../lib/formValues";
 import { UPDATED_AT_SORTS } from "../lib/queryOptions";
@@ -19,6 +21,7 @@ const RISK_TAG_STATUSES = ["ACTIVE", "RESOLVED"];
 const AML_STATUSES = ["OPEN", "REVIEWING", "ESCALATED", "RESTRICTED", "CLEARED", "CLOSED"];
 
 export default function CompliancePage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [filters, setFilters] = useState({ userId: "", kycStatus: "", tagCode: "", limit: "100", cursor: "", sort: "updatedAt.desc" });
   const [pageInfo, setPageInfo] = useState(cursorInfo());
   const [users, setUsers] = useState<UnknownRecord[]>([]);
@@ -52,7 +55,7 @@ export default function CompliancePage() {
   const [amlJson, setAmlJson] = useState(() => JSON.stringify(amlCasePayload(amlCaseFormTemplate()), null, 2));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"kyc" | "por">("kyc");
+  const [activeTab, setActiveTab] = useState<"kyc" | "aml" | "mfa" | "por">("kyc");
   const [porLatest, setPorLatest] = useState<UnknownRecord | null>(null);
   const [porHistory, setPorHistory] = useState<UnknownRecord[]>([]);
   const [porLoading, setPorLoading] = useState(false);
@@ -74,7 +77,7 @@ export default function CompliancePage() {
   }
 
   async function triggerNewSnapshot() {
-    if (!window.confirm("确认立即触发全网资产与负债快照，并生成全新的 Merkle Tree Root？")) return;
+    if (!(await confirm({ title: "触发储备金快照", description: "确认立即触发全网资产与负债快照，并生成全新的 Merkle Tree Root？" }))) return;
     setPorLoading(true); setError(""); setNotice("");
     try {
       const res = await adminTriggerPorSnapshot();
@@ -242,7 +245,8 @@ export default function CompliancePage() {
   }
 
   async function runWrite(confirmation: string, operation: () => Promise<unknown>) {
-    if (writeBusy.current || !window.confirm(confirmation)) return;
+    if (writeBusy.current) return;
+    { const [head, ...rest] = confirmation.split("\n"); if (!(await confirm({ title: head, description: rest.join("\n") || undefined }))) return; }
     writeBusy.current = true;
     setWriting(true); setError(""); setNotice("");
     listRequest.current?.abort(); previewRequest.current?.abort();
@@ -359,22 +363,19 @@ export default function CompliancePage() {
     <Page title="合规与资产储备证明" description="按用户核对认证与风险记录，或管理全网默克尔树资产储备证明。" onRefresh={() => { if (!writing) void Promise.all([load(), selectedUserId ? loadDetail(selectedUserId) : Promise.resolve(), loadPor()]); }} loading={loading || writing || porLoading} error={error}>
       {notice && <div role="status" className="alert">{notice}</div>}
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-        <button
-          className={activeTab === "kyc" ? "primary" : ""}
-          onClick={() => setActiveTab("kyc")}
-        >
-          <Scale size={14} style={{ marginRight: "4px" }} />
-          KYC / AML 风险审查
-        </button>
-        <button
-          className={activeTab === "por" ? "primary" : ""}
-          onClick={() => { setActiveTab("por"); void loadPor(); }}
-        >
-          <ShieldCheck size={14} style={{ marginRight: "4px" }} />
-          默克尔树资产储备证明 (PoR) 运维
-        </button>
-      </div>
+      <TabBar
+        active={activeTab}
+        onChange={(next) => {
+          setActiveTab(next);
+          if (next === "por") void loadPor();
+        }}
+        items={[
+          { key: "kyc", label: "KYC 与用户合规审查", count: usersReady ? users.length : undefined },
+          { key: "aml", label: "风险标签与 AML 审计", count: globalRiskTags.length + globalAmlCases.length },
+          { key: "mfa", label: "2FA 验证器重置申诉", count: mfaRecoveryRequests.length },
+          { key: "por", label: "PoR 资产储备证明", count: porHistory.length || undefined }
+        ]}
+      />
 
       {activeTab === "por" ? (
         <div className="stack">
@@ -435,10 +436,10 @@ export default function CompliancePage() {
       <fieldset className="compliance-workspace" disabled={writing}>
       <div className="filters">
         <TextFilter label="User ID" value={filters.userId} onChange={(value) => updateFilters({ userId: value })} />
-        <label>KYC 状态<select value={filters.kycStatus} onChange={(event) => updateFilters({ kycStatus: event.target.value })}>
+        <label>KYC 状态<Select value={filters.kycStatus} onChange={(event) => updateFilters({ kycStatus: event.target.value })}>
           <option value="">全部</option>
           {KYC_STATUSES.map((item) => <option key={item}>{item}</option>)}
-        </select></label>
+        </Select></label>
         <TextFilter label="风险标签" value={filters.tagCode} onChange={(value) => updateFilters({ tagCode: value.toUpperCase() })} />
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
         <SortSelect value={filters.sort} options={UPDATED_AT_SORTS} onChange={(value) => updateFilters({ sort: value })} />
@@ -453,6 +454,7 @@ export default function CompliancePage() {
         <Metric label="AML Case" value={usersReady && users.every(row => Number.isSafeInteger(Number(row.openAmlCases)) && row.openAmlCases != null) ? users.reduce((sum, item) => sum + Number(item.openAmlCases), 0) : "—"} tone="danger" />
         <Metric label="当前用户" value={selectedUserId || "—"} tone="muted" />
       </div>
+      {activeTab === "mfa" && (
       <Panel title="谷歌验证器丢失申诉">
         <p className="muted">先打开用户详情检查已通过的 KYC 资料和原始材料，再决定是否解除旧验证器。批准后旧密钥立即失效，提现冻结 24 小时。</p>
         <DataTable
@@ -461,13 +463,15 @@ export default function CompliancePage() {
           columns={["requestId", "userId", "status", "reason", "submittedAt"]}
           actions={(row) => (
             <div className="row-actions">
-              <button onClick={() => void loadDetail(String(row.userId ?? ""))}>查看 KYC</button>
+              <button onClick={() => { setActiveTab("kyc"); void loadDetail(String(row.userId ?? "")); }}>查看 KYC</button>
               <button className="primary" disabled={row.status !== "PENDING" || detailUserId(detail) !== String(row.userId) || objectValue(detail?.kyc).status !== "VERIFIED" || !kycDocuments.length} title="请先打开同一用户已通过的 KYC 资料并核对原件" onClick={() => void reviewMfaRecovery(row, true)}>核验通过并解除</button>
               <button disabled={row.status !== "PENDING"} onClick={() => void reviewMfaRecovery(row, false)}>拒绝</button>
             </div>
           )}
         />
       </Panel>
+      )}
+      {activeTab === "kyc" && (
       <TwoColumn>
         <Panel title="合规用户">
           <div className="stack">
@@ -503,16 +507,18 @@ export default function CompliancePage() {
           ) : <Empty text="选择用户" />}
         </Panel>
       </TwoColumn>
+      )}
+      {activeTab === "aml" && (
       <TwoColumn>
         <Panel title="风险标签审计">
           <div className="stack">
             <div className="filters compact">
               <TextFilter label="User ID" value={riskTagFilters.userId} onChange={(value) => updateRiskTagFilters({ userId: value })} />
               <label>状态
-                <select value={riskTagFilters.status} onChange={(event) => updateRiskTagFilters({ status: event.target.value })}>
+                <Select value={riskTagFilters.status} onChange={(event) => updateRiskTagFilters({ status: event.target.value })}>
 	                  <option value="">全部</option>
 	                  {RISK_TAG_STATUSES.map((item) => <option key={item}>{item}</option>)}
-                </select>
+                </Select>
               </label>
               <TextFilter label="Limit" value={riskTagFilters.limit} onChange={(value) => updateRiskTagFilters({ limit: value })} />
               <SortSelect value={riskTagFilters.sort} options={COMPLIANCE_RISK_TAG_SORTS} onChange={(value) => updateRiskTagFilters({ sort: value })} />
@@ -539,10 +545,10 @@ export default function CompliancePage() {
             <div className="filters compact">
               <TextFilter label="User ID" value={amlCaseFilters.userId} onChange={(value) => updateAmlCaseFilters({ userId: value })} />
               <label>状态
-                <select value={amlCaseFilters.status} onChange={(event) => updateAmlCaseFilters({ status: event.target.value })}>
+                <Select value={amlCaseFilters.status} onChange={(event) => updateAmlCaseFilters({ status: event.target.value })}>
 	                  <option value="">全部</option>
 	                  {AML_STATUSES.map((item) => <option key={item}>{item}</option>)}
-                </select>
+                </Select>
               </label>
               <TextFilter label="Limit" value={amlCaseFilters.limit} onChange={(value) => updateAmlCaseFilters({ limit: value })} />
               <SortSelect value={amlCaseFilters.sort} options={COMPLIANCE_AML_CASE_SORTS} onChange={(value) => updateAmlCaseFilters({ sort: value })} />
@@ -565,14 +571,15 @@ export default function CompliancePage() {
           </div>
         </Panel>
       </TwoColumn>
-      {detail && (
+      )}
+      {activeTab === "kyc" && detail && (
         <>
           <TwoColumn>
             <Panel title={`KYC 审核 · 用户 ${selectedUserId}`}>
               <div className="stack">
                 <div className="form-grid">
-                  <label>KYC Level<select value={kycForm.kycLevel} onChange={(event) => updateKycForm({ kycLevel: event.target.value })}>{KYC_LEVELS.map((item) => <option key={item}>{item}</option>)}</select></label>
-                  <label>状态<select aria-label="KYC 审核状态" value={kycForm.status} onChange={(event) => updateKycForm({ status: event.target.value })}>{KYC_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>KYC Level<Select value={kycForm.kycLevel} onChange={(event) => updateKycForm({ kycLevel: event.target.value })}>{KYC_LEVELS.map((item) => <option key={item}>{item}</option>)}</Select></label>
+                  <label>状态<Select aria-label="KYC 审核状态" value={kycForm.status} onChange={(event) => updateKycForm({ status: event.target.value })}>{KYC_STATUSES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="国家/地区" value={kycForm.country} onChange={(value) => updateKycForm({ country: value.toUpperCase() })} />
                   <TextFilter label="证件类型" value={kycForm.documentType} onChange={(value) => updateKycForm({ documentType: value.toUpperCase() })} />
                   <TextFilter label="Provider" value={kycForm.provider} onChange={(value) => updateKycForm({ provider: value })} />
@@ -592,7 +599,7 @@ export default function CompliancePage() {
               <div className="stack">
                 <div className="form-grid">
                   <TextFilter label="Tag Code" value={riskTagForm.tagCode} onChange={(value) => updateRiskTagForm({ tagCode: value.toUpperCase() })} />
-                  <label>严重度<select value={riskTagForm.severity} onChange={(event) => updateRiskTagForm({ severity: event.target.value })}>{RISK_SEVERITIES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>严重度<Select value={riskTagForm.severity} onChange={(event) => updateRiskTagForm({ severity: event.target.value })}>{RISK_SEVERITIES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="来源" value={riskTagForm.source} onChange={(value) => updateRiskTagForm({ source: value.toUpperCase() })} />
                 </div>
                 <label>原因<textarea className="json-editor small text-editor" value={riskTagForm.reason} onChange={(event) => updateRiskTagForm({ reason: event.target.value })} /></label>
@@ -652,7 +659,7 @@ export default function CompliancePage() {
             <Panel title="新增 AML Case">
               <div className="stack">
                 <div className="form-grid">
-                  <label>状态<select value={amlCaseForm.status} onChange={(event) => updateAmlCaseForm({ status: event.target.value })}>{AML_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>状态<Select value={amlCaseForm.status} onChange={(event) => updateAmlCaseForm({ status: event.target.value })}>{AML_STATUSES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="风险分" value={amlCaseForm.riskScore} onChange={(value) => updateAmlCaseForm({ riskScore: value })} />
                   <TextFilter label="来源" value={amlCaseForm.source} onChange={(value) => updateAmlCaseForm({ source: value.toUpperCase() })} />
                   <TextFilter label="指派管理员 ID" value={amlCaseForm.assignedAdminUserId} onChange={(value) => updateAmlCaseForm({ assignedAdminUserId: value })} />
@@ -669,7 +676,7 @@ export default function CompliancePage() {
               <div className="stack">
                 <div className="form-grid">
                   <TextFilter label="Case ID" value={amlStatusForm.caseId} onChange={(value) => setAmlStatusForm((current) => ({ ...current, caseId: value }))} />
-                  <label>状态<select value={amlStatusForm.status} onChange={(event) => setAmlStatusForm((current) => ({ ...current, status: event.target.value }))}>{AML_STATUSES.map((item) => <option key={item}>{item}</option>)}</select></label>
+                  <label>状态<Select value={amlStatusForm.status} onChange={(event) => setAmlStatusForm((current) => ({ ...current, status: event.target.value }))}>{AML_STATUSES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="风险分" value={amlStatusForm.riskScore} onChange={(value) => setAmlStatusForm((current) => ({ ...current, riskScore: value }))} />
                 </div>
                 <button className="primary" onClick={() => void submitAmlStatus()}>提交状态更新</button>
@@ -687,6 +694,7 @@ export default function CompliancePage() {
       )}
       </fieldset>
       )}
+      {dialog}
     </Page>
   );
 }

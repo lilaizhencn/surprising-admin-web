@@ -1,17 +1,18 @@
+import { Select } from "../components/CustomSelect";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { type Asset } from "../AssetsPage";
 import { request, parseApiJson } from "../api/client";
-import { type UnknownRecord, type Instrument } from "../types";
+import { type UnknownRecord, type Instrument, type ProductLine } from "../types";
 import { type InstrumentChange, instruments as instrumentList, marketHealth, instrumentChanges, instrumentLatest, gatewayGet, updateInstrumentStatus, upsertInstrument, gatewayPost } from "../api/admin";
 import { validateInstrumentForm, InstrumentConfigurationFields } from "../InstrumentConfigurationFields";
-import { ProductLineAccess } from "../ProductLineAccess";
 import { OrderBusinessSettings } from "../OrderBusinessSettings";
 import { Search } from "lucide-react";
 import { MakerBusinessSettings } from "../MakerBusinessSettings";
 import { InstrumentMakerSettings } from "../InstrumentMakerSettings";
 import { compactNumber } from "../config";
 import { errorMessage, objectValue, extractRows, ppmPercent } from "../lib/adminData";
-import { cursorInfo, Page, SortSelect, TextFilter, Panel, DataTable, CursorPager, Metric, Empty, TwoColumn } from "../components/AdminUi";
+import { cursorInfo, Page, SortSelect, TextFilter, Panel, DataTable, CursorPager, Metric, Empty, TwoColumn, TabBar } from "../components/AdminUi";
 import { INSTRUMENT_STATUSES } from "../lib/products";
 import { INSTRUMENT_SORTS } from "../lib/queryOptions";
 import { DraftTextField, DraftSelectField, DraftOptionalTextField, DraftOptionalSelectField, DraftOptionalNumberField, DraftNumberField, DraftCsvField, DraftCheckboxField } from "../features/instruments/InstrumentDraftFields";
@@ -33,7 +34,7 @@ const CONTRACT_TYPES_BY_INSTRUMENT: Record<string, string[]> = {
   OPTION: ["VANILLA_OPTION"]
 };
 
-export default function MarketsPage() {
+export default function MarketsPage({ productLine }: { productLine?: ProductLine }) {
   const [assetOptions, setAssetOptions] = useState<Asset[]>([]);
   useEffect(() => {
     const abort = new AbortController();
@@ -41,7 +42,7 @@ export default function MarketsPage() {
       .catch(e => { if (!abort.signal.aborted) setError(errorMessage(e)); });
     return () => abort.abort();
   }, []);
-  const [filters, setFilters] = useState({ productLine: "", status: "", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
+  const [filters, setFilters] = useState({ productLine: productLine ?? "", status: "", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
   const [coreSync, setCoreSync] = useState<UnknownRecord | null>(null);
   const [changeReason, setChangeReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -58,6 +59,9 @@ export default function MarketsPage() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pendingConfirm, setPendingConfirm] = useState<
+    null | { type: "status"; next: string } | { type: "discard" }
+  >(null);
   const draftState = useMemo(() => parseInstrumentDraft(json), [json]);
   const draft = draftState.value;
 
@@ -78,7 +82,7 @@ export default function MarketsPage() {
           cursor: nextCursor,
           sort: filters.sort
         }),
-        marketHealth({ period: healthPeriod, staleSeconds: Number(staleSeconds) || 120, limit: 100 })
+        marketHealth({ productLine: filters.productLine, period: healthPeriod, staleSeconds: Number(staleSeconds) || 120, limit: 100 })
       ]);
       if (instrumentResult.status === "rejected") throw instrumentResult.reason;
       const response = instrumentResult.value;
@@ -89,7 +93,7 @@ export default function MarketsPage() {
       setPage(cursorInfo(response));
       setFilters((current) => ({ ...current, cursor: nextCursor }));
       const nextSelected = preferred?.symbol
-        ? rows.find((row) => String(row.instrumentId) === String(preferred.instrumentId) && row.contractType === preferred.contractType) ?? preferred ?? rows[0] ?? null
+        ? rows.find((row) => String(row.instrumentId) === String(preferred.instrumentId) && row.contractType === preferred.contractType) ?? rows[0] ?? null
         : rows[0] ?? null;
       setSelected(nextSelected);
       if (nextSelected?.symbol) {
@@ -159,14 +163,13 @@ export default function MarketsPage() {
     setSaving(true);
     try {
       if (json !== JSON.stringify(selected, null, 2)) throw new Error("请先保存或放弃未保存的配置修改，再切换交易状态。");
-      if (!window.confirm(`确认将 ${selected.symbol} 的状态改为 ${next}？`)) return;
       if (!changeReason.trim()) throw new Error("请填写修改原因");
       const updated = await updateInstrumentStatus(selected.instrumentId, next, selected.contractType === "VANILLA_OPTION" ? "OPTION" : selected.contractType, changeReason.trim(), selected.lastChangeId);
       setSelected(updated);
       await load(filters.cursor, updated);
     } catch (err) {
       setError(errorMessage(err));
-    } finally { setSaving(false); }
+    } finally { setSaving(false); setPendingConfirm(null); }
   }
 
   async function upsert() {
@@ -197,38 +200,64 @@ export default function MarketsPage() {
     setJson(JSON.stringify(normalizeInstrumentDraft({ ...base, [field]: value }, field), null, 2));
   }
 
+  const [tab, setTab] = useState<"instruments" | "rules" | "health">("instruments");
+
   return (
     <Page title="产品与市场" description="在一个页面完成合约配置、上线、交易开关和做市维护。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
-      <ProductLineAccess />
-      <PriceSettingsPanel key={filters.productLine} productLine={filters.productLine} />
-      <OrderBusinessSettings key={filters.productLine} productLine={filters.productLine} />
-      <div className="filters">
-        <label>产品线<select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
-          <option value="">全部产品线</option>
-          {["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}
-        </select></label>
-        <label>类型<select value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}>
-          <option value="">全部</option>
-          {INSTRUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}
-        </select></label>
-        <label>状态<select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
-          <option value="">全部</option>
-          {INSTRUMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
-        </select></label>
-        <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(sort) => updateFilters({ sort })} />
-        <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
-        <label>K线周期<select value={healthPeriod} onChange={(event) => setHealthPeriod(event.target.value)}>
-          <option value="1m">1m</option>
-          <option value="5m">5m</option>
-          <option value="15m">15m</option>
-          <option value="1h">1h</option>
-        </select></label>
-        <TextFilter label="过期秒数" value={staleSeconds} onChange={setStaleSeconds} />
-        <button onClick={() => void load("")}><Search size={16} />查询</button>
-      </div>
-      {healthError && <div role="status" className="alert">{healthError}</div>}
-      {health && <MarketHealthOverview health={health} />}
-      <div className="instrument-workspace">
+      <TabBar
+        label="市场管理视图"
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { key: "instruments", label: "合约与币对列表", badge: items.length },
+          { key: "rules", label: "产品线价格与订单规则" },
+          { key: "health", label: "价格链路与行情监控" },
+        ]}
+      />
+      {tab === "rules" && (
+        <TwoColumn>
+          <PriceSettingsPanel key={filters.productLine} productLine={filters.productLine} />
+          <OrderBusinessSettings key={filters.productLine} productLine={filters.productLine} />
+        </TwoColumn>
+      )}
+      {tab === "health" && (
+        <>
+          <div className="filters">
+            <label>K线周期<Select value={healthPeriod} onChange={(event) => setHealthPeriod(event.target.value)}>
+              <option value="1m">1m</option>
+              <option value="5m">5m</option>
+              <option value="15m">15m</option>
+              <option value="1h">1h</option>
+            </Select></label>
+            <TextFilter label="过期秒数" value={staleSeconds} onChange={setStaleSeconds} />
+            <button onClick={() => void load(filters.cursor)}><Search size={16} />刷新监控</button>
+          </div>
+          {healthError && <div role="status" className="alert">{healthError}</div>}
+          {health ? <MarketHealthOverview health={health} /> : <Empty text="暂无当前产品线价格链路监控数据" />}
+        </>
+      )}
+      {tab === "instruments" && (
+        <>
+          <div className="filters">
+            {!productLine && (
+              <label>产品线<Select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
+                <option value="">全部产品线</option>
+                {["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}
+              </Select></label>
+            )}
+            <label>类型<Select value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}>
+              <option value="">全部</option>
+              {INSTRUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}
+            </Select></label>
+            <label>状态<Select value={filters.status} onChange={(event) => updateFilters({ status: event.target.value })}>
+              <option value="">全部</option>
+              {INSTRUMENT_STATUSES.map((item) => <option key={item}>{item}</option>)}
+            </Select></label>
+            <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(sort) => updateFilters({ sort })} />
+            <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
+            <button onClick={() => void load("")}><Search size={16} />查询</button>
+          </div>
+          <div className="instrument-workspace">
         <Panel title="交易产品">
           <button disabled={!filters.productLine} title={filters.productLine ? "新增当前产品线合约" : "请先选择产品线"} onClick={() => { setSelected({ instrumentId: 0, symbol: "", baseAssetId: 0, quoteAssetId: 0, settleAssetId: 0, contractValueAssetId: 0, instrumentType: filters.productLine === "SPOT" ? "SPOT" : filters.productLine === "OPTION" ? "OPTION" : filters.productLine.endsWith("DELIVERY") ? "DELIVERY" : "PERPETUAL", contractType: filters.productLine === "OPTION" ? "VANILLA_OPTION" : filters.productLine, status: "DRAFT", supportedOrderTypes: ["LIMIT"], supportedTimeInForce: ["GTC"], riskLimitBrackets: [], indexSources: [] }); setChanges([]); setChangeReason(""); }}>新增合约</button>
           <p>保存草稿 → 上线展示 → 开启交易。配置保存后自动同步，交易核心确认后生效。</p>
@@ -252,15 +281,26 @@ export default function MarketsPage() {
                 <Metric label="期权方向" value={selected.optionType ?? "-"} tone="muted" />
               </div>
               <div className="button-row">
-                {[ ["PRE_TRADING", "上线展示"], ["TRADING", "开启交易"], ["HALT", "暂停交易"] ].map(([status, label]) => <button key={status} disabled={saving || !selected.instrumentId || selected.status === status || selected.status === "CLOSED" || selected.status === "SETTLING"} onClick={() => void changeStatus(status)}>{label}</button>)}
+                {[ ["PRE_TRADING", "上线展示"], ["TRADING", "开启交易"], ["HALT", "暂停交易"] ].map(([status, label]) => <button key={status} disabled={saving || !selected.instrumentId || selected.status === status || selected.status === "CLOSED" || selected.status === "SETTLING"} onClick={() => setPendingConfirm({ type: "status", next: status })}>{label}</button>)}
                 <button onClick={() => { setSelected({ ...selected, instrumentId: 0, symbol: "", status: "DRAFT", lastChangeId: undefined, changeId: undefined }); setChanges([]); }}>复制为新合约</button>
               </div>
               <div className="instrument-save-actions">
               <TextFilter label="修改原因（必填）" value={changeReason} onChange={setChangeReason} />
               <details><summary>本次修改预览</summary><DataTable rows={Object.keys(draft ?? {}).filter(key => JSON.stringify(draft?.[key]) !== JSON.stringify(selected[key])).map(key => ({ 字段: key, 修改前: JSON.stringify(selected[key]) ?? "未设置", 修改后: JSON.stringify(draft?.[key]) ?? "未设置" }))} columns={["字段", "修改前", "修改后"]} /></details>
               <button className="primary" disabled={saving} onClick={() => void upsert()}>{saving ? "正在保存…" : "保存产品配置"}</button>
-              <button disabled={saving} onClick={() => { if (window.confirm("放弃未保存的修改？")) setJson(JSON.stringify(selected, null, 2)); }}>放弃修改</button>
+              <button disabled={saving} onClick={() => setPendingConfirm({ type: "discard" })}>放弃修改</button>
               </div>
+              <ConfirmDialog
+                open={pendingConfirm !== null}
+                title={pendingConfirm?.type === "status" ? `确认将 ${selected.symbol} 状态改为 ${pendingConfirm.next}？` : "放弃未保存的修改？"}
+                description={pendingConfirm?.type === "status" ? "状态变更将同步至交易核心。" : "当前表单中的未保存更改将被重置。"}
+                busy={saving}
+                onCancel={() => setPendingConfirm(null)}
+                onConfirm={() => {
+                  if (pendingConfirm?.type === "status") void changeStatus(pendingConfirm.next);
+                  else { setJson(JSON.stringify(selected, null, 2)); setPendingConfirm(null); }
+                }}
+              />
               {draftState.error && <div className="alert danger">{draftState.error}</div>}
               <div className="profile-sections">
                 <InstrumentSection title="基础信息">
@@ -269,22 +309,22 @@ export default function MarketsPage() {
                     <DraftSelectField label="产品类型" field="instrumentType" draft={draft} update={updateDraftField} options={INSTRUMENT_TYPES} />
                     <DraftSelectField label="合约类型" field="contractType" draft={draft} update={updateDraftField} options={CONTRACT_TYPES} />
                     <DraftSelectField label="状态" field="status" draft={draft} update={updateDraftField} options={INSTRUMENT_STATUSES} />
-                    <label>基础币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.baseAssetId ?? "")} onChange={e => updateDraftField("baseAssetId", e.target.value)}>
+                    <label>基础币<Select disabled={Boolean(draft?.instrumentId)} value={String(draft?.baseAssetId ?? "")} onChange={e => updateDraftField("baseAssetId", e.target.value)}>
                       <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
                       {draft?.baseAssetId && !assetOptions.some(a => a.assetId === draft.baseAssetId) ? <option value={String(draft.baseAssetId)}>{String(draft.baseAsset ?? draft.baseAssetId)}（已停用）</option> : null}
-                    </select></label>
-                    <label>计价币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.quoteAssetId ?? "")} onChange={e => updateDraftField("quoteAssetId", e.target.value)}>
+                    </Select></label>
+                    <label>计价币<Select disabled={Boolean(draft?.instrumentId)} value={String(draft?.quoteAssetId ?? "")} onChange={e => updateDraftField("quoteAssetId", e.target.value)}>
                       <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
                       {draft?.quoteAssetId && !assetOptions.some(a => a.assetId === draft.quoteAssetId) ? <option value={String(draft.quoteAssetId)}>{String(draft.quoteAsset ?? draft.quoteAssetId)}（已停用）</option> : null}
-                    </select></label>
-                    <label>结算币<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.settleAssetId ?? "")} onChange={e => updateDraftField("settleAssetId", e.target.value)}>
+                    </Select></label>
+                    <label>结算币<Select disabled={Boolean(draft?.instrumentId)} value={String(draft?.settleAssetId ?? "")} onChange={e => updateDraftField("settleAssetId", e.target.value)}>
                       <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
                       {draft?.settleAssetId && !assetOptions.some(a => a.assetId === draft.settleAssetId) ? <option value={String(draft.settleAssetId)}>{String(draft.settleAsset ?? draft.settleAssetId)}（已停用）</option> : null}
-                    </select></label>
-                    <label>合约价值资产<select disabled={Boolean(draft?.instrumentId)} value={String(draft?.contractValueAssetId ?? "")} onChange={e => updateDraftField("contractValueAssetId", e.target.value)}>
+                    </Select></label>
+                    <label>合约价值资产<Select disabled={Boolean(draft?.instrumentId)} value={String(draft?.contractValueAssetId ?? "")} onChange={e => updateDraftField("contractValueAssetId", e.target.value)}>
                       <option value="">选择已上线币种</option>{assetOptions.map(a => <option key={a.assetId} value={a.assetId}>{a.asset} · {a.displayName}</option>)}
                       {draft?.contractValueAssetId && !assetOptions.some(a => a.assetId === draft.contractValueAssetId) ? <option value={String(draft.contractValueAssetId)}>{String(draft.contractValueAsset ?? draft.contractValueAssetId)}（已停用）</option> : null}
-                    </select></label>
+                    </Select></label>
                   </div>
                 </InstrumentSection>
                 <InstrumentSection title="交割与期权">
@@ -360,6 +400,7 @@ export default function MarketsPage() {
           ) : <Empty text="选择一个产品" />}
         </Panel>
       </div>
+      </>)}
     </Page>
   );
 }
@@ -507,12 +548,13 @@ function PriceSettingsPanel({ productLine }: { productLine: string }) {
   const [config, setConfig] = useState<UnknownRecord | null>(null);
   const [fields, setFields] = useState<Record<string, UnknownRecord>>({});
   const [draft, setDraft] = useState<UnknownRecord>({});
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState("更新产品线价格设置");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   async function load() {
     if (!productLine) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setNotice("");
     try {
       const response = await gatewayGet<UnknownRecord>("price-index", "/admin/business-settings", { productLine });
       const saved = response.config as UnknownRecord;
@@ -522,10 +564,10 @@ function PriceSettingsPanel({ productLine }: { productLine: string }) {
     } catch (err) { setError(errorMessage(err)); }
     finally { setLoading(false); }
   }
-  useEffect(() => { setConfig(null); setDraft({}); setFields({}); setError(""); }, [productLine]);
+  useEffect(() => { setConfig(null); setDraft({}); setFields({}); setError(""); setNotice(""); }, [productLine]);
   async function save() {
     if (!config) return;
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setNotice("");
     try {
       if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
       const settings: UnknownRecord = {};
@@ -557,26 +599,39 @@ function PriceSettingsPanel({ productLine }: { productLine: string }) {
       }
       if (settings.stableEnabled && !settings.fiatEnabled) throw new Error("稳定币汇率需要同时启用法币汇率。");
       if (settings.fiatEnabled && !(settings.fiatQuoteCurrencies as string[]).length) throw new Error("启用法币汇率前请填写报价币种。");
-      if (!window.confirm(`确认更新 ${productLine} 的价格业务设置？保存后热生效。`)) return;
       await gatewayPost("price-index", "/admin/business-settings", { settings, expectedVersion: config.version, reason: reason.trim() }, { productLine });
       await load();
+      setNotice(`${productLine} 价格与汇率设置已保存并热生效。`);
     } catch (err) { setError(errorMessage(err)); }
     finally { setLoading(false); }
   }
-  return <details className="panel"><summary>产品线价格与汇率设置</summary><div className="stack">
-    <p>选择产品线后读取设置。合约专属行情来源在下方合约表单维护；此处控制本产品线的指数、标记价和汇率公共参数。</p>
+  return <details className="panel"><summary>产品线价格与汇率设置</summary><div className="stack" style={{ marginTop: 10 }}>
+    <p className="muted">选择产品线后读取设置。合约专属行情来源在下方合约表单维护；此处控制本产品线的指数、标记价和汇率公共参数。</p>
+    {notice && <div role="status" className="alert">{notice}</div>}
     {error && <div role="alert" className="alert danger">{error}</div>}
-    <button disabled={!productLine || loading} onClick={() => void load()}>读取 {productLine || "所选产品线"} 设置</button>
-    {config && <><p>版本 {String(config.version)} · 保存后无需重启；版本冲突时重新读取后再修改。</p>
-      <div className="form-grid">{Object.entries(fields).map(([key, field]) => <label key={key}>{String(field.label)}
-        {field.kind === "boolean" ? <input type="checkbox" checked={Boolean(draft[key])} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
-          : <input type={["integer", "duration", "decimal"].includes(String(field.kind)) ? "number" : "text"}
+    <div><button type="button" disabled={!productLine || loading} onClick={() => void load()}>读取 {productLine || "所选产品线"} 设置</button></div>
+    {config && <><p className="muted">版本 {String(config.version)} · 保存后无需重启；版本冲突时重新读取后再修改。</p>
+      <div className="form-grid">{Object.entries(fields).map(([key, field]) => field.kind === "boolean" ? (
+        <div key={key} style={{ display: "grid", gap: 6 }}>
+          <label className="assets-switch">
+            <input type="checkbox" checked={Boolean(draft[key])} onChange={e => setDraft(current => ({ ...current, [key]: e.target.checked }))} />
+            <span className="assets-switch-track" />
+            <span className="assets-switch-label" style={{ fontWeight: 600, color: "var(--color-ink)" }}>{String(field.label)}</span>
+          </label>
+          <small className="muted">{String(field.help)}</small>
+        </div>
+      ) : (
+        <label key={key}>{String(field.label)}
+          <input type={["integer", "duration", "decimal"].includes(String(field.kind)) ? "number" : "text"}
               min={Number(field.minimum)} max={Number(field.maximum)} step={field.kind === "decimal" ? "any" : 1}
-              value={String(draft[key] ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />}
-        <small>{String(field.help)}{["integer", "duration", "decimal"].includes(String(field.kind)) && `。范围 ${field.minimum}–${field.maximum}`}</small>
-      </label>)}</div>
+              value={String(draft[key] ?? "")} onChange={e => setDraft(current => ({ ...current, [key]: e.target.value }))} />
+          <small>{String(field.help)}{["integer", "duration", "decimal"].includes(String(field.kind)) && `。范围 ${field.minimum}–${field.maximum}`}</small>
+        </label>
+      ))}</div>
       <label>修改原因<input required maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} /></label>
-      <button className="primary" disabled={loading} onClick={() => void save()}>保存价格设置</button></>}
+      <div className="button-row" style={{ justifyContent: "flex-end" }}>
+        <button type="button" className="primary" disabled={loading} onClick={() => void save()}>保存价格设置</button>
+      </div></>}
   </div></details>;
 }
 

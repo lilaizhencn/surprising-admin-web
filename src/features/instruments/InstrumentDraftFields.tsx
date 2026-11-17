@@ -1,3 +1,4 @@
+import { Select } from "../../components/CustomSelect";
 import { type UnknownRecord } from "../../types";
 import { immutableInstrumentFields, instrumentFieldHint } from "../../InstrumentConfigurationFields";
 
@@ -100,10 +101,10 @@ export function DraftSelectField({ label, field, draft, update, options }: {
   const value = String(draft?.[field] ?? "");
   return (
     <label>{label}
-      <select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value)}>
+      <Select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value)}>
         <option value="">请选择</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+      </Select>
       <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );
@@ -119,10 +120,10 @@ export function DraftOptionalSelectField({ label, field, draft, update, options 
   const value = String(draft?.[field] ?? "");
   return (
     <label>{label}
-      <select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value || null)}>
+      <Select disabled={Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field)} value={value} onChange={(event) => update(field, event.target.value || null)}>
         <option value="">请选择</option>
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
+      </Select>
       <small>{instrumentFieldHint(field)}{Boolean(draft?.instrumentId) && immutableInstrumentFields.has(field) ? " 已创建合约，此项锁定。" : ""}</small>
     </label>
   );

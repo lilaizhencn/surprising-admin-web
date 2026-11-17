@@ -101,10 +101,21 @@ export function MakerBusinessSettings({ productLine, instrumentId, reason }: { p
     if (value && typeof value === "object") return <fieldset><legend>{label}</legend><div className="form-grid">
       {Object.entries(value as UnknownRecord).filter(([name]) => name !== "nodeId").map(([name, current]) => <div key={name}>{fields(current, `${path}.${name}`, next => change({ ...value, [name]: next }))}</div>)}
     </div></fieldset>;
-    return <label>{label}{typeof value === "boolean"
-      ? <input type="checkbox" checked={value} onChange={e => change(e.target.checked)} />
-      : <input disabled={key === "productLine"} value={String(value ?? "")} inputMode={typeof value === "number" || /Ppm|Ticks|Steps|Levels|Depth|Batch|Units/.test(key) ? "numeric" : "text"} onChange={e => change(e.target.value)} />}
-      {hint(key) && <small>{hint(key)}</small>}{numericBounds[key] && <small>整数范围：{String(numericBounds[key][0])} 至 {String(numericBounds[key][1])}。</small>}</label>;
+    return typeof value === "boolean" ? (
+      <div style={{ display: "grid", gap: 6 }}>
+        <label className="assets-switch">
+          <input type="checkbox" checked={value} onChange={e => change(e.target.checked)} />
+          <span className="assets-switch-track" />
+          <span className="assets-switch-label" style={{ fontWeight: 600, color: "var(--color-ink)" }}>{label}</span>
+        </label>
+        {hint(key) && <small className="muted">{hint(key)}</small>}
+      </div>
+    ) : (
+      <label>{label}
+        <input disabled={key === "productLine"} value={String(value ?? "")} inputMode={typeof value === "number" || /Ppm|Ticks|Steps|Levels|Depth|Batch|Units/.test(key) ? "numeric" : "text"} onChange={e => change(e.target.value)} />
+        {hint(key) && <small>{hint(key)}</small>}{numericBounds[key] && <small>整数范围：{String(numericBounds[key][0])} 至 {String(numericBounds[key][1])}。</small>}
+      </label>
+    );
   }
   async function save() {
     if (!settings || saving) return;
@@ -112,7 +123,6 @@ export function MakerBusinessSettings({ productLine, instrumentId, reason }: { p
     try {
       if (!reason.trim() || reason.length > 1000) throw new Error("请填写 1 至 1000 字的修改原因。");
       validateSettings(settings);
-      if (!window.confirm("这些公共设置会影响当前产品线的所有做市策略，确认保存？")) return;
       const result = await gatewayPost<{ settings: UnknownRecord; version: unknown }>("market-maker", "/business-settings", { settings, expectedVersion: version, reason: reason.trim() }, { productLine });
       setSettings(result.settings); setVersion(result.version);
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }

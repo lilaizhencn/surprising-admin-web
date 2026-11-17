@@ -1,3 +1,4 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { loginLogs, operationLogs } from "../api/admin";
@@ -48,12 +49,12 @@ export default function AuditPage() {
     <Page title="审计日志" onRefresh={load} loading={loading} error={error}>
       <div className="filters">
         <TextFilter label="登录 User ID" value={loginFilters.userId} onChange={(value) => setLoginFilters({ ...loginFilters, userId: value, cursor: "" })} />
-        <label>登录结果<select value={loginFilters.result} onChange={(event) => setLoginFilters({ ...loginFilters, result: event.target.value, cursor: "" })}><option value="">全部</option><option>SUCCESS</option><option>FAILED</option></select></label>
+        <label>登录结果<Select value={loginFilters.result} onChange={(event) => setLoginFilters({ ...loginFilters, result: event.target.value, cursor: "" })}><option value="">全部</option><option>SUCCESS</option><option>FAILED</option></Select></label>
         <SortSelect label="登录排序" value={loginFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => setLoginFilters({ ...loginFilters, sort: value, cursor: "" })} />
         <TextFilter label="管理员 ID" value={operationFilters.adminUserId} onChange={(value) => setOperationFilters({ ...operationFilters, adminUserId: value, cursor: "" })} />
         <TextFilter label="服务" value={operationFilters.service} onChange={(value) => setOperationFilters({ ...operationFilters, service: value, cursor: "" })} />
-        <label>方法<select value={operationFilters.method} onChange={(event) => setOperationFilters({ ...operationFilters, method: event.target.value, cursor: "" })}><option value="">全部</option><option>GET</option><option>POST</option><option>PATCH</option><option>PUT</option><option>DELETE</option></select></label>
-        <label>操作结果<select value={operationFilters.success} onChange={(event) => setOperationFilters({ ...operationFilters, success: event.target.value, cursor: "" })}><option value="">全部</option><option value="true">成功</option><option value="false">失败</option></select></label>
+        <label>方法<Select value={operationFilters.method} onChange={(event) => setOperationFilters({ ...operationFilters, method: event.target.value, cursor: "" })}><option value="">全部</option><option>GET</option><option>POST</option><option>PATCH</option><option>PUT</option><option>DELETE</option></Select></label>
+        <label>操作结果<Select value={operationFilters.success} onChange={(event) => setOperationFilters({ ...operationFilters, success: event.target.value, cursor: "" })}><option value="">全部</option><option value="true">成功</option><option value="false">失败</option></Select></label>
         <SortSelect label="操作排序" value={operationFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => setOperationFilters({ ...operationFilters, sort: value, cursor: "" })} />
         <button onClick={() => void load("", "")}><Search size={16} />查询</button>
       </div>

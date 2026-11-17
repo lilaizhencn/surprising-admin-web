@@ -1,4 +1,6 @@
+import { Select } from "../components/CustomSelect";
 import { useState, useEffect, useRef } from "react";
+import { useConfirmDialog } from "../components/ConfirmDialog";
 import { type AuthenticatedUser, type UnknownRecord } from "../types";
 import { userSessions, userProfile, adminUsers, updateUserStatus, replaceUserRoles, revokeSession, revokeUserSessions, adminSubAccounts, adminUpdateSubAccountStatus } from "../api/admin";
 import { Search, RefreshCw, GitBranch, ShieldAlert } from "lucide-react";
@@ -10,6 +12,7 @@ import { UserProfileView } from "../features/users/UserProfileView";
 const USER_STATUSES = ["NORMAL", "FROZEN", "TRADE_DISABLED", "WITHDRAW_DISABLED"];
 
 export default function UsersPage() {
+  const { confirm, dialog } = useConfirmDialog();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [listFilters, setListFilters] = useState({ limit: "200", cursor: "", sort: "createdAt.desc" });
@@ -53,7 +56,7 @@ export default function UsersPage() {
     const prompt = row.status === "ACTIVE"
       ? `确认冻结子账户 ${subUserId}？冻结后该子账户将无法下单与发起内部划转。`
       : `确认解冻子账户 ${subUserId}？`;
-    if (!window.confirm(prompt)) return;
+    if (!(await confirm({ title: row.status === "ACTIVE" ? `确认冻结子账户 ${subUserId}？` : `确认解冻子账户 ${subUserId}？`, description: prompt, danger: row.status === "ACTIVE" }))) return;
     setSubLoading(true); setError(""); setNotice("");
     try {
       await adminUpdateSubAccountStatus(subUserId, nextStatus);
@@ -235,10 +238,10 @@ export default function UsersPage() {
       {notice && <p role="status">{notice}</p>}
       <div className="filters">
         <label>搜索<input value={query} onChange={(event) => { setQuery(event.target.value); resetUserCursor(); }} placeholder="userId / username / email" /></label>
-        <label>状态<select value={status} onChange={(event) => { setStatus(event.target.value); resetUserCursor(); }}>
+        <label>状态<Select value={status} onChange={(event) => { setStatus(event.target.value); resetUserCursor(); }}>
           <option value="">全部</option>
           {USER_STATUSES.map((item) => <option key={item}>{item}</option>)}
-        </select></label>
+        </Select></label>
         <TextFilter label="Limit" value={listFilters.limit} onChange={(value) => updateListFilters({ limit: value })} />
         <SortSelect value={listFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateListFilters({ sort: value })} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
@@ -259,9 +262,9 @@ export default function UsersPage() {
           {selected ? (
             <div className="stack">
               <KeyValue data={selected as unknown as UnknownRecord} />
-              <label>状态<select disabled={loading} value={selected.status} onChange={(event) => void saveStatus(event.target.value)}>
+              <label>状态<Select disabled={loading} value={selected.status} onChange={(event) => void saveStatus(event.target.value)}>
                 {USER_STATUSES.map((item) => <option key={item}>{item}</option>)}
-              </select></label>
+              </Select></label>
               <label>角色<input disabled={loading} value={rolesText} onChange={(event) => setRolesText(event.target.value)} placeholder="USER,ADMIN" /></label>
               <button className="primary" disabled={loading} onClick={() => void saveRoles()}>保存角色</button>
             </div>
@@ -303,7 +306,7 @@ export default function UsersPage() {
               <button className="primary" disabled={loading} onClick={() => void forceLogoutUser()}>强制下线全部会话</button>
             </div>
             <div className="filters compact">
-              <label>Active<select value={sessionFilters.active} onChange={(event) => updateSessionFilters({ active: event.target.value })}><option value="">全部</option><option value="true">有效</option><option value="false">失效</option></select></label>
+              <label>Active<Select value={sessionFilters.active} onChange={(event) => updateSessionFilters({ active: event.target.value })}><option value="">全部</option><option value="true">有效</option><option value="false">失效</option></Select></label>
               <TextFilter label="Limit" value={sessionFilters.limit} onChange={(value) => updateSessionFilters({ limit: value })} />
               <SortSelect value={sessionFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateSessionFilters({ sort: value })} />
               <button onClick={() => void loadSessions(selected.userId, "")}><Search size={16} />查询会话</button>
@@ -334,6 +337,7 @@ export default function UsersPage() {
           />
         ) : <Empty text="选择用户查看资产、订单和风险画像" />}
       </Panel>
+      {dialog}
     </Page>
   );
 }

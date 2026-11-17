@@ -1,3 +1,4 @@
+import { Select } from "./components/CustomSelect";
 import { useEffect, useRef, useState } from "react";
 import { gatewayGet, gatewayPost, instruments } from "./api/admin";
 import { loadSession } from "./api/client";
@@ -164,7 +165,7 @@ export default function MaintenancePage() {
       <div className="panel-title"><h3>交易维护</h3><span>撤单 · 撮合平仓 · 结算清退</span></div>
       <p>任务按产品线和币对执行。先预览，再提交审批。交易限制作用于整个币对，即使只处理指定用户；完成后需明确恢复交易，结算清退的币对永久停止交易。</p>
       <div className="filters">
-        <label>产品线<select disabled={busy || !!dialog} value={line} onChange={e => { setLine(e.target.value); setBeforeId("0"); setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); change({ symbol: "", mode: "CANCEL", priceTicks: "0" }); }}>{lines.map(v => <option key={v}>{v}</option>)}</select></label>
+        <label>产品线<Select disabled={busy || !!dialog} value={line} onChange={e => { setLine(e.target.value); setBeforeId("0"); setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); change({ symbol: "", mode: "CANCEL", priceTicks: "0" }); }}>{lines.map(v => <option key={v}>{v}</option>)}</Select></label>
         <div className="maintenance-symbol" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) { setSymbolOpen(false); setSymbolSearch(""); setSymbolIndex(0); } }}>
           <label htmlFor="maintenance-symbol-input">币对</label>
           <input id="maintenance-symbol-input" role="combobox" aria-autocomplete="list" aria-expanded={symbolOpen} aria-controls="maintenance-symbol-options"
@@ -192,7 +193,7 @@ export default function MaintenancePage() {
           {!symbolLoading && draft.symbol && !symbolAvailable && <small>草稿币对不在当前列表，请重新选择。</small>}
         </div>
         <label>用户 ID（留空为全部）<input disabled={busy || !!dialog || draft.mode === "SETTLEMENT"} inputMode="numeric" value={draft.userId} onChange={e => change({ userId: e.target.value })} /></label>
-        <label>操作方式<select disabled={busy || !!dialog} value={draft.mode} onChange={e => { const mode = e.target.value as Mode; change({ mode, priceTicks: "0", ...(mode === "SETTLEMENT" ? { userId: "" } : {}) }); }}>{Object.entries(modes).filter(([key]) => line !== "SPOT" || key === "CANCEL").map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select></label>
+        <label>操作方式<Select disabled={busy || !!dialog} value={draft.mode} onChange={e => { const mode = e.target.value as Mode; change({ mode, priceTicks: "0", ...(mode === "SETTLEMENT" ? { userId: "" } : {}) }); }}>{Object.entries(modes).filter(([key]) => line !== "SPOT" || key === "CANCEL").map(([key, value]) => <option key={key} value={key}>{value}</option>)}</Select></label>
         {hasPrice && <label>{draft.mode === "SETTLEMENT" && line === "OPTION" ? "标的结算价格（ticks）" : "价格（ticks，整数最小单位）"}<input disabled={busy || !!dialog} inputMode="numeric" value={draft.priceTicks} onChange={e => change({ priceTicks: e.target.value })} /></label>}
         <label>维护原因<input disabled={busy || !!dialog} value={draft.reason} maxLength={1024} placeholder="升级维护或下架原因、关联工单" onChange={e => change({ reason: e.target.value })} /></label>
         <button disabled={busy || !valid} onClick={() => void inspect()}>预览 Core 当前状态</button>

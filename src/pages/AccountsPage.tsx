@@ -1,16 +1,20 @@
+import { Select } from "../components/CustomSelect";
 import { assetCode } from "../lib/formValues";
 import { useState, useEffect, useRef } from "react";
-import { gatewayGet, accountAdjustments, accountAssetValuation, accountAssetSnapshots, alertEvents, gatewayPost, createAccountAssetSnapshot } from "../api/admin";
+import { useConfirmDialog } from "../components/ConfirmDialog";
+import { gatewayGet, accountAdjustments, accountAssetValuation, accountAssetSnapshots, gatewayPost, createAccountAssetSnapshot } from "../api/admin";
 import { type UnknownRecord } from "../types";
 import { positiveInt64, int64String } from "../lib/integers";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, Metric, CursorPager } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, Metric, CursorPager, TabBar } from "../components/AdminUi";
 import { productLineForAccountType, ACCOUNT_TYPES } from "../lib/products";
 import { records, errorMessage, objectValue } from "../lib/adminData";
 import { accountReadPage, readAccountSections, type AccountRead } from "../lib/accountReads";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
 
 export default function AccountsPage() {
+  const { confirm, dialog } = useConfirmDialog();
+  const [tab, setTab] = useState<"balances" | "adjustments" | "valuation">("balances");
   const [userId, setUserId] = useState("");
   const [accountType, setAccountType] = useState("USDT_PERPETUAL");
   const [asset, setAsset] = useState("USDT");
@@ -179,8 +183,7 @@ export default function AccountsPage() {
     };
     const sections = await readAccountSections({
       assetValuation: { request: accountAssetValuation({ ...common, userId: reportFilters.userId || undefined, nonZeroOnly: "true", cursor: nextValuationCursor, sort: reportFilters.valuationSort }, controller.signal), array: "rows", optionalArrays: ["warnings"] },
-      assetSnapshots: { request: accountAssetSnapshots({ ...common, snapshotDate: reportFilters.snapshotDate || undefined, cursor: nextSnapshotCursor, sort: reportFilters.snapshotSort }, controller.signal), array: "snapshots" },
-      assetSnapshotAlerts: { request: alertEvents({ status: "OPEN", domain: "SYSTEM", limit: 100 }, controller.signal), array: "events" }
+      assetSnapshots: { request: accountAssetSnapshots({ ...common, snapshotDate: reportFilters.snapshotDate || undefined, cursor: nextSnapshotCursor, sort: reportFilters.snapshotSort }, controller.signal), array: "snapshots" }
     });
     if (controller.signal.aborted) return;
     setReportRead({ scope: reportScope, sections });
@@ -209,7 +212,7 @@ export default function AccountsPage() {
       };
       if (!body.referenceId || !body.reason) throw new Error("请填写唯一业务编号和调整原因。");
       if (product && !productLineForAccountType(accountType)) throw new Error("请选择产品账户类型。");
-      if (!window.confirm(`确认调整用户 ${body.userId} 的 ${productLine} / ${product ? accountType : "基础账户"} ${body.asset} 余额 ${body.amountUnits} 最小单位？`)) return;
+      if (!(await confirm({ title: "确认余额调整", description: `确认调整用户 ${body.userId} 的 ${productLine} / ${product ? accountType : "基础账户"} ${body.asset} 余额 ${body.amountUnits} 最小单位？` }))) return;
       await gatewayPost("account", product ? "/product-balance-adjustments" : "/balance-adjustments", body, productLine ? { productLine } : {});
       setAdjust({ amountUnits: "", referenceId: "", reason: "" });
       await Promise.all([load("", "", "", ""), loadReports("", "")]);
@@ -241,26 +244,41 @@ export default function AccountsPage() {
   const valuationRows = records(data?.assetValuation?.rows as UnknownRecord[] | undefined);
   const valuationTotals = objectValue(data?.assetValuation?.totals);
   const valuationWarnings = records(data?.assetValuation?.warnings as UnknownRecord[] | undefined);
-  const snapshotAlerts = records(data?.assetSnapshotAlerts);
 
   return (
     <Page title="账户资产" onRefresh={refresh} description="按用户与产品线核对余额、流水和人工调整；全局估值报表独立查询。" loading={loading} error={error}>
       <fieldset className="account-fields" disabled={writeLoading}>
+      <TabBar
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: "balances", label: "余额、持仓与流水", count: records(data?.balances as UnknownRecord[] | undefined).length + records(data?.productBalances as UnknownRecord[] | undefined).length },
+          { key: "adjustments", label: "人工调账与审计追溯", count: records(data?.adjustments as UnknownRecord[] | undefined).length },
+          { key: "valuation", label: "估值报表与日终快照", count: valuationRows.length }
+        ]}
+      />
+      {tab !== "valuation" && (
+      <>
       <div className="filters">
         <TextFilter label="User ID" value={userId} onChange={(value) => { setUserId(value); resetListCursors(); }} />
-        <label>账户类型<select aria-label="账户类型" value={accountType} onChange={(event) => { setAccountType(event.target.value); resetListCursors(); }}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</select></label>
-        {accountType === "FUNDING" && <label>资金账户产品线<select aria-label="资金账户产品线" value={fundingProductLine} onChange={event => { setFundingProductLine(event.target.value); resetListCursors(); }}>{["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}</select></label>}
+        <label>账户类型<Select aria-label="账户类型" value={accountType} onChange={(event) => { setAccountType(event.target.value); resetListCursors(); }}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</Select></label>
+        {accountType === "FUNDING" && <label>资金账户产品线<Select aria-label="资金账户产品线" value={fundingProductLine} onChange={event => { setFundingProductLine(event.target.value); resetListCursors(); }}>{["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}</Select></label>}
         <TextFilter label="Asset" value={asset} onChange={(value) => { setAsset(value.toUpperCase()); resetListCursors(); }} />
         <TextFilter label="流水 Limit" value={ledgerFilters.limit} onChange={(value) => updateLedgerFilters({ limit: value })} />
         <SortSelect label="流水排序" value={ledgerFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateLedgerFilters({ sort: value })} />
         <button onClick={() => void load("", "", "", "")}><Search size={16} />查询</button>
       </div>
       <p className="muted">当前产品线：{productLine}。基础余额与流水也按此产品线查询。</p>
+      </>
+      )}
+      {tab === "balances" && (
       <div className="three-grid">
         <Panel title="基础余额"><DataTable {...sectionState("balances")} rows={records(data?.balances as UnknownRecord[] | undefined)} /></Panel>
         <Panel title="产品余额"><DataTable {...sectionState("productBalances")} rows={records(data?.productBalances as UnknownRecord[] | undefined)} /></Panel>
         <Panel title="持仓"><DataTable {...sectionState("positions")} rows={records(data?.positions as UnknownRecord[] | undefined)} maxColumns={8} /></Panel>
       </div>
+      )}
+      {tab === "valuation" && (<>
       <Panel title="资产估值报表">
         <div className="filters">
           <TextFilter
@@ -274,12 +292,12 @@ export default function AccountsPage() {
             onChange={(value) => updateReportFilters({ userId: value })}
           />
           <label>账户类型
-            <select
+            <Select
               value={reportFilters.accountType}
               onChange={(event) => updateReportFilters({ accountType: event.target.value })}
             >
               {["", "BASIC", ...ACCOUNT_TYPES.filter(Boolean)].map((item) => <option key={item || "ALL"} value={item}>{item || "全部"}</option>)}
-            </select>
+            </Select>
           </label>
           <TextFilter
             label="Asset"
@@ -317,7 +335,6 @@ export default function AccountsPage() {
           <Metric label="用户数" value={valuationTotals.uniqueUsers ?? "—"} tone="muted" />
           <Metric label="已计价" value={valuationTotals.pricedRows ?? "—"} tone={valuationTotals.pricedRows == null ? "muted" : "ok"} />
           <Metric label="缺汇率" value={valuationTotals.missingRateRows ?? "—"} tone={valuationTotals.missingRateRows == null ? "muted" : Number(valuationTotals.missingRateRows) > 0 ? "warn" : "ok"} />
-          <Metric label="快照差异告警" value={reportSections.assetSnapshotAlerts?.response ? snapshotAlerts.length : "—"} tone={!reportSections.assetSnapshotAlerts?.response ? "muted" : snapshotAlerts.length ? "danger" : "ok"} />
         </div>
         {valuationWarnings.length > 0 && (
           <DataTable rows={valuationWarnings} columns={["area", "message"]} />
@@ -349,13 +366,6 @@ export default function AccountsPage() {
         />
       </Panel>
       <Panel title="日终资产快照">
-        {reportSections.assetSnapshotAlerts?.error && <div className="alert danger" role="alert">快照告警读取失败：{reportSections.assetSnapshotAlerts.error}</div>}
-        {snapshotAlerts.length > 0 && (
-          <DataTable
-            rows={snapshotAlerts}
-            columns={["severity", "target", "currentValue", "thresholdValue", "message", "lastSeenAt", "occurrences"]}
-          />
-        )}
         <CursorPager
           loading={loading}
           page={snapshotPageInfo}
@@ -382,6 +392,8 @@ export default function AccountsPage() {
           maxColumns={12}
         />
       </Panel>
+      </>)}
+      {tab === "adjustments" && (<>
       <Panel title="人工调整">
         <div className="filters">
           <label>金额 Units<input value={adjust.amountUnits} onChange={(event) => setAdjust({ ...adjust, amountUnits: event.target.value })} /></label>
@@ -394,14 +406,14 @@ export default function AccountsPage() {
       <Panel title="人工调整追溯">
         <div className="filters">
           <label>类型
-            <select
+            <Select
               value={adjustmentFilters.adjustmentKind}
               onChange={(event) => updateAdjustmentFilters({ adjustmentKind: event.target.value })}
             >
               <option value="">全部</option>
               <option value="BASIC">BASIC</option>
               <option value="PRODUCT">PRODUCT</option>
-            </select>
+            </Select>
           </label>
           <TextFilter
             label="管理员 ID"
@@ -452,6 +464,8 @@ export default function AccountsPage() {
           maxColumns={12}
         />
       </Panel>
+      </>)}
+      {tab === "balances" && (
       <div className="three-grid">
         <Panel title="基础流水">
           <CursorPager
@@ -484,7 +498,9 @@ export default function AccountsPage() {
           <DataTable {...sectionState("transfers")} rows={records(data?.transfers as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
       </div>
+      )}
       </fieldset>
+      {dialog}
     </Page>
   );
 }

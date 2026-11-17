@@ -1,3 +1,4 @@
+import { Select } from "./components/CustomSelect";
 import { useEffect, useState } from "react";
 import { gatewayGet, gatewayPost } from "./api/admin";
 import type { Instrument, UnknownRecord } from "./types";
@@ -58,12 +59,12 @@ export function InstrumentMakerSettings({ instrument, reason }: { instrument: In
     <p>策略保存在后台，保存后自动加载。合约开启交易后方可启用做市；账户须已备好可用余额。</p>
     {error && <p role="alert" className="alert danger">{error}</p>}
     {!instrument.instrumentId ? <p>先保存合约，再配置做市。</p> : <>
-      {definitions.length > 0 && <label>选择策略<select value={String(draft?.strategyId ?? "")} onChange={e => setDraft(definitions.find(row => row.strategyId === e.target.value) ?? null)}>{definitions.map(row => <option key={String(row.strategyId)}>{String(row.strategyId)}</option>)}</select></label>}
+      {definitions.length > 0 && <label>选择策略<Select value={String(draft?.strategyId ?? "")} onChange={e => setDraft(definitions.find(row => row.strategyId === e.target.value) ?? null)}>{definitions.map(row => <option key={String(row.strategyId)}>{String(row.strategyId)}</option>)}</Select></label>}
       <button disabled={!loaded || saving} onClick={() => setDraft({ strategyId: "", productLine: line, instrumentIds: [String(instrument.instrumentId)], accountIds: [], enabled: false, marginMode: "CROSS", version: 0 })}>添加做市策略</button>
       {draft && <><div className="form-grid">
         <label>策略标识<input disabled={Boolean(draft.version)} value={String(draft.strategyId ?? "")} onChange={e => update("strategyId", e.target.value)} /><small>永久标识，创建后不可修改。</small></label>
         <label>做市账户 ID<input disabled={Boolean(draft.version)} value={Array.isArray(draft.accountIds) ? draft.accountIds.join(",") : String(draft.accountIds ?? "")} onChange={e => update("accountIds", e.target.value)} /><small>多个 ID 用逗号分隔；创建后锁定账户绑定。</small></label>
-        <label>保证金模式<select value={String(draft.marginMode)} onChange={e => update("marginMode", e.target.value)}><option value="CROSS">全仓</option><option value="ISOLATED">逐仓</option></select></label>
+        <label>保证金模式<Select value={String(draft.marginMode)} onChange={e => update("marginMode", e.target.value)}><option value="CROSS">全仓</option><option value="ISOLATED">逐仓</option></Select></label>
         {fields.map(([field, label, hint]) => <label key={field}>{label}<input inputMode="numeric" value={String(draft[field] ?? "")} onChange={e => update(field, e.target.value)} /><small>{hint}</small></label>)}
         <label><input type="checkbox" checked={Boolean(draft.enabled)} disabled={instrument.status !== "TRADING" && !draft.enabled} onChange={e => update("enabled", e.target.checked)} />启用做市</label>
       </div><button disabled={saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存做市设置"}</button></>}
