@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { request } from "../api/client";
 import { Metric, Page, Panel } from "../components/AdminUi";
 import { errorMessage } from "../lib/adminData";
-import type { ProductLine, RouteKey } from "../types";
+import type { ProductLine, RouteTarget } from "../types";
 import "./DashboardPage.css";
 
 interface ProductLineSummary {
@@ -30,7 +30,7 @@ const PRODUCT_LINE_META: ReadonlyArray<{
   productLine: ProductLine;
   title: string;
   subtitle: string;
-  route: RouteKey;
+  route: RouteTarget;
 }> = [
   { productLine: "SPOT", title: "现货", subtitle: "Spot 币币交易对", route: "markets-spot" },
   {
@@ -72,7 +72,7 @@ function formatUsdt(value: number | string | undefined): string {
 export default function DashboardPage({
   onNavigate,
 }: {
-  onNavigate: (route: RouteKey) => void;
+  onNavigate: (route: RouteTarget) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +171,26 @@ export default function DashboardPage({
           />
         </button>
       </div>
+
+      <Panel title="高频运营快捷入口">
+        <div className="button-row">
+          {(
+            [
+              ["wallet", "链上充提审核"],
+              ["compliance", "KYC 与储备金"],
+              ["approvals", "敏感操作审批"],
+              ["c2c", "C2C 法币运营"],
+              ["support", "客服工单台"],
+              ["assets", "币种与网络"],
+            ] satisfies ReadonlyArray<readonly [RouteTarget, string]>
+          ).map(([target, label]) => (
+            <button key={target} type="button" onClick={() => onNavigate(target)}>
+              {label}
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </Panel>
 
       <Panel title="六大产品线币对总览">
         <div className="product-line-grid">

@@ -4,13 +4,12 @@ import {
   adminLocalWrite,
   type CursorListParams,
   type CursorPage,
-  dispositionFileName,
   gatewayGet,
   gatewayPost,
   type WalletCursorPage,
   type WalletResponse
 } from "./adminCore";
-import { loadSession, queryString, request, requestBlob, requestFile } from "./client";
+import { queryString, request, requestBlob } from "./client";
 
 export function complianceUsers(params: { userId?: string; kycStatus?: string; tagCode?: string; limit?: number } & CursorListParams, signal?: AbortSignal) {
   return request<CursorPage<UnknownRecord, "users">>(`/api/v1/admin/compliance/users${queryString(params)}`, { signal });
@@ -62,77 +61,6 @@ export function createAmlCase(userId: number | string, body: UnknownRecord) {
 
 export function updateAmlCaseStatus(caseId: number | string, body: UnknownRecord) {
   return adminLocalWrite<UnknownRecord>("POST", `/api/v1/admin/compliance/aml-cases/${caseId}/status`, body);
-}
-
-export async function exportJobs(params: { status?: string; exportType?: string; limit?: number } & CursorListParams) {
-  try {
-    return await request<CursorPage<UnknownRecord, "exports">>(`/api/v1/admin/exports${queryString(params)}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err ?? "");
-    if (!msg.includes("404")) throw err;
-    return { count: 0, exports: [], nextCursor: null, hasMore: false, sort: params.sort, limit: params.limit ?? 100 };
-  }
-}
-
-export async function exportJob(exportId: number | string) {
-  try {
-    return await request<UnknownRecord>(`/api/v1/admin/exports/${exportId}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err ?? "");
-    if (!msg.includes("404")) throw err;
-    return { exportId, status: "COMPLETED" };
-  }
-}
-
-export function createExportJob(body: { exportType: string; params: Record<string, string> }) {
-  return adminLocalWrite<UnknownRecord>("POST", "/api/v1/admin/exports", body);
-}
-
-export async function queryTasks(params: { status?: string; queryType?: string; limit?: number } & CursorListParams) {
-  try {
-    return await request<CursorPage<UnknownRecord, "tasks">>(`/api/v1/admin/query-tasks${queryString(params)}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err ?? "");
-    if (!msg.includes("404")) throw err;
-    return { count: 0, tasks: [], nextCursor: null, hasMore: false, sort: params.sort, limit: params.limit ?? 100 };
-  }
-}
-
-export async function queryTaskLimits() {
-  try {
-    return await request<UnknownRecord>("/api/v1/admin/query-tasks/limits");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err ?? "");
-    if (!msg.includes("404")) throw err;
-    return { maxConcurrentTasks: 4, maxRowsPerTask: 10000, retentionDays: 7 };
-  }
-}
-
-export function queryTask(queryTaskId: number | string) {
-  return request<UnknownRecord>(`/api/v1/admin/query-tasks/${queryTaskId}`);
-}
-
-export function createQueryTask(body: { queryType: string; params: Record<string, string> }) {
-  return adminLocalWrite<UnknownRecord>("POST", "/api/v1/admin/query-tasks", body);
-}
-
-export function archiveExpiredQueryTasks(body: { olderThanDays?: number; limit?: number; reason?: string }) {
-  return adminLocalWrite<UnknownRecord>("POST", "/api/v1/admin/query-tasks/archive-expired", body);
-}
-
-export async function downloadExportFile(exportId: number | string) {
-  const expectedUserId = String(loadSession()?.user.userId ?? "");
-  const { blob, headers } = await requestFile(`/api/v1/admin/exports/${exportId}/download`, { expectedUserId });
-  const fileName = dispositionFileName(headers.get("Content-Disposition")) || `admin-export-${exportId}.csv`;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  return fileName;
 }
 
 export function walletFinanceSummary(params: {
@@ -244,14 +172,19 @@ export function adminLatestPorSnapshot() {
     merkleRoot: string;
     totalReserveUsd: string;
     totalLiabilityUsd: string;
-    reserveRatioPct: number;
+    reserveRatioPct: string | number;
+    includedAccountCount?: number;
     status: string;
     auditorSignoff?: string;
-  }>("/api/v1/por/latest");
+  }>("/api/v1/admin/compliance/por/latest");
 }
 
 export function adminTriggerPorSnapshot() {
-  return adminLocalWrite<{ ok: boolean; snapshotId: string; merkleRoot: string }>("POST", "/api/v1/por/snapshot/trigger", {});
+  return adminLocalWrite<{ ok: boolean; snapshotId: string; merkleRoot: string }>(
+    "POST",
+    "/api/v1/admin/compliance/por/snapshot/trigger",
+    {}
+  );
 }
 
 export function adminPorSnapshots() {
@@ -261,6 +194,8 @@ export function adminPorSnapshots() {
     merkleRoot: string;
     totalReserveUsd: string;
     totalLiabilityUsd: string;
-    reserveRatioPct: number;
-  }>>("/api/v1/por/history");
+    reserveRatioPct: string | number;
+    includedAccountCount?: number;
+    status?: string;
+  }>>("/api/v1/admin/compliance/por/history");
 }

@@ -7,7 +7,7 @@ import { decideMfaRecovery, complianceUsers, complianceRiskTags, complianceAmlCa
 import { Search, Eye, Download, RefreshCw } from "lucide-react";
 import { compactNumber } from "../config";
 import { optionalPositiveInt64 } from "../lib/integers";
-import { cursorInfo, Page, TextFilter, SortSelect, Metric, Panel, DataTable, TwoColumn, CursorPager, KeyValue, Empty, StatusBadge, TabBar } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Metric, Panel, DataTable, TwoColumn, CursorPager, KeyValue, Empty, StatusBadge, TabBar, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage, fieldText, objectValue, records } from "../lib/adminData";
 import { enumOrDefault, jsonObject, textOrNull } from "../lib/formValues";
 import { UPDATED_AT_SORTS } from "../lib/queryOptions";
@@ -62,15 +62,18 @@ export default function CompliancePage() {
 
   async function loadPor() {
     setPorLoading(true);
+    setError("");
     try {
       const [latest, history] = await Promise.all([
-        adminLatestPorSnapshot().catch(() => null),
-        adminPorSnapshots().catch(() => [])
+        adminLatestPorSnapshot(),
+        adminPorSnapshots()
       ]);
-      if (latest) setPorLatest(latest as unknown as UnknownRecord);
-      if (Array.isArray(history)) setPorHistory(history as unknown as UnknownRecord[]);
+      setPorLatest(latest && Object.keys(latest).length > 0 ? (latest as unknown as UnknownRecord) : null);
+      setPorHistory(Array.isArray(history) ? (history as unknown as UnknownRecord[]) : []);
     } catch (e) {
-      // 容错展示
+      setPorLatest(null);
+      setPorHistory([]);
+      setError(errorMessage(e));
     } finally {
       setPorLoading(false);
     }
@@ -382,15 +385,11 @@ export default function CompliancePage() {
           <TwoColumn>
             <Panel title="当前公布的最新 PoR 资产储备快照">
               <div className="stack">
-                <KeyValue data={porLatest ?? {
-                  snapshotId: "por-20261108-001",
-                  timestamp: Date.now(),
-                  totalReserveUsd: "55,182,900.00",
-                  totalLiabilityUsd: "50,000,000.00",
-                  reserveRatioPct: "110.37%",
-                  merkleRoot: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069",
-                  status: "VERIFIED_100_PERCENT"
-                }} />
+                {porLatest ? (
+                  <KeyValue data={porLatest} />
+                ) : (
+                  <Empty text={porLoading ? "正在加载最新资产储备快照…" : "暂无已发布的 PoR 资产储备快照，可点击下方按钮立即生成"} />
+                )}
                 <button
                   className="primary"
                   style={{ alignSelf: "flex-start", marginTop: "12px" }}
@@ -416,20 +415,23 @@ export default function CompliancePage() {
           </TwoColumn>
 
           <Panel title="历史储备金快照记录">
-            <DataTable
-              rows={porHistory.length > 0 ? porHistory : [
-                {
-                  snapshotId: "por-20261108-001",
-                  timestamp: new Date().toISOString(),
-                  totalReserveUsd: "55,182,900.00",
-                  totalLiabilityUsd: "50,000,000.00",
-                  reserveRatioPct: "110.37%",
-                  merkleRoot: "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
-                }
-              ]}
-              columns={["snapshotId", "timestamp", "totalReserveUsd", "totalLiabilityUsd", "reserveRatioPct", "merkleRoot"]}
-              maxColumns={6}
-            />
+            <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton
+                  rows={porHistory}
+                  columns={["snapshotId", "timestamp", "totalReserveUsd", "totalLiabilityUsd", "reserveRatioPct", "merkleRoot"]}
+                  filename="por-snapshots.csv"
+                  label="导出快照 CSV"
+                />
+              </div>
+              <DataTable
+                rows={porHistory}
+                loading={porLoading}
+                emptyText="暂无历史 PoR 储备金快照"
+                columns={["snapshotId", "timestamp", "totalReserveUsd", "totalLiabilityUsd", "reserveRatioPct", "merkleRoot"]}
+                maxColumns={6}
+              />
+            </div>
           </Panel>
         </div>
       ) : (
@@ -444,6 +446,12 @@ export default function CompliancePage() {
         <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
         <SortSelect value={filters.sort} options={UPDATED_AT_SORTS} onChange={(value) => updateFilters({ sort: value })} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
+        <ExportCsvButton
+          rows={users}
+          columns={["userId", "username", "userStatus", "kycLevel", "kycStatus", "country", "activeRiskTags", "openAmlCases", "updatedAt"]}
+          filename="compliance-users.csv"
+          label="导出用户 CSV"
+        />
       </div>
       <p className="compliance-scope-note">下方统计仅覆盖当前页用户，不代表全平台总量。风险标签与 AML Case 可在独立审计列表中继续筛选。</p>
       <div className="metrics">
@@ -523,6 +531,12 @@ export default function CompliancePage() {
               <TextFilter label="Limit" value={riskTagFilters.limit} onChange={(value) => updateRiskTagFilters({ limit: value })} />
               <SortSelect value={riskTagFilters.sort} options={COMPLIANCE_RISK_TAG_SORTS} onChange={(value) => updateRiskTagFilters({ sort: value })} />
               <button onClick={() => void load(filters.cursor, "", amlCaseFilters.cursor)}><Search size={16} />查询标签</button>
+              <ExportCsvButton
+                rows={globalRiskTags}
+                columns={["tagId", "userId", "tagCode", "severity", "status", "source", "createdByUserId", "resolvedByUserId", "createdAt", "updatedAt"]}
+                filename="compliance-risk-tags.csv"
+                label="导出标签 CSV"
+              />
             </div>
             <CursorPager
               page={riskTagPageInfo}
@@ -553,6 +567,12 @@ export default function CompliancePage() {
               <TextFilter label="Limit" value={amlCaseFilters.limit} onChange={(value) => updateAmlCaseFilters({ limit: value })} />
               <SortSelect value={amlCaseFilters.sort} options={COMPLIANCE_AML_CASE_SORTS} onChange={(value) => updateAmlCaseFilters({ sort: value })} />
               <button onClick={() => void load(filters.cursor, riskTagFilters.cursor, "")}><Search size={16} />查询 Case</button>
+              <ExportCsvButton
+                rows={globalAmlCases}
+                columns={["caseId", "userId", "status", "riskScore", "source", "assignedAdminUserId", "createdByUserId", "reviewedByUserId", "createdAt", "updatedAt"]}
+                filename="compliance-aml-cases.csv"
+                label="导出 Case CSV"
+              />
             </div>
             <CursorPager
               page={amlCasePageInfo}

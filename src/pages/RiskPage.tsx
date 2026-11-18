@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost } from "../api/admin";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, TabBar, SlideDrawer } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, TabBar, SlideDrawer, ExportCsvButton } from "../components/AdminUi";
 import { ADL_QUEUE_SORT, EVENT_TIME_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 import { errorMessage, records, objectValue } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
@@ -293,6 +293,13 @@ export default function RiskPage() {
         <>
           <Panel title="高风险账户">
             <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton
+                  rows={records(data?.highRiskAccounts)}
+                  columns={["riskLevel", "userId", "settleAsset", "status", "marginRatioPpm", "equityUnits", "maintenanceMarginUnits", "activeCandidateCount", "topSymbol", "topPositionMarginRatioPpm", "eventTime"]}
+                  filename={`risk-high-risk-${listFilters.productLine.toLowerCase()}.csv`}
+                />
+              </div>
               <DataTable
                 rows={records(data?.highRiskAccounts)}
                 columns={["riskLevel", "userId", "settleAsset", "status", "marginRatioPpm", "equityUnits", "maintenanceMarginUnits", "activeCandidateCount", "topSymbol", "topPositionMarginRatioPpm", "eventTime"]}
@@ -308,6 +315,9 @@ export default function RiskPage() {
           <TwoColumn>
             <Panel title="爆仓候选">
               <div className="stack">
+                <div className="button-row">
+                  <ExportCsvButton rows={records(data?.candidates)} filename={`risk-candidates-${listFilters.productLine.toLowerCase()}.csv`} />
+                </div>
                 <DataTable
                   rows={records(data?.candidates)}
                   maxColumns={10}
@@ -323,6 +333,9 @@ export default function RiskPage() {
             </Panel>
             <Panel title="强平订单">
               <div className="stack">
+                <div className="button-row">
+                  <ExportCsvButton rows={records(data?.liquidations)} filename={`risk-liquidations-${listFilters.productLine.toLowerCase()}.csv`} />
+                </div>
                 <DataTable rows={records(data?.liquidations)} maxColumns={10} />
                 <CursorPager
                   page={liquidationPageInfo}
@@ -339,6 +352,9 @@ export default function RiskPage() {
         <TwoColumn>
           <Panel title="ADL 队列">
             <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton rows={records(data?.adlQueue)} filename={`risk-adl-queue-${listFilters.productLine.toLowerCase()}.csv`} />
+              </div>
               <DataTable rows={records(data?.adlQueue)} maxColumns={10} />
               <CursorPager
                 page={adlQueuePageInfo}
@@ -350,6 +366,9 @@ export default function RiskPage() {
           </Panel>
           <Panel title="ADL 事件">
             <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton rows={records(data?.adlEvents)} filename={`risk-adl-events-${listFilters.productLine.toLowerCase()}.csv`} />
+              </div>
               <DataTable rows={records(data?.adlEvents)} maxColumns={10} />
               <CursorPager
                 page={adlEventPageInfo}

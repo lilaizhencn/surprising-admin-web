@@ -18,21 +18,8 @@ type NavigationItem = { key: RouteKey; label: string; icon: LucideIcon }
 const groups: { label: string; keys: RouteKey[] }[] = [
   { label: "运营总览", keys: ["dashboard"] },
   {
-    label: "交易与市场",
-    keys: [
-      "product-lines",
-      "assets",
-      "markets-spot",
-      "markets-linear-perp",
-      "markets-inverse-perp",
-      "markets-linear-delivery",
-      "markets-inverse-delivery",
-      "markets-option",
-      "lifecycle",
-      "maker",
-      "fees",
-      "maintenance",
-    ],
+    label: "币种与市场",
+    keys: ["assets", "markets", "lifecycle", "fees", "maker"],
   },
   {
     label: "订单与风控",
@@ -47,17 +34,8 @@ const groups: { label: string; keys: RouteKey[] }[] = [
     keys: ["users", "compliance", "support", "affiliate"],
   },
   {
-    label: "平台与系统治理",
-    keys: [
-      "security",
-      "approvals",
-      "announcements",
-      "legal",
-      "exports",
-      "queries",
-      "system",
-      "audit",
-    ],
+    label: "内容与系统治理",
+    keys: ["announcements", "approvals", "security", "system"],
   },
 ]
 

@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
 import { gatewayGet, gatewayPost, adminVipLevels, adminUserVipStatus, adminUpdateUserVip } from "../api/admin";
 import { type UnknownRecord } from "../types";
-import { Search, Crown, Award, SlidersHorizontal } from "lucide-react";
+import { Search, Award } from "lucide-react";
 import { positiveInt64, positiveInt32 } from "../lib/integers";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, StatusBadge, CursorPager, KeyValue } from "../components/AdminUi";
-import { errorMessage, fieldText, records } from "../lib/adminData";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, StatusBadge, CursorPager, KeyValue, TabBar, Empty, ExportCsvButton } from "../components/AdminUi";
+import { errorMessage, fieldText, records, ppmPercent } from "../lib/adminData";
 import { jsonObject } from "../lib/formValues";
 import { PRODUCT_LINES } from "../lib/products";
 
@@ -66,15 +66,13 @@ export default function FeesPage() {
               userId, instrumentId, productLine: filters.productLine
             })
           : Promise.resolve(null),
-        adminVipLevels().catch(() => [])
+        adminVipLevels(filters.productLine)
       ]);
       setData({
         schedules: schedules.schedules ?? schedules.items ?? [],
         effective: effective ?? {}
       });
-      if (Array.isArray(levels) && levels.length) {
-        setVipLevels(levels as unknown as UnknownRecord[]);
-      }
+      setVipLevels(Array.isArray(levels) ? (levels as unknown as UnknownRecord[]) : []);
       setSchedulePageInfo(cursorInfo(schedules));
       setFilters((current) => ({
         ...current,
@@ -87,11 +85,24 @@ export default function FeesPage() {
     }
   }
 
-  async function loadUserVip() {
+  async function loadVipLevels(productLine = filters.productLine) {
+    setLoading(true); setError("");
+    try {
+      const levels = await adminVipLevels(productLine);
+      setVipLevels(Array.isArray(levels) ? (levels as unknown as UnknownRecord[]) : []);
+    } catch (err) {
+      setVipLevels([]);
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadUserVip(productLine = filters.productLine) {
     if (!vipUserId.trim()) return;
     setLoading(true); setError(""); setNotice("");
     try {
-      const status = await adminUserVipStatus(vipUserId.trim());
+      const status = await adminUserVipStatus(vipUserId.trim(), productLine);
       setVipStatus(status as unknown as UnknownRecord);
       setVipFormLevel(Number(status.currentLevel) || 0);
       setVipMakerDiscount(String(status.makerFeeDiscountPpm ?? 0));
@@ -107,15 +118,18 @@ export default function FeesPage() {
     if (!vipUserId.trim()) return;
     setLoading(true); setError(""); setNotice("");
     try {
+      const makerDiscount = vipMakerDiscount.trim() ? Number(vipMakerDiscount) : undefined;
+      const takerDiscount = vipTakerDiscount.trim() ? Number(vipTakerDiscount) : undefined;
       await adminUpdateUserVip({
         userId: vipUserId.trim(),
+        productLine: filters.productLine,
         vipLevel: Number(vipFormLevel),
-        makerFeeDiscountPpm: Number(vipMakerDiscount) || undefined,
-        takerFeeDiscountPpm: Number(vipTakerDiscount) || undefined,
+        makerFeeDiscountPpm: makerDiscount !== undefined && Number.isFinite(makerDiscount) ? makerDiscount : undefined,
+        takerFeeDiscountPpm: takerDiscount !== undefined && Number.isFinite(takerDiscount) ? takerDiscount : undefined,
         reason: vipReason.trim() || "运营手动调整 VIP 梯级"
       });
-      setNotice(`用户 ${vipUserId} 的 VIP 等级已更新为 VIP${vipFormLevel}。`);
-      await loadUserVip();
+      setNotice(`用户 ${vipUserId} 在 ${filters.productLine} 的 VIP 等级已更新为 VIP${vipFormLevel}。`);
+      await loadUserVip(filters.productLine);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -172,22 +186,15 @@ export default function FeesPage() {
     <Page title="费率与 VIP 运营管理" onRefresh={load} loading={loading} error={error}>
       {notice && <p role="status">{notice}</p>}
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-        <button
-          className={activeTab === "schedules" ? "primary" : ""}
-          onClick={() => setActiveTab("schedules")}
-        >
-          <SlidersHorizontal size={14} style={{ marginRight: "4px" }} />
-          交易费率计划
-        </button>
-        <button
-          className={activeTab === "vip" ? "primary" : ""}
-          onClick={() => setActiveTab("vip")}
-        >
-          <Crown size={14} style={{ marginRight: "4px" }} />
-          VIP 动态阶梯与做市返佣 (VIP0~VIP9)
-        </button>
-      </div>
+      <TabBar
+        label="费率与 VIP 管理视图"
+        active={activeTab}
+        onChange={setActiveTab}
+        items={[
+          { key: "schedules", label: "交易费率计划", count: records(data?.schedules).length },
+          { key: "vip", label: "VIP 动态阶梯与做市返佣", count: vipLevels.length }
+        ]}
+      />
 
       {activeTab === "schedules" ? (
         <>
@@ -199,6 +206,12 @@ export default function FeesPage() {
             <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
             <SortSelect label="计划排序" value={filters.scheduleSort} options={FEE_SCHEDULE_SORTS} onChange={(value) => updateFilters({ scheduleSort: value })} />
             <button onClick={() => void load("")}><Search size={16} />查询</button>
+            <ExportCsvButton
+              rows={records(data?.schedules)}
+              columns={["productLine", "feeScheduleId", "userId", "instrumentId", "sourceType", "tierCode", "makerFeeRatePpm", "takerFeeRatePpm", "status", "effectiveTime", "expireTime"]}
+              filename={`fee-schedules-${filters.productLine.toLowerCase()}.csv`}
+              label="导出费率 CSV"
+            />
           </div>
           <div className="two-grid">
             <Panel title="费率计划">
@@ -232,8 +245,8 @@ export default function FeesPage() {
                   <label>来源<Select value={scheduleForm.sourceType} onChange={(event) => updateScheduleForm({ sourceType: event.target.value })}>{FEE_SOURCE_TYPES.map((item) => <option key={item}>{item}</option>)}</Select></label>
                   <TextFilter label="档位标签（可选）" value={scheduleForm.tierCode} onChange={(value) => updateScheduleForm({ tierCode: value.toUpperCase() })} />
                   <label>状态<Select value={scheduleForm.status} onChange={(event) => updateScheduleForm({ status: event.target.value })}>{FEE_STATUSES.map((item) => <option key={item}>{item}</option>)}</Select></label>
-                  <TextFilter label="Maker ppm" value={scheduleForm.makerFeeRatePpm} onChange={(value) => updateScheduleForm({ makerFeeRatePpm: value })} />
-                  <TextFilter label="Taker ppm" value={scheduleForm.takerFeeRatePpm} onChange={(value) => updateScheduleForm({ takerFeeRatePpm: value })} />
+                  <TextFilter label={`Maker ppm (${ppmPercent(scheduleForm.makerFeeRatePpm || 0)})`} value={scheduleForm.makerFeeRatePpm} onChange={(value) => updateScheduleForm({ makerFeeRatePpm: value })} />
+                  <TextFilter label={`Taker ppm (${ppmPercent(scheduleForm.takerFeeRatePpm || 0)})`} value={scheduleForm.takerFeeRatePpm} onChange={(value) => updateScheduleForm({ takerFeeRatePpm: value })} />
                   <TextFilter label="生效时间 ISO" value={scheduleForm.effectiveTime} onChange={(value) => updateScheduleForm({ effectiveTime: value })} />
                   <TextFilter label="过期时间 ISO" value={scheduleForm.expireTime} onChange={(value) => updateScheduleForm({ expireTime: value })} />
                 </div>
@@ -249,31 +262,48 @@ export default function FeesPage() {
         </>
       ) : (
         <div className="two-grid">
-          <Panel title="全网 VIP 阶梯标准 (VIP0 ~ VIP9)">
-            <p>系统按用户近 30 天结算交易量动态评估等级；VIP9 做市商享有 -50 ppm 负费率返佣。</p>
-            <DataTable
-              rows={vipLevels.length > 0 ? vipLevels : [
-                { level: 0, name: "VIP 0", minVolume30d: "0", makerFeeRatePpm: 200, takerFeeRatePpm: 500 },
-                { level: 1, name: "VIP 1", minVolume30d: "10,000", makerFeeRatePpm: 180, takerFeeRatePpm: 450 },
-                { level: 2, name: "VIP 2", minVolume30d: "50,000", makerFeeRatePpm: 150, takerFeeRatePpm: 400 },
-                { level: 3, name: "VIP 3", minVolume30d: "250,000", makerFeeRatePpm: 120, takerFeeRatePpm: 350 },
-                { level: 4, name: "VIP 4", minVolume30d: "1,000,000", makerFeeRatePpm: 100, takerFeeRatePpm: 300 },
-                { level: 5, name: "VIP 5", minVolume30d: "5,000,000", makerFeeRatePpm: 80, takerFeeRatePpm: 250 },
-                { level: 6, name: "VIP 6", minVolume30d: "20,000,000", makerFeeRatePpm: 50, takerFeeRatePpm: 200 },
-                { level: 7, name: "VIP 7", minVolume30d: "50,000,000", makerFeeRatePpm: 20, takerFeeRatePpm: 150 },
-                { level: 8, name: "VIP 8", minVolume30d: "150,000,000", makerFeeRatePpm: 0, takerFeeRatePpm: 120 },
-                { level: 9, name: "VIP 9 (MM 做市商)", minVolume30d: "500,000,000", makerFeeRatePpm: -50, takerFeeRatePpm: 100 }
-              ]}
-              columns={["level", "name", "minVolume30d", "makerFeeRatePpm", "takerFeeRatePpm"]}
-              maxColumns={5}
-            />
+          <Panel title={`VIP 阶梯标准 · ${filters.productLine}`}>
+            <div className="stack">
+              <div className="filters compact">
+                <label>
+                  产品线
+                  <Select
+                    value={filters.productLine}
+                    onChange={(event) => {
+                      const nextLine = event.target.value;
+                      updateFilters({ productLine: nextLine });
+                      void loadVipLevels(nextLine);
+                      if (vipUserId.trim()) void loadUserVip(nextLine);
+                    }}
+                  >
+                    {PRODUCT_LINES.filter(Boolean).map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </label>
+                <ExportCsvButton
+                  rows={vipLevels}
+                  columns={["level", "name", "minVolume30d", "makerFeeRatePpm", "takerFeeRatePpm", "makerFeeDiscountPpm", "takerFeeDiscountPpm"]}
+                  filename={`vip-levels-${filters.productLine.toLowerCase()}.csv`}
+                  label="导出 VIP 阶梯"
+                />
+              </div>
+              <p>系统按用户近 30 天结算交易量动态评估等级（10,000 ppm = 1%）。</p>
+              {vipLevels.length === 0 ? (
+                <Empty text={`产品线 ${filters.productLine} 暂无已配置的 VIP 阶梯数据`} />
+              ) : (
+                <DataTable
+                  rows={vipLevels}
+                  columns={["level", "name", "minVolume30d", "makerFeeRatePpm", "takerFeeRatePpm"]}
+                  maxColumns={5}
+                />
+              )}
+            </div>
           </Panel>
 
           <Panel title="用户 VIP 查验与人工调级">
             <div className="stack">
               <div style={{ display: "flex", gap: "8px", alignItems: "flex-end" }}>
                 <TextFilter label="用户 ID" value={vipUserId} onChange={setVipUserId} />
-                <button className="primary" disabled={loading} onClick={() => void loadUserVip()}>
+                <button className="primary" disabled={loading || !vipUserId.trim()} onClick={() => void loadUserVip(filters.productLine)}>
                   <Search size={16} /> 查询 VIP 状态
                 </button>
               </div>
@@ -286,7 +316,7 @@ export default function FeesPage() {
 
               <hr style={{ margin: "16px 0", borderColor: "rgba(255,255,255,0.1)" }} />
 
-              <h4>人工调级与做市商特批</h4>
+              <h4>人工调级与做市商特批 ({filters.productLine})</h4>
               <div className="form-grid">
                 <label>
                   指定 VIP 等级
@@ -298,8 +328,8 @@ export default function FeesPage() {
                     ))}
                   </Select>
                 </label>
-                <TextFilter label="Maker 额外折扣 (ppm)" value={vipMakerDiscount} onChange={setVipMakerDiscount} />
-                <TextFilter label="Taker 额外折扣 (ppm)" value={vipTakerDiscount} onChange={setVipTakerDiscount} />
+                <TextFilter label={`Maker 额外折扣 (${ppmPercent(vipMakerDiscount || 0)})`} value={vipMakerDiscount} onChange={setVipMakerDiscount} />
+                <TextFilter label={`Taker 额外折扣 (${ppmPercent(vipTakerDiscount || 0)})`} value={vipTakerDiscount} onChange={setVipTakerDiscount} />
               </div>
               <label>
                 审批原因/调级理由

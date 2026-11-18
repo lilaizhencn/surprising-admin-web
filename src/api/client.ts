@@ -100,6 +100,8 @@ export function adminGatewayPath(service: string, path = "") {
       return `/api/v1/admin/trading/leverage${suffix}`;
     case "trading-fees":
       return `/api/v1/admin/trading/fees${suffix}`;
+    case "trading-grid":
+      return `/api/v1/admin/trading/grid${suffix}`;
     case "trading-market":
       return `/api/v1/trading/market${suffix}`;
     case "trading-trigger":

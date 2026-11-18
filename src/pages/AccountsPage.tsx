@@ -2,28 +2,26 @@ import { Select } from "../components/CustomSelect";
 import { assetCode } from "../lib/formValues";
 import { useState, useEffect, useRef } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
-import { gatewayGet, accountAdjustments, accountAssetValuation, accountAssetSnapshots, gatewayPost, createAccountAssetSnapshot } from "../api/admin";
+import { gatewayGet, accountAdjustments, gatewayPost } from "../api/admin";
 import { type UnknownRecord } from "../types";
 import { positiveInt64, int64String } from "../lib/integers";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, Metric, CursorPager, TabBar } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, DataTable, CursorPager, TabBar, ExportCsvButton } from "../components/AdminUi";
 import { productLineForAccountType, ACCOUNT_TYPES } from "../lib/products";
-import { records, errorMessage, objectValue } from "../lib/adminData";
+import { records, errorMessage } from "../lib/adminData";
 import { accountReadPage, readAccountSections, type AccountRead } from "../lib/accountReads";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
 
 export default function AccountsPage() {
   const { confirm, dialog } = useConfirmDialog();
-  const [tab, setTab] = useState<"balances" | "adjustments" | "valuation">("balances");
+  const [tab, setTab] = useState<"balances" | "adjustments">("balances");
   const [userId, setUserId] = useState("");
   const [accountType, setAccountType] = useState("USDT_PERPETUAL");
   const [asset, setAsset] = useState("USDT");
   const [fundingProductLine, setFundingProductLine] = useState("SPOT");
   const productLine = productLineForAccountType(accountType) || fundingProductLine;
   const [accountRead, setAccountRead] = useState<{ scope: string; sections: Record<string, AccountRead> } | null>(null);
-  const [reportRead, setReportRead] = useState<{ scope: string; sections: Record<string, AccountRead> } | null>(null);
   const accountAbort = useRef<AbortController | null>(null);
-  const reportAbort = useRef<AbortController | null>(null);
   const writing = useRef(false);
   const [adjust, setAdjust] = useState({ amountUnits: "", referenceId: "", reason: "" });
   const [adjustmentFilters, setAdjustmentFilters] = useState({
@@ -45,28 +43,11 @@ export default function AccountsPage() {
   const [productLedgerPageInfo, setProductLedgerPageInfo] = useState(cursorInfo());
   const [transferPageInfo, setTransferPageInfo] = useState(cursorInfo());
   const [adjustmentPageInfo, setAdjustmentPageInfo] = useState(cursorInfo());
-  const [reportFilters, setReportFilters] = useState({
-    valuationAsset: "USDT",
-    userId: "",
-    accountType: "",
-    asset: "",
-    snapshotDate: new Date().toISOString().slice(0, 10),
-    limit: "100",
-    valuationCursor: "",
-    valuationSort: "valuationValue.desc",
-    snapshotCursor: "",
-    snapshotSort: "snapshotDate.desc"
-  });
-  const [valuationPageInfo, setValuationPageInfo] = useState(cursorInfo());
-  const [snapshotPageInfo, setSnapshotPageInfo] = useState(cursorInfo());
   const [accountLoading, setAccountLoading] = useState(false);
-  const [reportLoading, setReportLoading] = useState(false);
   const [writeLoading, setLoading] = useState(false);
-  const loading = accountLoading || reportLoading || writeLoading;
+  const loading = accountLoading || writeLoading;
   const accountScope = JSON.stringify([userId, accountType, productLine, asset, ledgerFilters.limit, ledgerFilters.sort, adjustmentFilters.adminUserId, adjustmentFilters.adjustmentKind, adjustmentFilters.referenceId, adjustmentFilters.limit, adjustmentFilters.sort]);
-  const reportScope = JSON.stringify([reportFilters.valuationAsset, reportFilters.userId, reportFilters.accountType, reportFilters.asset, reportFilters.snapshotDate, reportFilters.limit, reportFilters.valuationSort, reportFilters.snapshotSort]);
   const accountSections = accountRead?.scope === accountScope ? accountRead.sections : {};
-  const reportSections = reportRead?.scope === reportScope ? reportRead.sections : {};
   const data = {
     balances: accountSections.balances?.response?.balances,
     productBalances: accountSections.productBalances?.response?.balances,
@@ -74,18 +55,14 @@ export default function AccountsPage() {
     ledger: accountSections.ledger?.response?.entries,
     productLedger: accountSections.productLedger?.response?.entries,
     transfers: accountSections.transfers?.response?.transfers,
-    adjustments: accountSections.adjustments?.response?.adjustments,
-    assetValuation: reportSections.assetValuation?.response,
-    assetSnapshots: reportSections.assetSnapshots?.response?.snapshots,
-    assetSnapshotAlerts: records(reportSections.assetSnapshotAlerts?.response?.events as UnknownRecord[] | undefined).filter(row => row.metricKey === "ACCOUNT_ASSET_SNAPSHOT_DIFF_PPM")
+    adjustments: accountSections.adjustments?.response?.adjustments
   };
-  function sectionState(key: string, report = false) {
-    const sections = report ? reportSections : accountSections;
-    const skipped = !report && ["productBalances", "positions", "productLedger", "transfers"].includes(key) && accountType === "FUNDING";
+  function sectionState(key: string) {
+    const skipped = ["productBalances", "positions", "productLedger", "transfers"].includes(key) && accountType === "FUNDING";
     return {
-      loading: (report ? reportLoading : accountLoading) && !skipped,
-      error: sections[key]?.error || "",
-      emptyText: skipped ? "请选择产品账户查看该产品数据。" : sections[key]?.response ? "暂无数据" : report ? "请查询以加载报表。" : "请输入用户 ID 并查询。"
+      loading: accountLoading && !skipped,
+      error: accountSections[key]?.error || "",
+      emptyText: skipped ? "请选择产品账户查看该产品数据。" : accountSections[key]?.response ? "暂无数据" : "请输入用户 ID 并查询。"
     };
   }
   const [error, setError] = useState("");
@@ -115,15 +92,6 @@ export default function AccountsPage() {
       ...current,
       ...patch,
       cursor: ""
-    }));
-  }
-
-  function updateReportFilters(patch: Partial<typeof reportFilters>) {
-    setReportFilters((current) => ({
-      ...current,
-      ...patch,
-      valuationCursor: "",
-      snapshotCursor: ""
     }));
   }
 
@@ -171,30 +139,8 @@ export default function AccountsPage() {
     finally { if (!controller.signal.aborted) setAccountLoading(false); }
   }
 
-  async function loadReports(nextValuationCursor = reportFilters.valuationCursor, nextSnapshotCursor = reportFilters.snapshotCursor) {
-    reportAbort.current?.abort();
-    const controller = new AbortController();
-    reportAbort.current = controller;
-    setReportLoading(true);
-    setReportRead(null);
-    const common = {
-      valuationAsset: reportFilters.valuationAsset || "USDT", accountType: reportFilters.accountType || undefined,
-      asset: reportFilters.asset || undefined, limit: Number(reportFilters.limit) || 100
-    };
-    const sections = await readAccountSections({
-      assetValuation: { request: accountAssetValuation({ ...common, userId: reportFilters.userId || undefined, nonZeroOnly: "true", cursor: nextValuationCursor, sort: reportFilters.valuationSort }, controller.signal), array: "rows", optionalArrays: ["warnings"] },
-      assetSnapshots: { request: accountAssetSnapshots({ ...common, snapshotDate: reportFilters.snapshotDate || undefined, cursor: nextSnapshotCursor, sort: reportFilters.snapshotSort }, controller.signal), array: "snapshots" }
-    });
-    if (controller.signal.aborted) return;
-    setReportRead({ scope: reportScope, sections });
-    setValuationPageInfo(accountReadPage(sections.assetValuation));
-    setSnapshotPageInfo(accountReadPage(sections.assetSnapshots));
-    setReportFilters(current => ({ ...current, valuationCursor: nextValuationCursor, snapshotCursor: nextSnapshotCursor }));
-    setReportLoading(false);
-  }
-
   async function refresh() {
-    await Promise.all([userId.trim() ? load() : Promise.resolve(), loadReports()]);
+    if (userId.trim()) await load();
   }
 
   async function adjustBalance(product: boolean) {
@@ -215,50 +161,26 @@ export default function AccountsPage() {
       if (!(await confirm({ title: "确认余额调整", description: `确认调整用户 ${body.userId} 的 ${productLine} / ${product ? accountType : "基础账户"} ${body.asset} 余额 ${body.amountUnits} 最小单位？` }))) return;
       await gatewayPost("account", product ? "/product-balance-adjustments" : "/balance-adjustments", body, productLine ? { productLine } : {});
       setAdjust({ amountUnits: "", referenceId: "", reason: "" });
-      await Promise.all([load("", "", "", ""), loadReports("", "")]);
+      await load("", "", "", "");
     } catch (err) { setError(errorMessage(err)); }
     finally { writing.current = false; setLoading(false); }
   }
 
-  async function generateAssetSnapshot() {
-    if (writing.current) return;
-    writing.current = true;
-    setLoading(true);
-    setError("");
-    try {
-      await createAccountAssetSnapshot({
-        valuationAsset: reportFilters.valuationAsset || "USDT",
-        snapshotDate: reportFilters.snapshotDate || undefined
-      });
-      await loadReports("", "");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally { writing.current = false; setLoading(false); }
-  }
-
   useEffect(() => { accountAbort.current?.abort(); setAccountLoading(false); return () => accountAbort.current?.abort(); }, [accountScope]);
-  useEffect(() => { reportAbort.current?.abort(); setReportLoading(false); return () => reportAbort.current?.abort(); }, [reportScope]);
   useEffect(() => { setAdjust({ amountUnits: "", referenceId: "", reason: "" }); }, [userId, accountType, asset, productLine]);
-  useEffect(() => { void loadReports(); return () => { accountAbort.current?.abort(); reportAbort.current?.abort(); }; }, []);
-
-  const valuationRows = records(data?.assetValuation?.rows as UnknownRecord[] | undefined);
-  const valuationTotals = objectValue(data?.assetValuation?.totals);
-  const valuationWarnings = records(data?.assetValuation?.warnings as UnknownRecord[] | undefined);
+  useEffect(() => () => { accountAbort.current?.abort(); }, []);
 
   return (
-    <Page title="账户资产" onRefresh={refresh} description="按用户与产品线核对余额、流水和人工调整；全局估值报表独立查询。" loading={loading} error={error}>
+    <Page title="账户资产" onRefresh={refresh} description="按用户与产品线核对余额、持仓、流水与人工调账追溯。" loading={loading} error={error}>
       <fieldset className="account-fields" disabled={writeLoading}>
       <TabBar
         active={tab}
         onChange={setTab}
         items={[
           { key: "balances", label: "余额、持仓与流水", count: records(data?.balances as UnknownRecord[] | undefined).length + records(data?.productBalances as UnknownRecord[] | undefined).length },
-          { key: "adjustments", label: "人工调账与审计追溯", count: records(data?.adjustments as UnknownRecord[] | undefined).length },
-          { key: "valuation", label: "估值报表与日终快照", count: valuationRows.length }
+          { key: "adjustments", label: "人工调账与审计追溯", count: records(data?.adjustments as UnknownRecord[] | undefined).length }
         ]}
       />
-      {tab !== "valuation" && (
-      <>
       <div className="filters">
         <TextFilter label="User ID" value={userId} onChange={(value) => { setUserId(value); resetListCursors(); }} />
         <label>账户类型<Select aria-label="账户类型" value={accountType} onChange={(event) => { setAccountType(event.target.value); resetListCursors(); }}>{ACCOUNT_TYPES.filter(Boolean).map((item) => <option key={item}>{item}</option>)}</Select></label>
@@ -269,130 +191,28 @@ export default function AccountsPage() {
         <button onClick={() => void load("", "", "", "")}><Search size={16} />查询</button>
       </div>
       <p className="muted">当前产品线：{productLine}。基础余额与流水也按此产品线查询。</p>
-      </>
-      )}
       {tab === "balances" && (
       <div className="three-grid">
-        <Panel title="基础余额"><DataTable {...sectionState("balances")} rows={records(data?.balances as UnknownRecord[] | undefined)} /></Panel>
-        <Panel title="产品余额"><DataTable {...sectionState("productBalances")} rows={records(data?.productBalances as UnknownRecord[] | undefined)} /></Panel>
-        <Panel title="持仓"><DataTable {...sectionState("positions")} rows={records(data?.positions as UnknownRecord[] | undefined)} maxColumns={8} /></Panel>
+        <Panel title="基础余额">
+          <div className="stack">
+            <div className="button-row"><ExportCsvButton rows={records(data?.balances as UnknownRecord[] | undefined)} filename="account-balances.csv" /></div>
+            <DataTable {...sectionState("balances")} rows={records(data?.balances as UnknownRecord[] | undefined)} />
+          </div>
+        </Panel>
+        <Panel title="产品余额">
+          <div className="stack">
+            <div className="button-row"><ExportCsvButton rows={records(data?.productBalances as UnknownRecord[] | undefined)} filename="account-product-balances.csv" /></div>
+            <DataTable {...sectionState("productBalances")} rows={records(data?.productBalances as UnknownRecord[] | undefined)} />
+          </div>
+        </Panel>
+        <Panel title="持仓">
+          <div className="stack">
+            <div className="button-row"><ExportCsvButton rows={records(data?.positions as UnknownRecord[] | undefined)} filename="account-positions.csv" /></div>
+            <DataTable {...sectionState("positions")} rows={records(data?.positions as UnknownRecord[] | undefined)} maxColumns={8} />
+          </div>
+        </Panel>
       </div>
       )}
-      {tab === "valuation" && (<>
-      <Panel title="资产估值报表">
-        <div className="filters">
-          <TextFilter
-            label="计价资产"
-            value={reportFilters.valuationAsset}
-            onChange={(value) => updateReportFilters({ valuationAsset: value.toUpperCase() })}
-          />
-          <TextFilter
-            label="User ID"
-            value={reportFilters.userId}
-            onChange={(value) => updateReportFilters({ userId: value })}
-          />
-          <label>账户类型
-            <Select
-              value={reportFilters.accountType}
-              onChange={(event) => updateReportFilters({ accountType: event.target.value })}
-            >
-              {["", "BASIC", ...ACCOUNT_TYPES.filter(Boolean)].map((item) => <option key={item || "ALL"} value={item}>{item || "全部"}</option>)}
-            </Select>
-          </label>
-          <TextFilter
-            label="Asset"
-            value={reportFilters.asset}
-            onChange={(value) => updateReportFilters({ asset: value.toUpperCase() })}
-          />
-          <TextFilter
-            label="快照日期"
-            value={reportFilters.snapshotDate}
-            onChange={(value) => updateReportFilters({ snapshotDate: value })}
-          />
-          <TextFilter
-            label="Limit"
-            value={reportFilters.limit}
-            onChange={(value) => updateReportFilters({ limit: value })}
-          />
-          <SortSelect
-            label="估值排序"
-            value={reportFilters.valuationSort}
-            options={ACCOUNT_VALUATION_SORTS}
-            onChange={(value) => updateReportFilters({ valuationSort: value })}
-          />
-          <SortSelect
-            label="快照排序"
-            value={reportFilters.snapshotSort}
-            options={ACCOUNT_SNAPSHOT_SORTS}
-            onChange={(value) => updateReportFilters({ snapshotSort: value })}
-          />
-          <button onClick={() => void loadReports("", "")}><Search size={16} />查询</button>
-          <button className="primary" onClick={() => void generateAssetSnapshot()}>生成快照</button>
-        </div>
-        <div className="metrics">
-          <Metric label="估值合计" value={valuationTotals.totalValue ?? "—"} tone={valuationTotals.totalValue == null ? "muted" : "ok"} />
-          <Metric label="账户行" value={valuationTotals.rows ?? "—"} tone="muted" />
-          <Metric label="用户数" value={valuationTotals.uniqueUsers ?? "—"} tone="muted" />
-          <Metric label="已计价" value={valuationTotals.pricedRows ?? "—"} tone={valuationTotals.pricedRows == null ? "muted" : "ok"} />
-          <Metric label="缺汇率" value={valuationTotals.missingRateRows ?? "—"} tone={valuationTotals.missingRateRows == null ? "muted" : Number(valuationTotals.missingRateRows) > 0 ? "warn" : "ok"} />
-        </div>
-        {valuationWarnings.length > 0 && (
-          <DataTable rows={valuationWarnings} columns={["area", "message"]} />
-        )}
-        <CursorPager
-          loading={loading}
-          page={valuationPageInfo}
-          cursor={reportFilters.valuationCursor}
-          onNext={() => void loadReports(valuationPageInfo.nextCursor || "", reportFilters.snapshotCursor)}
-          onReset={() => void loadReports("", reportFilters.snapshotCursor)}
-        />
-        <DataTable
-          {...sectionState("assetValuation", true)} rows={valuationRows}
-          columns={[
-            "accountType",
-            "userId",
-            "asset",
-            "availableUnits",
-            "lockedUnits",
-            "equityUnits",
-            "scaleUnits",
-            "valuationRate",
-            "valuationValue",
-            "valuationSource",
-            "rateUpdatedAt",
-            "balanceUpdatedAt"
-          ]}
-          maxColumns={12}
-        />
-      </Panel>
-      <Panel title="日终资产快照">
-        <CursorPager
-          loading={loading}
-          page={snapshotPageInfo}
-          cursor={reportFilters.snapshotCursor}
-          onNext={() => void loadReports(reportFilters.valuationCursor, snapshotPageInfo.nextCursor || "")}
-          onReset={() => void loadReports(reportFilters.valuationCursor, "")}
-        />
-        <DataTable
-          {...sectionState("assetSnapshots", true)} rows={records(data?.assetSnapshots as UnknownRecord[] | undefined)}
-          columns={[
-            "snapshotDate",
-            "valuationAsset",
-            "accountType",
-            "asset",
-            "totalAvailableUnits",
-            "totalLockedUnits",
-            "totalEquityUnits",
-            "valuationRate",
-            "totalValue",
-            "valuationSource",
-            "userCount",
-            "createdAt"
-          ]}
-          maxColumns={12}
-        />
-      </Panel>
-      </>)}
       {tab === "adjustments" && (<>
       <Panel title="人工调整">
         <div className="filters">
@@ -432,6 +252,24 @@ export default function AccountsPage() {
           />
           <SortSelect label="排序" value={adjustmentFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateAdjustmentFilters({ sort: value })} />
           <button onClick={() => void load(ledgerFilters.ledgerCursor, ledgerFilters.productLedgerCursor, ledgerFilters.transferCursor, "")}><Search size={16} />查询</button>
+          <ExportCsvButton
+            rows={records(data?.adjustments as UnknownRecord[] | undefined)}
+            columns={[
+              "adjustmentId",
+              "adjustmentKind",
+              "adminUserId",
+              "adminUsername",
+              "userId",
+              "accountType",
+              "asset",
+              "amountUnits",
+              "balanceAfterUnits",
+              "referenceId",
+              "reason",
+              "createdAt"
+            ]}
+            filename="account-adjustments.csv"
+          />
         </div>
         <CursorPager
           loading={loading}
@@ -468,6 +306,9 @@ export default function AccountsPage() {
       {tab === "balances" && (
       <div className="three-grid">
         <Panel title="基础流水">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton rows={records(data?.ledger as UnknownRecord[] | undefined)} filename="account-ledger.csv" />
+          </div>
           <CursorPager
             loading={loading}
             page={ledgerPageInfo}
@@ -478,6 +319,9 @@ export default function AccountsPage() {
           <DataTable {...sectionState("ledger")} rows={records(data?.ledger as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
         <Panel title="产品流水">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton rows={records(data?.productLedger as UnknownRecord[] | undefined)} filename="account-product-ledger.csv" />
+          </div>
           <CursorPager
             loading={loading}
             page={productLedgerPageInfo}
@@ -488,6 +332,9 @@ export default function AccountsPage() {
           <DataTable {...sectionState("productLedger")} rows={records(data?.productLedger as UnknownRecord[] | undefined)} maxColumns={9} />
         </Panel>
         <Panel title="划转记录">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton rows={records(data?.transfers as UnknownRecord[] | undefined)} filename="account-transfers.csv" />
+          </div>
           <CursorPager
             loading={loading}
             page={transferPageInfo}
@@ -504,7 +351,3 @@ export default function AccountsPage() {
     </Page>
   );
 }
-
-const ACCOUNT_VALUATION_SORTS = ["valuationValue.desc", "valuationValue.asc"];
-
-const ACCOUNT_SNAPSHOT_SORTS = ["snapshotDate.desc", "snapshotDate.asc"];

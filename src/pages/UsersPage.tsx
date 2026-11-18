@@ -3,8 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
 import { type AuthenticatedUser, type UnknownRecord } from "../types";
 import { userSessions, userProfile, adminUsers, updateUserStatus, replaceUserRoles, revokeSession, revokeUserSessions, adminSubAccounts, adminUpdateSubAccountStatus } from "../api/admin";
-import { Search, RefreshCw, GitBranch, ShieldAlert } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, Empty, StatusBadge } from "../components/AdminUi";
+import { Search, RefreshCw } from "lucide-react";
+import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, DataTable, CursorPager, KeyValue, Empty, StatusBadge, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage } from "../lib/adminData";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
 import { UserProfileView } from "../features/users/UserProfileView";
@@ -41,9 +41,10 @@ export default function UsersPage() {
     setSubLoading(true);
     try {
       const list = await adminSubAccounts(userId);
-      setSubAccounts(list as unknown as UnknownRecord[]);
-    } catch {
+      setSubAccounts(Array.isArray(list) ? (list as unknown as UnknownRecord[]) : []);
+    } catch (err) {
       setSubAccounts([]);
+      setError(errorMessage(err));
     } finally {
       setSubLoading(false);
     }
@@ -51,7 +52,7 @@ export default function UsersPage() {
 
   async function toggleSubAccountStatus(row: UnknownRecord) {
     if (!row.subUserId) return;
-    const subUserId = Number(row.subUserId);
+    const subUserId = String(row.subUserId);
     const nextStatus = row.status === "ACTIVE" ? "FROZEN" : "ACTIVE";
     const prompt = row.status === "ACTIVE"
       ? `确认冻结子账户 ${subUserId}？冻结后该子账户将无法下单与发起内部划转。`
@@ -245,6 +246,7 @@ export default function UsersPage() {
         <TextFilter label="Limit" value={listFilters.limit} onChange={(value) => updateListFilters({ limit: value })} />
         <SortSelect value={listFilters.sort} options={CREATED_AT_SORTS} onChange={(value) => updateListFilters({ sort: value })} />
         <button onClick={() => void load("")}><Search size={16} />查询</button>
+        <ExportCsvButton rows={users as unknown as UnknownRecord[]} filename="users.csv" label="导出用户 CSV" />
       </div>
       <TwoColumn>
         <Panel title="用户列表">
@@ -278,6 +280,12 @@ export default function UsersPage() {
               <button disabled={subLoading} onClick={() => void loadSubAccounts(selected.userId)}>
                 <RefreshCw size={16} />刷新子账户
               </button>
+              <ExportCsvButton
+                rows={subAccounts}
+                columns={["subUserId", "masterUserId", "subAccountName", "permission", "status", "createdAt"]}
+                filename={`subaccounts-${selected.userId}.csv`}
+                label="导出子账户 CSV"
+              />
             </div>
             {subAccounts.length === 0 ? (
               <Empty text="该主账户名下暂无子账户" />
@@ -304,6 +312,12 @@ export default function UsersPage() {
             <div className="button-row">
               <button onClick={() => void loadSessions(selected.userId, sessionFilters.cursor)}><RefreshCw size={16} />刷新会话</button>
               <button className="primary" disabled={loading} onClick={() => void forceLogoutUser()}>强制下线全部会话</button>
+              <ExportCsvButton
+                rows={sessions}
+                columns={["sessionId", "userId", "active", "ipAddress", "userAgent", "expiresAt", "revokedAt", "createdAt"]}
+                filename={`sessions-${selected.userId}.csv`}
+                label="导出会话 CSV"
+              />
             </div>
             <div className="filters compact">
               <label>Active<Select value={sessionFilters.active} onChange={(event) => updateSessionFilters({ active: event.target.value })}><option value="">全部</option><option value="true">有效</option><option value="false">失效</option></Select></label>

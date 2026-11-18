@@ -5,7 +5,7 @@ import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost, adminGridStrategies, adminStopGridStrategy } from "../api/admin";
 import { RefreshCw, Search } from "lucide-react";
 import { positiveInt64 } from "../lib/integers";
-import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, TwoColumn, DataTable, CursorPager, KeyValue, TabBar } from "../components/AdminUi";
+import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, TwoColumn, DataTable, CursorPager, KeyValue, TabBar, Empty, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage, objectValue, records, ppmPercent } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
@@ -40,28 +40,34 @@ export default function MarketMakerPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function loadGrid() {
+  async function loadGrid(productLine = insightFilters.productLine) {
     setGridLoading(true);
+    setError("");
     try {
       const list = await adminGridStrategies({
+        productLine,
         symbol: gridSymbol.trim() || undefined,
         status: gridStatus || undefined
       });
-      setGridStrategies(list as unknown as UnknownRecord[]);
-    } catch {
+      setGridStrategies(Array.isArray(list) ? (list as unknown as UnknownRecord[]) : []);
+    } catch (err) {
       setGridStrategies([]);
+      setError(errorMessage(err));
     } finally {
       setGridLoading(false);
     }
   }
 
-  async function handleStopGrid(strategyId: string) {
-    if (!(await confirm({ title: `终止网格策略 ${strategyId}`, description: "将撤销所有未成交挂单，操作不可撤回。", danger: true }))) return;
+  async function handleStopGrid(strategyId: string, rowProductLine?: unknown) {
+    const productLine = typeof rowProductLine === "string" && rowProductLine.trim()
+      ? rowProductLine.trim()
+      : insightFilters.productLine;
+    if (!(await confirm({ title: `终止网格策略 ${strategyId}`, description: `将在 ${productLine} 撤销所有未成交挂单，操作不可撤回。`, danger: true }))) return;
     setGridLoading(true); setError(""); setNotice("");
     try {
-      await adminStopGridStrategy(strategyId);
+      await adminStopGridStrategy(strategyId, productLine);
       setNotice(`网格策略 ${strategyId} 已成功终止。`);
-      await loadGrid();
+      await loadGrid(productLine);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -176,6 +182,22 @@ export default function MarketMakerPage() {
       {activeTab === "grid" ? (
         <div className="stack">
           <div className="filters">
+            <label>
+              产品线
+              <Select
+                value={insightFilters.productLine}
+                onChange={(e) => {
+                  const nextLine = e.target.value;
+                  setSelectedStrategyId("");
+                  updateInsightFilters({ productLine: nextLine });
+                  void loadGrid(nextLine);
+                }}
+              >
+                {PRODUCT_LINES.filter(Boolean).map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </Select>
+            </label>
             <TextFilter label="交易对" value={gridSymbol} onChange={setGridSymbol} />
             <label>
               状态
@@ -188,11 +210,30 @@ export default function MarketMakerPage() {
             <button className="primary" disabled={gridLoading} onClick={() => void loadGrid()}>
               <Search size={16} /> 查询网格策略
             </button>
+            <ExportCsvButton
+              rows={gridStrategies}
+              columns={[
+                "strategyId",
+                "userId",
+                "symbol",
+                "gridType",
+                "lowerPrice",
+                "upperPrice",
+                "gridCount",
+                "investAmount",
+                "matchedCount",
+                "profitUsd",
+                "status",
+                "createdAt"
+              ]}
+              filename={`grid-strategies-${insightFilters.productLine.toLowerCase()}.csv`}
+              label="导出网格 CSV"
+            />
           </div>
 
           <Panel title={`全网网格策略机器人列表 (${gridStrategies.length})`}>
             {gridStrategies.length === 0 ? (
-              <p>暂无符合条件的网格策略记录</p>
+              <Empty text="暂无符合条件的网格策略记录" />
             ) : (
               <DataTable
                 rows={gridStrategies}
@@ -215,7 +256,7 @@ export default function MarketMakerPage() {
                     <button
                       className="danger"
                       disabled={gridLoading}
-                      onClick={() => void handleStopGrid(String(row.strategyId))}
+                      onClick={() => void handleStopGrid(String(row.strategyId), row.productLine)}
                     >
                       强制终止
                     </button>

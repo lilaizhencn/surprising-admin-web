@@ -1,36 +1,39 @@
 export type RouteKey =
   | "dashboard"
-  | "support"
+  | "assets"
+  | "markets"
+  | "lifecycle"
+  | "fees"
+  | "maker"
+  | "orders"
+  | "risk"
+  | "funding"
+  | "accounts"
+  | "wallet"
   | "c2c"
   | "users"
-  | "assets"
+  | "compliance"
+  | "support"
+  | "affiliate"
+  | "announcements"
+  | "approvals"
+  | "security"
+  | "system";
+
+export type LegacyRouteKey =
   | "product-lines"
-  | "markets"
   | "markets-spot"
   | "markets-linear-perp"
   | "markets-inverse-perp"
   | "markets-linear-delivery"
   | "markets-inverse-delivery"
   | "markets-option"
-  | "lifecycle"
-  | "orders"
   | "maintenance"
-  | "accounts"
-  | "wallet"
-  | "compliance"
-  | "risk"
-  | "funding"
-  | "affiliate"
-  | "fees"
-  | "maker"
-  | "security"
-  | "approvals"
-  | "exports"
-  | "queries"
-  | "announcements"
+  | "telegram"
   | "legal"
-  | "system"
   | "audit";
+
+export type RouteTarget = RouteKey | LegacyRouteKey;
 
 export type StatusTone = "ok" | "warn" | "danger" | "muted";
 export type ProductLine = "SPOT" | "LINEAR_PERPETUAL" | "INVERSE_PERPETUAL" | "LINEAR_DELIVERY" | "INVERSE_DELIVERY" | "OPTION";

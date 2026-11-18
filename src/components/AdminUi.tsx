@@ -1,8 +1,9 @@
-import { RefreshCw, BookOpen, ChevronsLeft, ChevronRight, X } from "lucide-react";
+import { RefreshCw, BookOpen, ChevronsLeft, ChevronRight, Download, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { type UnknownRecord, type StatusTone } from "../types";
 export { DataTable } from "./AdminDataTable";
 import { formatValue } from "../config";
+import { downloadRowsAsCsv } from "../lib/csvExport";
 import { tableColumnLabel } from "../lib/tableRows";
 
 export type AdminTabItem<K extends string = string> = {
@@ -196,6 +197,30 @@ export function SortSelect({ label = "排序", value, options, onChange }: {
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </Select>
     </label>
+  );
+}
+
+export function ExportCsvButton({
+  rows,
+  columns,
+  filename,
+  label = "导出 CSV",
+}: {
+  rows: readonly UnknownRecord[];
+  columns?: readonly string[];
+  filename: string;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={!rows.length}
+      onClick={() => downloadRowsAsCsv(filename, rows, columns)}
+      title={rows.length ? `导出当前 ${rows.length} 条记录为 CSV` : "暂无可导出的数据"}
+    >
+      <Download size={14} aria-hidden="true" />
+      {label}
+    </button>
   );
 }
 

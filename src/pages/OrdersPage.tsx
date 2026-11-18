@@ -5,7 +5,7 @@ import { tradingMetrics, gatewayGet, gatewayPost } from "../api/admin";
 import { optionalPositiveInt64 } from "../lib/integers";
 import { Search } from "lucide-react";
 import { formatDate } from "../config";
-import { cursorInfo, Page, TextFilter, SortSelect, Panel, JsonBlock, TwoColumn, CursorPager, DataTable, Empty, Metric, KeyValue, TabBar, SlideDrawer } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Panel, JsonBlock, TwoColumn, CursorPager, DataTable, Empty, Metric, KeyValue, TabBar, SlideDrawer, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage, objectValue, extractRows, ppmPercent } from "../lib/adminData";
 import { PRODUCT_LINES } from "../lib/products";
 import { CREATED_AT_SORTS, EVENT_TIME_SORTS } from "../lib/queryOptions";
@@ -295,48 +295,75 @@ export default function OrdersPage() {
       {cancelPreview && <Panel title="撤单影响预览"><JsonBlock value={cancelPreview} /></Panel>}
       {tab === "orders" && (
         <Panel title="订单列表">
-          <CursorPager loading={loading}
-            page={orderPageInfo}
-            cursor={filters.orderCursor}
-            onNext={() => void load(orderPageInfo.nextCursor || "", filters.triggerCursor, filters.tradeCursor)}
-            onReset={() => void load("", filters.triggerCursor, filters.tradeCursor)}
-          />
-          <DataTable
-            rows={orders as unknown as UnknownRecord[]}
-            columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
-            onRowClick={(row) => void loadTimeline(row.orderId)} rowActionLabel="查看时间线" label="普通订单"
-            actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
-          />
+          <div className="stack">
+            <div className="button-row">
+              <ExportCsvButton
+                rows={orders as unknown as UnknownRecord[]}
+                columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
+                filename={`orders-${filters.productLine.toLowerCase()}.csv`}
+              />
+            </div>
+            <CursorPager loading={loading}
+              page={orderPageInfo}
+              cursor={filters.orderCursor}
+              onNext={() => void load(orderPageInfo.nextCursor || "", filters.triggerCursor, filters.tradeCursor)}
+              onReset={() => void load("", filters.triggerCursor, filters.tradeCursor)}
+            />
+            <DataTable
+              rows={orders as unknown as UnknownRecord[]}
+              columns={["orderId", "userId", "instrumentId", "side", "positionSide", "orderType", "priceTicks", "quantitySteps", "remainingQuantitySteps", "status", "createdAt"]}
+              onRowClick={(row) => void loadTimeline(row.orderId)} rowActionLabel="查看时间线" label="普通订单"
+              actions={(row) => <button onClick={() => void cancelOrder(row.orderId)}>撤单</button>}
+            />
+          </div>
         </Panel>
       )}
       {tab === "triggers" && (
         <Panel title="条件单列表">
-          <CursorPager loading={loading}
-            page={triggerPageInfo}
-            cursor={filters.triggerCursor}
-            onNext={() => void load(filters.orderCursor, triggerPageInfo.nextCursor || "", filters.tradeCursor)}
-            onReset={() => void load(filters.orderCursor, "", filters.tradeCursor)}
-          />
-          <DataTable
-            rows={triggerOrders}
-            columns={["triggerOrderId", "userId", "instrumentId", "ocoGroupId", "side", "positionSide", "triggerType", "priceSource", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
-            onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")} rowActionLabel="查看时间线" label="条件单"
-          />
+          <div className="stack">
+            <div className="button-row">
+              <ExportCsvButton
+                rows={triggerOrders}
+                columns={["triggerOrderId", "userId", "instrumentId", "ocoGroupId", "side", "positionSide", "triggerType", "priceSource", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+                filename={`trigger-orders-${filters.productLine.toLowerCase()}.csv`}
+              />
+            </div>
+            <CursorPager loading={loading}
+              page={triggerPageInfo}
+              cursor={filters.triggerCursor}
+              onNext={() => void load(filters.orderCursor, triggerPageInfo.nextCursor || "", filters.tradeCursor)}
+              onReset={() => void load(filters.orderCursor, "", filters.tradeCursor)}
+            />
+            <DataTable
+              rows={triggerOrders}
+              columns={["triggerOrderId", "userId", "instrumentId", "ocoGroupId", "side", "positionSide", "triggerType", "priceSource", "triggerPriceTicks", "activationPriceTicks", "callbackRatePpm", "highestPriceTicks", "lowestPriceTicks", "orderType", "quantitySteps", "status", "placedOrderId", "createdAt"]}
+              onRowClick={(row) => void loadTimeline(row.triggerOrderId, "TRIGGER")} rowActionLabel="查看时间线" label="条件单"
+            />
+          </div>
         </Panel>
       )}
       {tab === "trades" && (
         <>
           <Panel title="成交审计">
-            <CursorPager loading={loading}
-              page={tradePageInfo}
-              cursor={filters.tradeCursor}
-              onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}
-              onReset={() => void load(filters.orderCursor, filters.triggerCursor, "")}
-            />
-            <DataTable
-              rows={trades}
-              columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
-            />
+            <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton
+                  rows={trades}
+                  columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+                  filename={`trades-${filters.productLine.toLowerCase()}.csv`}
+                />
+              </div>
+              <CursorPager loading={loading}
+                page={tradePageInfo}
+                cursor={filters.tradeCursor}
+                onNext={() => void load(filters.orderCursor, filters.triggerCursor, tradePageInfo.nextCursor || "")}
+                onReset={() => void load(filters.orderCursor, filters.triggerCursor, "")}
+              />
+              <DataTable
+                rows={trades}
+                columns={["productLine", "tradeId", "instrumentId", "takerUserId", "makerUserId", "takerSide", "takerPositionSide", "makerPositionSide", "priceTicks", "quantitySteps", "takerOrderId", "makerOrderId", "eventTime"]}
+              />
+            </div>
           </Panel>
           {metrics && <TradingMetricsOverview metrics={metrics} />}
         </>

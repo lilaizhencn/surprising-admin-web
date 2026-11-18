@@ -3,14 +3,21 @@ import { useState, useEffect } from "react";
 import { type Instrument, type UnknownRecord, type PositionRecord, type ProductLine } from "../types";
 import { instruments as instrumentList, gatewayGet } from "../api/admin";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, Metric, TwoColumn, Panel, CursorPager, DataTable, KeyValue, Empty } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, Metric, TwoColumn, Panel, CursorPager, DataTable, KeyValue, Empty, TabBar, ExportCsvButton } from "../components/AdminUi";
+import MaintenancePage from "../MaintenancePage";
 import { accountTypeForProductLine, defaultAssetForProductLine, productLineForInstrument, INSTRUMENT_STATUSES, ACCOUNT_TYPES } from "../lib/products";
 import { errorMessage } from "../lib/adminData";
 import { INSTRUMENT_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 
 const LIFECYCLE_PRODUCT_LINES = ["LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"] as const;
 
-export default function LifecyclePage() {
+export default function LifecyclePage({
+  initialTab = "lifecycle",
+}: {
+  initialTab?: "lifecycle" | "maintenance";
+}) {
+  const [tab, setTab] = useState<"lifecycle" | "maintenance">(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [filters, setFilters] = useState({
     productLine: "LINEAR_DELIVERY",
     status: "",
@@ -118,8 +125,27 @@ export default function LifecyclePage() {
   const referenceType = lifecycleReferenceType(filters.productLine);
 
   return (
-    <Page title="交割 / 行权核查" onRefresh={() => load(filters.instrumentCursor, filters.ledgerCursor)} loading={loading} error={error}>
-      <div className="filters">
+    <Page
+      title="交割行权与交易维护"
+      description="统一核查交割/期权产品到期结算，或按交易对执行紧急撤单、平仓与清退维护。"
+      onRefresh={tab === "lifecycle" ? () => load(filters.instrumentCursor, filters.ledgerCursor) : undefined}
+      loading={tab === "lifecycle" ? loading : false}
+      error={tab === "lifecycle" ? error : ""}
+    >
+      <TabBar
+        label="交割与维护视图"
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: "lifecycle", label: "交割与行权核查", count: instruments.length },
+          { key: "maintenance", label: "交易维护与清退" }
+        ]}
+      />
+      {tab === "maintenance" ? (
+        <MaintenancePage />
+      ) : (
+        <>
+          <div className="filters">
         <label>产品线<Select value={filters.productLine} onChange={(event) => updateFilters({ productLine: event.target.value })}>
           {LIFECYCLE_PRODUCT_LINES.map((item) => <option key={item} value={item}>{item}</option>)}
         </Select></label>
@@ -135,6 +161,12 @@ export default function LifecyclePage() {
         <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(value) => updateFilters({ sort: value })} />
         <SortSelect label="流水排序" value={filters.ledgerSort} options={CREATED_AT_SORTS} onChange={(value) => updateFilters({ ledgerSort: value })} />
         <button onClick={() => void load("", "")}><Search size={16} />查询</button>
+        <ExportCsvButton
+          rows={instruments as unknown as UnknownRecord[]}
+          columns={["instrumentId", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "deliveryTime", "underlyingInstrumentId", "strikePriceUnits", "optionType", "settlementMethod", "updatedAt"]}
+          filename={`lifecycle-instruments-${filters.productLine.toLowerCase()}.csv`}
+          label="导出产品 CSV"
+        />
       </div>
       <div className="metrics">
         <Metric label="生命周期产品" value={instruments.length} tone="muted" />
@@ -179,6 +211,13 @@ export default function LifecyclePage() {
       </TwoColumn>
       <TwoColumn>
         <Panel title={`${referenceType} 产品流水`}>
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton
+              rows={ledger}
+              columns={["ledgerId", "userId", "accountType", "asset", "amountUnits", "balanceAfterUnits", "referenceType", "referenceId", "instrumentId", "createdAt"]}
+              filename={`lifecycle-ledger-${filters.productLine.toLowerCase()}.csv`}
+            />
+          </div>
           <CursorPager loading={loading}
             page={ledgerPageInfo}
             cursor={filters.ledgerCursor}
@@ -193,14 +232,25 @@ export default function LifecyclePage() {
         </Panel>
         <Panel title="用户持仓残留">
           {filters.userId ? (
-            <DataTable
-              rows={positions as unknown as UnknownRecord[]}
-              columns={["userId", "instrumentId", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
-              maxColumns={8}
-            />
+            <div className="stack">
+              <div className="button-row">
+                <ExportCsvButton
+                  rows={positions as unknown as UnknownRecord[]}
+                  columns={["userId", "instrumentId", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
+                  filename={`lifecycle-positions-${filters.userId}.csv`}
+                />
+              </div>
+              <DataTable
+                rows={positions as unknown as UnknownRecord[]}
+                columns={["userId", "instrumentId", "positionSide", "marginMode", "signedQuantitySteps", "entryPriceTicks", "realizedPnlUnits", "updatedAt"]}
+                maxColumns={8}
+              />
+            </div>
           ) : <Empty text="输入 User ID 后核查生命周期产品是否仍有持仓" />}
         </Panel>
       </TwoColumn>
+        </>
+      )}
     </Page>
   );
 }

@@ -3,11 +3,11 @@ import { useState, useEffect } from "react";
 import { type UnknownRecord } from "../types";
 import { loginLogs, operationLogs } from "../api/admin";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, CursorPager, DataTable } from "../components/AdminUi";
+import { cursorInfo, Page, TextFilter, SortSelect, TwoColumn, Panel, CursorPager, DataTable, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage } from "../lib/adminData";
 import { CREATED_AT_SORTS } from "../lib/queryOptions";
 
-export default function AuditPage() {
+export default function AuditPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [loginFilters, setLoginFilters] = useState({ userId: "", result: "", limit: "200", cursor: "", sort: "createdAt.desc" });
   const [operationFilters, setOperationFilters] = useState({ adminUserId: "", service: "", method: "", success: "", limit: "200", cursor: "", sort: "createdAt.desc" });
   const [loginRows, setLoginRows] = useState<UnknownRecord[]>([]);
@@ -45,8 +45,8 @@ export default function AuditPage() {
 
   useEffect(() => { void load(); }, []);
 
-  return (
-    <Page title="审计日志" onRefresh={load} loading={loading} error={error}>
+  const body = (
+    <div className="stack">
       <div className="filters">
         <TextFilter label="登录 User ID" value={loginFilters.userId} onChange={(value) => setLoginFilters({ ...loginFilters, userId: value, cursor: "" })} />
         <label>登录结果<Select value={loginFilters.result} onChange={(event) => setLoginFilters({ ...loginFilters, result: event.target.value, cursor: "" })}><option value="">全部</option><option>SUCCESS</option><option>FAILED</option></Select></label>
@@ -60,6 +60,9 @@ export default function AuditPage() {
       </div>
       <TwoColumn>
         <Panel title="登录日志">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton rows={loginRows} filename="audit-login-logs.csv" label="导出登录日志" />
+          </div>
           <CursorPager
             page={loginPageInfo}
             cursor={loginFilters.cursor}
@@ -69,6 +72,14 @@ export default function AuditPage() {
           <DataTable rows={loginRows} maxColumns={8} />
         </Panel>
         <Panel title="管理员操作日志">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton
+              rows={operationRows}
+              columns={["createdAt", "adminUsername", "service", "httpMethod", "responseStatus", "durationMs", "success", "requestPath", "errorMessage"]}
+              filename="audit-operation-logs.csv"
+              label="导出操作日志"
+            />
+          </div>
           <CursorPager
             page={operationPageInfo}
             cursor={operationFilters.cursor}
@@ -81,6 +92,21 @@ export default function AuditPage() {
           />
         </Panel>
       </TwoColumn>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="stack">
+        {error && <div className="alert danger state-alert" role="alert"><span>{error}</span><button onClick={() => void load()}>重新加载</button></div>}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Page title="审计日志" onRefresh={load} loading={loading} error={error}>
+      {body}
     </Page>
   );
 }

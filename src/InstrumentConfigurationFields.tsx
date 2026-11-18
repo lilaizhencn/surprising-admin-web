@@ -1,7 +1,21 @@
 import { Select } from "./components/CustomSelect";
+import { compactNumber } from "./config";
+import { ppmPercent } from "./lib/adminData";
 import type { UnknownRecord } from "./types";
 
 type Field = { key: string; label: string; hint: string; kind?: "boolean" | "text" | "url" | "number"; options?: string[] };
+
+function formatFieldHint(field: Field, value: unknown): string {
+  const num = Number(value);
+  if (value === undefined || value === null || value === "" || !Number.isFinite(num)) return field.hint;
+  if (field.key === "maxLeveragePpm" || field.key === "optionMarginFactorPpm") {
+    return `${field.hint}（当前：${compactNumber(num / 1_000_000)}x）`;
+  }
+  if (field.key === "initialMarginRatePpm" || field.key === "maintenanceMarginRatePpm") {
+    return `${field.hint}（当前：${ppmPercent(num)}）`;
+  }
+  return field.hint;
+}
 const bracketFields: Field[] = [
   { key: "notionalFloorUnits", label: "名义价值下限", hint: "首档为 0，后续档位等于上一档上限。" },
   { key: "notionalCapUnits", label: "名义价值上限", hint: "必须大于下限；最后一档覆盖最大持仓名义价值。" },
@@ -44,7 +58,7 @@ export function InstrumentConfigurationFields({ draft, update }: {
           {field.kind === "boolean" ? <input type="checkbox" checked={Boolean(row[field.key])} onChange={e => change(index, field.key, e.target.checked)} />
             : field.options ? <Select value={String(row[field.key] ?? "")} onChange={e => change(index, field.key, e.target.value)}><option value="">请选择</option>{field.options.map(option => <option key={option}>{option}</option>)}</Select>
             : <input inputMode={!field.kind || field.kind === "number" ? "numeric" : "text"} value={String(row[field.key] ?? "")} onChange={e => change(index, field.key, e.target.value)} />}
-          <small>{field.hint}</small>
+          <small>{formatFieldHint(field, row[field.key])}</small>
         </label>)}</div>
         <button type="button" onClick={() => update(key, rows.filter((_, i) => i !== index).map((item, i) => key === "riskLimitBrackets" ? { ...item, bracketNo: i + 1 } : item))}>移除此{title}</button>
       </fieldset>)}

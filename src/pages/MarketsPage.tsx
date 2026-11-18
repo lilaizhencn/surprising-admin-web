@@ -4,15 +4,16 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { type Asset } from "../AssetsPage";
 import { request, parseApiJson } from "../api/client";
 import { type UnknownRecord, type Instrument, type ProductLine } from "../types";
-import { type InstrumentChange, instruments as instrumentList, marketHealth, instrumentChanges, instrumentLatest, gatewayGet, updateInstrumentStatus, upsertInstrument, gatewayPost } from "../api/admin";
+import { type InstrumentChange, instruments as instrumentList, instrumentChanges, instrumentLatest, gatewayGet, updateInstrumentStatus, upsertInstrument, gatewayPost } from "../api/admin";
 import { validateInstrumentForm, InstrumentConfigurationFields } from "../InstrumentConfigurationFields";
 import { OrderBusinessSettings } from "../OrderBusinessSettings";
 import { Search } from "lucide-react";
 import { MakerBusinessSettings } from "../MakerBusinessSettings";
 import { InstrumentMakerSettings } from "../InstrumentMakerSettings";
+import { ProductLineAccess } from "../ProductLineAccess";
 import { compactNumber } from "../config";
-import { errorMessage, objectValue, extractRows, ppmPercent } from "../lib/adminData";
-import { cursorInfo, Page, SortSelect, TextFilter, Panel, DataTable, CursorPager, Metric, Empty, TwoColumn, TabBar } from "../components/AdminUi";
+import { errorMessage, objectValue, ppmPercent } from "../lib/adminData";
+import { cursorInfo, Page, SortSelect, TextFilter, Panel, DataTable, CursorPager, Metric, Empty, TwoColumn, TabBar, ExportCsvButton } from "../components/AdminUi";
 import { INSTRUMENT_STATUSES } from "../lib/products";
 import { INSTRUMENT_SORTS } from "../lib/queryOptions";
 import { DraftTextField, DraftSelectField, DraftOptionalTextField, DraftOptionalSelectField, DraftOptionalNumberField, DraftNumberField, DraftCsvField, DraftCheckboxField } from "../features/instruments/InstrumentDraftFields";
@@ -34,7 +35,20 @@ const CONTRACT_TYPES_BY_INSTRUMENT: Record<string, string[]> = {
   OPTION: ["VANILLA_OPTION"]
 };
 
-export default function MarketsPage({ productLine }: { productLine?: ProductLine }) {
+function ppmMultiplier(value: unknown): string {
+  const num = Number(value);
+  return value !== undefined && value !== null && value !== "" && Number.isFinite(num)
+    ? `${compactNumber(num / 1_000_000)}x`
+    : "—";
+}
+
+export default function MarketsPage({
+  initialProductLine = "",
+  initialTab = "instruments",
+}: {
+  initialProductLine?: ProductLine | "";
+  initialTab?: "instruments" | "rules" | "access";
+}) {
   const [assetOptions, setAssetOptions] = useState<Asset[]>([]);
   useEffect(() => {
     const abort = new AbortController();
@@ -42,18 +56,21 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
       .catch(e => { if (!abort.signal.aborted) setError(errorMessage(e)); });
     return () => abort.abort();
   }, []);
-  const [filters, setFilters] = useState({ productLine: productLine ?? "", status: "", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
+  const [filters, setFilters] = useState<{
+    productLine: string;
+    status: string;
+    type: string;
+    limit: string;
+    cursor: string;
+    sort: string;
+  }>({ productLine: initialProductLine ?? "", status: "", type: "", limit: "100", cursor: "", sort: "symbol.asc" });
   const [coreSync, setCoreSync] = useState<UnknownRecord | null>(null);
   const [changeReason, setChangeReason] = useState("");
   const [saving, setSaving] = useState(false);
   const auditRequest = useRef(0);
-  const [healthPeriod, setHealthPeriod] = useState("1m");
-  const [staleSeconds, setStaleSeconds] = useState("120");
   const [items, setItems] = useState<Instrument[]>([]);
   const [page, setPage] = useState(cursorInfo(null));
   const [changes, setChanges] = useState<InstrumentChange[]>([]);
-  const [health, setHealth] = useState<UnknownRecord | null>(null);
-  const [healthError, setHealthError] = useState("");
   const [selected, setSelected] = useState<Instrument | null>(null);
   const [json, setJson] = useState("");
   const [loading, setLoading] = useState(false);
@@ -62,6 +79,7 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
   const [pendingConfirm, setPendingConfirm] = useState<
     null | { type: "status"; next: string } | { type: "discard" }
   >(null);
+  const [tab, setTab] = useState<"instruments" | "rules" | "access">(initialTab);
   const draftState = useMemo(() => parseInstrumentDraft(json), [json]);
   const draft = draftState.value;
 
@@ -69,25 +87,18 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
     setFilters((current) => ({ ...current, ...patch, cursor: "" }));
   }
 
-  async function load(nextCursor = filters.cursor, preferred = selected) {
+  async function load(nextCursor = filters.cursor, preferred = selected, productLineOverride: string = filters.productLine) {
     setLoading(true);
     setError("");
     try {
-      const [instrumentResult, healthResult] = await Promise.allSettled([
-        instrumentList({
-          productLine: filters.productLine,
-          type: filters.type,
-          status: filters.status,
-          limit: Number(filters.limit) || 100,
-          cursor: nextCursor,
-          sort: filters.sort
-        }),
-        marketHealth({ productLine: filters.productLine, period: healthPeriod, staleSeconds: Number(staleSeconds) || 120, limit: 100 })
-      ]);
-      if (instrumentResult.status === "rejected") throw instrumentResult.reason;
-      const response = instrumentResult.value;
-      setHealth(healthResult.status === "fulfilled" ? healthResult.value : null);
-      setHealthError(healthResult.status === "rejected" ? "暂时无法获取行情健康状态；合约配置可继续维护。" : "");
+      const response = await instrumentList({
+        productLine: productLineOverride,
+        type: filters.type,
+        status: filters.status,
+        limit: Number(filters.limit) || 100,
+        cursor: nextCursor,
+        sort: filters.sort
+      });
       const rows = response.instruments ?? response.items ?? [];
       setItems(rows);
       setPage(cursorInfo(response));
@@ -138,7 +149,15 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    setFilters((current) => ({ ...current, productLine: initialProductLine ?? "", cursor: "" }));
+    void load("", undefined, initialProductLine ?? "");
+  }, [initialProductLine]);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
   useEffect(() => { setJson(selected ? JSON.stringify(selected, null, 2) : ""); }, [selected]);
 
   useEffect(() => {
@@ -200,10 +219,8 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
     setJson(JSON.stringify(normalizeInstrumentDraft({ ...base, [field]: value }, field), null, 2));
   }
 
-  const [tab, setTab] = useState<"instruments" | "rules" | "health">("instruments");
-
   return (
-    <Page title="产品与市场" description="在一个页面完成合约配置、上线、交易开关和做市维护。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
+    <Page title="产品与市场" description="统一管理产品线运行时接入、合约配置、上线开关与订单报价规则。" onRefresh={() => load(filters.cursor)} loading={loading} error={error}>
       <TabBar
         label="市场管理视图"
         active={tab}
@@ -211,40 +228,70 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
         tabs={[
           { key: "instruments", label: "合约与币对列表", badge: items.length },
           { key: "rules", label: "产品线价格与订单规则" },
-          { key: "health", label: "价格链路与行情监控" },
+          { key: "access", label: "产品线接入与状态" },
         ]}
       />
-      {tab === "rules" && (
-        <TwoColumn>
-          <PriceSettingsPanel key={filters.productLine} productLine={filters.productLine} />
-          <OrderBusinessSettings key={filters.productLine} productLine={filters.productLine} />
-        </TwoColumn>
-      )}
-      {tab === "health" && (
-        <>
-          <div className="filters">
-            <label>K线周期<Select value={healthPeriod} onChange={(event) => setHealthPeriod(event.target.value)}>
-              <option value="1m">1m</option>
-              <option value="5m">5m</option>
-              <option value="15m">15m</option>
-              <option value="1h">1h</option>
-            </Select></label>
-            <TextFilter label="过期秒数" value={staleSeconds} onChange={setStaleSeconds} />
-            <button onClick={() => void load(filters.cursor)}><Search size={16} />刷新监控</button>
+      {tab === "rules" && (() => {
+        const rulesProductLine = filters.productLine || "LINEAR_PERPETUAL";
+        return (
+          <div className="stack">
+            <div className="admin-product-switcher" role="group" aria-label="规则产品线切换">
+              <span>产品线</span>
+              {[
+                ["SPOT", "SPOT 现货"],
+                ["LINEAR_PERPETUAL", "U本位永续"],
+                ["INVERSE_PERPETUAL", "币本位永续"],
+                ["LINEAR_DELIVERY", "U本位交割"],
+                ["INVERSE_DELIVERY", "币本位交割"],
+                ["OPTION", "OPTION 期权"],
+              ].map(([line, label]) => (
+                <button
+                  key={line}
+                  type="button"
+                  className={rulesProductLine === line ? "active" : ""}
+                  aria-pressed={rulesProductLine === line}
+                  onClick={() => updateFilters({ productLine: line })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <TwoColumn>
+              <PriceSettingsPanel key={`price-${rulesProductLine}`} productLine={rulesProductLine} />
+              <OrderBusinessSettings key={`order-${rulesProductLine}`} productLine={rulesProductLine} />
+            </TwoColumn>
           </div>
-          {healthError && <div role="status" className="alert">{healthError}</div>}
-          {health ? <MarketHealthOverview health={health} /> : <Empty text="暂无当前产品线价格链路监控数据" />}
-        </>
-      )}
+        );
+      })()}
+      {tab === "access" && <ProductLineAccess />}
       {tab === "instruments" && (
         <>
+          <div className="admin-product-switcher" role="group" aria-label="产品线快速筛选">
+            <span>产品线</span>
+            {[
+              ["", "全部"],
+              ["SPOT", "SPOT 现货"],
+              ["LINEAR_PERPETUAL", "U本位永续"],
+              ["INVERSE_PERPETUAL", "币本位永续"],
+              ["LINEAR_DELIVERY", "U本位交割"],
+              ["INVERSE_DELIVERY", "币本位交割"],
+              ["OPTION", "OPTION 期权"],
+            ].map(([line, label]) => (
+              <button
+                key={line || "ALL"}
+                type="button"
+                className={filters.productLine === line ? "active" : ""}
+                aria-pressed={filters.productLine === line}
+                onClick={() => {
+                  updateFilters({ productLine: line });
+                  void load("", undefined, line);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="filters">
-            {!productLine && (
-              <label>产品线<Select value={filters.productLine} onChange={event => updateFilters({ productLine: event.target.value })}>
-                <option value="">全部产品线</option>
-                {["SPOT", "LINEAR_PERPETUAL", "INVERSE_PERPETUAL", "LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"].map(line => <option key={line}>{line}</option>)}
-              </Select></label>
-            )}
             <label>类型<Select value={filters.type} onChange={(event) => updateFilters({ type: event.target.value })}>
               <option value="">全部</option>
               {INSTRUMENT_TYPES.map((item) => <option key={item}>{item}</option>)}
@@ -256,6 +303,12 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
             <SortSelect label="产品排序" value={filters.sort} options={INSTRUMENT_SORTS} onChange={(sort) => updateFilters({ sort })} />
             <TextFilter label="Limit" value={filters.limit} onChange={(value) => updateFilters({ limit: value })} />
             <button onClick={() => void load("")}><Search size={16} />查询</button>
+            <ExportCsvButton
+              rows={items as unknown as UnknownRecord[]}
+              columns={["symbol", "status", "instrumentType", "contractType", "settleAsset", "expiryTime", "maxLeveragePpm", "makerFeeRatePpm", "takerFeeRatePpm", "updatedAt"]}
+              filename={`instruments-${(filters.productLine || "all").toLowerCase()}.csv`}
+              label="导出合约 CSV"
+            />
           </div>
           <div className="instrument-workspace">
         <Panel title="交易产品">
@@ -360,25 +413,25 @@ export default function MarketsPage({ productLine }: { productLine?: ProductLine
                 </InstrumentSection>
                 <InstrumentSection title="风险与资金费">
                   <div className="form-grid">
-                    <DraftNumberField label="最大杠杆 ppm" field="maxLeveragePpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="初始保证金 ppm" field="initialMarginRatePpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="维持保证金 ppm" field="maintenanceMarginRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`最大杠杆 ppm (${ppmMultiplier(draft?.maxLeveragePpm)})`} field="maxLeveragePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`初始保证金 ppm (${ppmPercent(draft?.initialMarginRatePpm ?? 0)})`} field="initialMarginRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`维持保证金 ppm (${ppmPercent(draft?.maintenanceMarginRatePpm ?? 0)})`} field="maintenanceMarginRatePpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="最大持仓 notional" field="maxPositionNotionalUnits" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="用户 OI rate ppm" field="userOpenInterestLimitRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`用户 OI rate ppm (${ppmPercent(draft?.userOpenInterestLimitRatePpm ?? 0)})`} field="userOpenInterestLimitRatePpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="用户 OI floor" field="userOpenInterestLimitFloorUnits" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="资金费周期小时" field="fundingIntervalHours" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="利率 ppm" field="interestRatePpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="资金费上限 ppm" field="fundingRateCapPpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="资金费下限 ppm" field="fundingRateFloorPpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`利率 ppm (${ppmPercent(draft?.interestRatePpm ?? 0)})`} field="interestRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`资金费上限 ppm (${ppmPercent(draft?.fundingRateCapPpm ?? 0)})`} field="fundingRateCapPpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`资金费下限 ppm (${ppmPercent(draft?.fundingRateFloorPpm ?? 0)})`} field="fundingRateFloorPpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="影响价格 notional" field="impactNotionalUnits" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="最少有效指数源" field="minValidIndexSources" draft={draft} update={updateDraftField} />
                   </div>
                 </InstrumentSection>
                 <InstrumentSection title="费用与合约面值">
                   <div className="form-grid">
-                    <DraftNumberField label="Maker fee ppm" field="makerFeeRatePpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="Taker fee ppm" field="takerFeeRatePpm" draft={draft} update={updateDraftField} />
-                    <DraftNumberField label="合约乘数 ppm" field="contractMultiplierPpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`Maker fee ppm (${ppmPercent(draft?.makerFeeRatePpm ?? 0)})`} field="makerFeeRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`Taker fee ppm (${ppmPercent(draft?.takerFeeRatePpm ?? 0)})`} field="takerFeeRatePpm" draft={draft} update={updateDraftField} />
+                    <DraftNumberField label={`合约乘数 ppm (${ppmMultiplier(draft?.contractMultiplierPpm)})`} field="contractMultiplierPpm" draft={draft} update={updateDraftField} />
                     <DraftNumberField label="Notional multiplier" field="notionalMultiplierUnits" draft={draft} update={updateDraftField} />
                   </div>
                 </InstrumentSection>
@@ -473,75 +526,6 @@ function normalizeInstrumentDraft(next: UnknownRecord, changedField: string): Un
 function instrumentTypeForContract(contractType: string) {
   return Object.entries(CONTRACT_TYPES_BY_INSTRUMENT)
     .find(([, contractTypes]) => contractTypes.includes(contractType))?.[0] ?? "";
-}
-
-function MarketHealthOverview({ health }: { health: UnknownRecord }) {
-  const summary = objectValue(health.summary);
-  const symbols = extractRows(health.symbols);
-  const sources = extractRows(health.sources);
-  const warnings = extractRows(health.warnings);
-  const unhealthyIndex = Number(summary.unhealthyIndexSymbols ?? 0);
-  const unhealthyMark = Number(summary.unhealthyMarkSymbols ?? 0);
-  const staleCandles = Number(summary.staleCandleSymbols ?? 0);
-  const sourceIssues = Number(summary.sourceIssueSymbols ?? 0);
-
-  return (
-    <div className="stack">
-      <div className="metrics">
-        <Metric label="监控产品" value={summary.totalSymbols ?? 0} tone="muted" />
-        <Metric label="交易中产品" value={summary.tradingSymbols ?? 0} tone="ok" />
-        <Metric label="Index 异常" value={unhealthyIndex} tone={unhealthyIndex ? "danger" : "ok"} />
-        <Metric label="Mark 异常" value={unhealthyMark} tone={unhealthyMark ? "danger" : "ok"} />
-        <Metric label="K线过期" value={staleCandles} tone={staleCandles ? "warn" : "ok"} />
-        <Metric label="源异常" value={sourceIssues} tone={sourceIssues ? "warn" : "ok"} />
-        <Metric label="最大源延迟" value={`${compactNumber(summary.maxSourceLatencyMillis ?? 0)} ms`} tone={Number(summary.maxSourceLatencyMillis ?? 0) > 1000 ? "warn" : "muted"} />
-        <Metric label="最大 Mark 偏离" value={ppmPercent(summary.maxMarkIndexDeviationPpm)} tone={Number(summary.maxMarkIndexDeviationPpm ?? 0) > 5000 ? "warn" : "muted"} />
-      </div>
-      <TwoColumn>
-        <Panel title="价格链路健康">
-          <DataTable
-            rows={symbols}
-            columns={[
-              "instrumentId",
-              "instrumentStatus",
-              "indexStatus",
-              "markStatus",
-              "indexPrice",
-              "markPrice",
-              "markIndexDeviationPpm",
-              "validComponentCount",
-              "componentCount",
-              "indexAgeSeconds",
-              "markAgeSeconds",
-              "candleAgeSeconds"
-            ]}
-          />
-        </Panel>
-        <Panel title="行情源状态">
-          <DataTable
-            rows={sources}
-            columns={[
-              "instrumentId",
-              "source",
-              "sourceSymbol",
-              "status",
-              "reason",
-              "latencyMillis",
-              "price",
-              "bidPrice",
-              "askPrice",
-              "receivedAt"
-            ]}
-          />
-        </Panel>
-      </TwoColumn>
-      {warnings.length > 0 && (
-        <Panel title="市场监控告警">
-          <DataTable rows={warnings} columns={["area", "source", "message"]} />
-        </Panel>
-      )}
-    </div>
-  );
 }
 
 function PriceSettingsPanel({ productLine }: { productLine: string }) {

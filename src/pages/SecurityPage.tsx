@@ -14,9 +14,16 @@ import {
   draftPermissionCodes,
   permissionDifference,
 } from "../lib/securityReview";
-import { Page, Metric, TwoColumn, Panel, DataTable, Empty } from "../components/AdminUi";
+import { Page, Metric, TwoColumn, Panel, DataTable, Empty, TabBar } from "../components/AdminUi";
+import AuditPage from "./AuditPage";
 
-export default function SecurityPage() {
+export default function SecurityPage({
+  initialTab = "roles",
+}: {
+  initialTab?: "roles" | "audit";
+}) {
+  const [tab, setTab] = useState<"roles" | "audit">(initialTab);
+  useEffect(() => { setTab(initialTab); }, [initialTab]);
   const [roles, setRoles] = useState<UnknownRecord[] | null>(null);
   const [permissions, setPermissions] = useState<UnknownRecord[] | null>(null);
   const [selectedRole, setSelectedRole] = useState("");
@@ -194,18 +201,31 @@ export default function SecurityPage() {
     ) ?? [];
   return (
     <Page
-      title="权限治理"
-      description="按角色核对完整权限，保存前查看新增与移除项。SUPER_ADMIN 由系统策略管理。"
-      onRefresh={load}
-      loading={loading || saving}
-      error={error}
+      title="权限与安全审计"
+      description="按角色核对完整权限或追溯管理员登录与操作日志。SUPER_ADMIN 由系统策略管理。"
+      onRefresh={tab === "roles" ? load : undefined}
+      loading={tab === "roles" ? loading || saving : false}
+      error={tab === "roles" ? error : ""}
     >
-      {notice && (
-        <div className="alert" role="status">
-          {notice}
-        </div>
-      )}
-      <fieldset className="security-review-workspace" disabled={saving}>
+      <TabBar
+        label="权限与安全审计视图"
+        active={tab}
+        onChange={setTab}
+        items={[
+          { key: "roles", label: "角色与权限矩阵", count: roles?.length },
+          { key: "audit", label: "登录与操作审计" }
+        ]}
+      />
+      {tab === "audit" ? (
+        <AuditPage embedded />
+      ) : (
+        <>
+          {notice && (
+            <div className="alert" role="status">
+              {notice}
+            </div>
+          )}
+          <fieldset className="security-review-workspace" disabled={saving}>
         <div className="metrics">
           <Metric label="角色数" value={roles?.length ?? "—"} tone="ok" />
           <Metric label="权限点" value={permissions?.length ?? "—"} tone="muted" />
@@ -432,6 +452,8 @@ export default function SecurityPage() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </Page>
   );

@@ -1,11 +1,10 @@
 import { Select } from "../components/CustomSelect";
-import { parseApiJson } from "../api/client";
 import { useState, useEffect, useRef } from "react";
-import { type RouteKey, type UnknownRecord } from "../types";
-import { gatewayGet, walletFinanceSummary, walletOperationsOverview, walletOperationAddresses, walletOperationBalances, walletOperationExceptions, walletFinanceDeposits, walletFinanceWithdrawals, walletFinanceWithdrawalReviews, approveWalletWithdrawal, rejectWalletWithdrawal, gatewayPatch } from "../api/admin";
+import { type RouteTarget, type UnknownRecord } from "../types";
+import { gatewayGet, walletFinanceSummary, walletOperationsOverview, walletOperationAddresses, walletOperationBalances, walletOperationExceptions, walletFinanceDeposits, walletFinanceWithdrawals, walletFinanceWithdrawalReviews, approveWalletWithdrawal, rejectWalletWithdrawal } from "../api/admin";
 import { CustodyWithdrawalsPanel } from "../features/CustodyWithdrawalsPanel";
 import { Search } from "lucide-react";
-import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TwoColumn, KeyValue, TabBar } from "../components/AdminUi";
+import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TabBar, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage, records, fieldText } from "../lib/adminData";
 import { UPDATED_AT_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 
@@ -36,12 +35,11 @@ const WALLET_OPERATION_EXCEPTION_STATUSES = [
   "REJECTED"
 ];
 
-export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteKey) => void } = {}) {
+export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteTarget) => void } = {}) {
   const reads = useRef<AbortController | null>(null);
-  const [tab, setTab] = useState<"withdrawals" | "onchain" | "infra" | "governance">("withdrawals");
+  const [tab, setTab] = useState<"withdrawals" | "onchain" | "infra">("withdrawals");
   const [withdrawalsRevision, setWithdrawalsRevision] = useState(0);
   const [dashboard, setDashboard] = useState<WalletDashboard | null>(null);
-  const [admin, setAdmin] = useState<WalletAdminConfig | null>(null);
   const [finance, setFinance] = useState<UnknownRecord | null>(null);
   const [operations, setOperations] = useState<UnknownRecord | null>(null);
   const [operationAddresses, setOperationAddresses] = useState<UnknownRecord[]>([]);
@@ -56,9 +54,6 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
   const [financeDepositPageInfo, setFinanceDepositPageInfo] = useState(cursorInfo());
   const [financeWithdrawalPageInfo, setFinanceWithdrawalPageInfo] = useState(cursorInfo());
   const [financeReviewPageInfo, setFinanceReviewPageInfo] = useState(cursorInfo());
-  const [selectedTable, setSelectedTable] = useState("");
-  const [selectedRow, setSelectedRow] = useState<UnknownRecord | null>(null);
-  const [updateJson, setUpdateJson] = useState("{}");
   const [withdrawalReviewReason, setWithdrawalReviewReason] = useState("Manual withdrawal review");
   const [addressQuery, setAddressQuery] = useState({ address: "", chain: "", limit: "100" });
   const [operationFilters, setOperationFilters] = useState({
@@ -130,10 +125,9 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
     setLoading(true);
     setError("");
     try {
-      setDashboard(null); setAdmin(null); setFinance(null); setOperations(null);
+      setDashboard(null); setFinance(null); setOperations(null);
       const [
         dashboardResponse,
-        adminResponse,
         financeResponse,
         operationsResponse,
         addressResponse,
@@ -144,7 +138,6 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
         reviewResponse
       ] = await Promise.all([
         gatewayGet<WalletResponse<WalletDashboard>>("wallet", "/dashboard", { limit: 200 }, controller.signal),
-        gatewayGet<WalletResponse<WalletAdminConfig>>("wallet-admin", "/config", { limit: 200 }, controller.signal),
         walletFinanceSummary({
           chain: withdrawalFilters.chain,
           assetSymbol: withdrawalFilters.assetSymbol,
@@ -218,10 +211,7 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
       ]);
       if (controller.signal.aborted) return;
       const nextDashboard = unwrapWallet(dashboardResponse);
-      const nextAdmin = unwrapWallet(adminResponse);
-      const tableNames = walletTableNames(nextAdmin);
       setDashboard(nextDashboard);
-      setAdmin(nextAdmin);
       setFinance(unwrapWallet(financeResponse) ?? null);
       setOperations(unwrapWallet(operationsResponse) ?? null);
       const addressPage = unwrapWallet(addressResponse);
@@ -254,9 +244,6 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
         withdrawalCursor: nextWithdrawalCursor,
         reviewCursor: nextReviewCursor
       }));
-      setSelectedTable((current) => current && tableNames.includes(current) ? current : tableNames[0] ?? "");
-      setSelectedRow(null);
-      setUpdateJson("{}");
     } catch (err) {
       if (!controller.signal.aborted) setError(errorMessage(err));
     } finally {
@@ -310,53 +297,12 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
     }
   }
 
-  function beginEdit(row: UnknownRecord) {
-    const editable = walletEditableColumns(admin, selectedTable);
-    const updates: UnknownRecord = {};
-    for (const column of editable) {
-      if (Object.prototype.hasOwnProperty.call(row, column)) {
-        updates[column] = row[column];
-      }
-    }
-    setSelectedRow(row);
-    setUpdateJson(JSON.stringify(updates, null, 2));
-  }
-
-  async function saveConfigUpdate() {
-    if (!selectedTable || !selectedRow) return;
-    const idColumn = walletIdColumn(admin, selectedTable);
-    const id = selectedRow[idColumn];
-    if (id === undefined || id === null || id === "") {
-      setError(`当前行缺少主键字段 ${idColumn}`);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const updates = parseApiJson<UnknownRecord>(updateJson);
-      await gatewayPatch<WalletResponse<UnknownRecord>>(
-        "wallet-admin",
-        `/config/${selectedTable}/${encodeURIComponent(String(id))}`,
-        { updates }
-      );
-      await load();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => { void load(); return () => reads.current?.abort(); }, []);
 
   const runtime = (dashboard?.runtime ?? {}) as UnknownRecord;
   const counts = (runtime.counts ?? {}) as UnknownRecord;
   const financeTotals = (finance?.totals ?? {}) as UnknownRecord;
   const operationTotals = (operations?.totals ?? {}) as UnknownRecord;
-  const tableNames = walletTableNames(admin);
-  const tableRows = walletRows(admin, selectedTable);
-  const tableMeta = walletMetadata(admin, selectedTable);
-  const editableColumns = walletEditableColumns(admin, selectedTable);
 
   const [listedAssets, setListedAssets] = useState<UnknownRecord[]>([]);
   useEffect(() => {
@@ -419,25 +365,27 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
         items={[
           { key: "withdrawals", label: "提现申请与资金审核", count: assetSummaryRows.length },
           { key: "onchain", label: "链上运营与地址账本", count: operationAddresses.length },
-          { key: "infra", label: "公链与 RPC 节点配置" },
-          { key: "governance", label: "托管安全与配置治理", count: tableNames.length }
+          { key: "infra", label: "公链与 RPC 节点配置" }
         ]}
       />
       {tab === "withdrawals" && (<>
       <Panel title="各币种充提汇总与上线币种管理">
         <div className="stack">
-          {onNavigate && (
-            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-              <span>共 {assetSummaryRows.length} 个平台币种；可在此查看充提汇总或前往币种配置页上/下线币种。</span>
-              <button type="button" className="primary" onClick={() => onNavigate("assets")}>管理平台上线币种 →</button>
+          <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <span>共 {assetSummaryRows.length} 个平台币种；可在此查看充提汇总或前往币种配置页上/下线币种。</span>
+            <div className="button-row">
+              <ExportCsvButton rows={assetSummaryRows} filename="wallet-asset-summary.csv" label="导出汇总 CSV" />
+              {onNavigate && (
+                <button type="button" className="primary" onClick={() => onNavigate("assets")}>管理平台上线币种 →</button>
+              )}
             </div>
-          )}
+          </div>
           <DataTable rows={assetSummaryRows} columns={["币种", "名称", "上线状态", "充值笔数", "累计充值量", "提现笔数", "累计提现量"]} />
         </div>
       </Panel>
       <CustodyWithdrawalsPanel refreshKey={withdrawalsRevision}/>
       </>)}
-      {loading || !dashboard || !admin || !finance || !operations ? <Panel title="托管钱包连接状态"><p role="status">{loading ? "正在同步托管钱包运营数据…" : "托管钱包运营数据尚未就绪，平台提现申请可在上方独立查询。"}</p></Panel> : <>
+      {loading || !dashboard || !finance || !operations ? <Panel title="托管钱包连接状态"><p role="status">{loading ? "正在同步托管钱包运营数据…" : "托管钱包运营数据尚未就绪，平台提现申请可在上方独立查询。"}</p></Panel> : <>
       <div className="metrics">
         <Metric label="启用链" value={counts.enabledChains ?? "—"} tone="ok" />
         <Metric label="启用 Token" value={counts.enabledTokens ?? "—"} tone="ok" />
@@ -564,7 +512,10 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
               <DataTable rows={records(finance?.byAsset as UnknownRecord[] | undefined)} maxColumns={8} />
             </div>
             <div className="stack">
-              <h3>充值记录</h3>
+              <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <h3>充值记录</h3>
+                <ExportCsvButton rows={financeDeposits} filename="wallet-deposits.csv" />
+              </div>
               <CursorPager
                 page={financeDepositPageInfo}
                 cursor={withdrawalFilters.depositCursor}
@@ -574,7 +525,10 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
               <DataTable rows={financeDeposits} maxColumns={10} />
             </div>
             <div className="stack">
-              <h3>提现审核队列</h3>
+              <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <h3>提现审核队列</h3>
+                <ExportCsvButton rows={financeWithdrawals} filename="wallet-withdrawals.csv" />
+              </div>
               <CursorPager
                 page={financeWithdrawalPageInfo}
                 cursor={withdrawalFilters.withdrawalCursor}
@@ -592,7 +546,30 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
             </div>
           </div>
           <div className="stack">
-            <h3>提现审核记录</h3>
+            <div className="button-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <h3>提现审核记录</h3>
+              <ExportCsvButton
+                rows={financeWithdrawalReviews}
+                columns={[
+                  "review_id",
+                  "decision",
+                  "admin_user_id",
+                  "admin_username",
+                  "order_no",
+                  "user_id",
+                  "chain",
+                  "asset_symbol",
+                  "amount",
+                  "fee",
+                  "previous_status",
+                  "next_status",
+                  "reason",
+                  "released_amount",
+                  "created_at"
+                ]}
+                filename="wallet-withdrawal-reviews.csv"
+              />
+            </div>
             <CursorPager
               page={financeReviewPageInfo}
               cursor={withdrawalFilters.reviewCursor}
@@ -623,17 +600,6 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
           </div>
         </div>
       </Panel>
-      )}
-
-      {tab === "governance" && (
-      <TwoColumn>
-        <Panel title="项目状态">
-          <KeyValue data={(dashboard?.project ?? {}) as UnknownRecord} />
-        </Panel>
-        <Panel title="安全与密钥状态">
-          <DataTable rows={records(admin?.secretStatus)} maxColumns={6} />
-        </Panel>
-      </TwoColumn>
       )}
 
       {tab === "infra" && (
@@ -676,6 +642,13 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
 
       <div className="two-grid">
         <Panel title="后台地址账本">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton
+              rows={operationAddresses}
+              columns={["chain", "asset_symbol", "user_id", "biz", "address", "wallet_role", "enabled", "available_balance", "locked_balance", "total_balance", "updated_at"]}
+              filename="wallet-addresses.csv"
+            />
+          </div>
           <CursorPager
             page={operationAddressPageInfo}
             cursor={operationFilters.addressCursor}
@@ -689,6 +662,13 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
           />
         </Panel>
         <Panel title="非零余额账户">
+          <div className="button-row" style={{ marginBottom: 8 }}>
+            <ExportCsvButton
+              rows={operationBalances}
+              columns={["chain", "asset_symbol", "user_id", "address", "wallet_role", "available_balance", "locked_balance", "total_balance", "updated_at"]}
+              filename="wallet-balances.csv"
+            />
+          </div>
           <CursorPager
             page={operationBalancePageInfo}
             cursor={operationFilters.balanceCursor}
@@ -706,6 +686,13 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
 
       {tab === "withdrawals" && (
       <Panel title="充值提现异常流水">
+        <div className="button-row" style={{ marginBottom: 8 }}>
+          <ExportCsvButton
+            rows={operationExceptions}
+            columns={["event_type", "event_id", "order_no", "user_id", "chain", "asset_symbol", "amount", "fee", "status", "reason", "tx_hash", "from_address", "to_address", "updated_at"]}
+            filename="wallet-exceptions.csv"
+          />
+        </div>
         <CursorPager
           page={operationExceptionPageInfo}
           cursor={operationFilters.exceptionCursor}
@@ -717,39 +704,6 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteK
           columns={["event_type", "event_id", "order_no", "user_id", "chain", "asset_symbol", "amount", "fee", "status", "reason", "tx_hash", "from_address", "to_address", "updated_at"]}
           maxColumns={14}
         />
-      </Panel>
-      )}
-
-      {tab === "governance" && (
-      <Panel title="钱包配置治理">
-        <div className="stack">
-          <div className="filters">
-            <label>配置表
-              <Select value={selectedTable} onChange={(event) => {
-                setSelectedTable(event.target.value);
-                setSelectedRow(null);
-                setUpdateJson("{}");
-              }}>
-                {tableNames.map((name) => <option key={name}>{name}</option>)}
-              </Select>
-            </label>
-            <label>主键<input value={walletIdColumn(admin, selectedTable)} readOnly /></label>
-            <label>可编辑字段<input value={editableColumns.join(", ")} readOnly /></label>
-          </div>
-          <KeyValue data={tableMeta} />
-          <DataTable rows={tableRows} maxColumns={10} actions={(row) => (
-            <button onClick={() => beginEdit(row)}>编辑</button>
-          )} />
-          <div className="two-grid">
-            <textarea className="json-editor small" value={updateJson} onChange={(event) => setUpdateJson(event.target.value)} />
-            <div className="stack">
-              <KeyValue data={selectedRow ?? {}} />
-              <button className="primary" disabled={!selectedRow || loading} onClick={() => void saveConfigUpdate()}>
-                保存配置更新
-              </button>
-            </div>
-          </div>
-        </div>
       </Panel>
       )}
       </> }
@@ -797,46 +751,11 @@ function walletPageRows<K extends string>(page: WalletCursorPage<K> | UnknownRec
   return records(page?.[key] ?? page?.items);
 }
 
-function walletTableNames(admin: WalletAdminConfig | null): string[] {
-  const metadata = admin?.tables ?? {};
-  const rows = admin?.rows ?? {};
-  const names = new Set([...Object.keys(metadata), ...Object.keys(rows)]);
-  return Array.from(names);
-}
-
-function walletMetadata(admin: WalletAdminConfig | null, table: string): UnknownRecord {
-  if (!admin || !table) return {};
-  return (admin.tables?.[table] ?? {}) as UnknownRecord;
-}
-
-function walletRows(admin: WalletAdminConfig | null, table: string): UnknownRecord[] {
-  if (!admin || !table) return [];
-  return records(admin.rows?.[table]);
-}
-
-function walletIdColumn(admin: WalletAdminConfig | null, table: string): string {
-  const metadata = walletMetadata(admin, table);
-  return typeof metadata.idColumn === "string" && metadata.idColumn ? metadata.idColumn : "id";
-}
-
-function walletEditableColumns(admin: WalletAdminConfig | null, table: string): string[] {
-  const metadata = walletMetadata(admin, table);
-  return Array.isArray(metadata.editableColumns)
-    ? metadata.editableColumns.map(String)
-    : [];
-}
-
 type WalletResponse<T> = T | { code?: number; message?: string; data?: T };
 
 interface WalletDashboard extends UnknownRecord {
   project?: UnknownRecord;
   runtime?: UnknownRecord;
-}
-
-interface WalletAdminConfig extends UnknownRecord {
-  tables?: Record<string, UnknownRecord>;
-  rows?: Record<string, UnknownRecord[]>;
-  secretStatus?: UnknownRecord[];
 }
 
 type WalletCursorPage<K extends string> = {
