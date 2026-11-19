@@ -1,6 +1,12 @@
 import type { UnknownRecord } from "../types";
 import { positiveInt64 } from "./integers";
-export type C2cReviewSection = "merchants" | "payment-accounts" | "ads" | "appeals";
+export type C2cReviewSection =
+  | "merchants"
+  | "payment-accounts"
+  | "ads"
+  | "appeals"
+  | "reports"
+  | "blacklist-appeals";
 const uuid = (value: unknown) =>
   typeof value === "string" &&
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
@@ -15,6 +21,8 @@ const states = {
   "payment-accounts": ["PENDING", "APPROVED", "REJECTED", "DISABLED"],
   ads: ["RESERVING", "ACTIVE", "PAUSED", "CLOSING", "CLOSED", "REJECTED"],
   appeals: ["OPEN", "REVIEWING", "RESOLVED", "WITHDRAWN"],
+  reports: ["OPEN", "REVIEWED", "DISMISSED"],
+  "blacklist-appeals": ["PENDING", "APPROVED", "REJECTED", "BLACKLISTED"],
 };
 export const c2cStatusFilters = states;
 export function c2cObject(value: unknown): UnknownRecord {
@@ -29,13 +37,15 @@ function list(value: unknown) {
 export function c2cRowId(section: C2cReviewSection, row: UnknownRecord) {
   return String(
     row[
-      section === "merchants"
+      section === "merchants" || section === "blacklist-appeals"
         ? "userId"
         : section === "payment-accounts"
           ? "accountId"
           : section === "ads"
             ? "adId"
-            : "appealId"
+            : section === "reports"
+              ? "reportId"
+              : "appealId"
     ],
   );
 }
@@ -48,8 +58,13 @@ export function c2cReviewPage(value: unknown, section: C2cReviewSection, offset:
     const id = c2cRowId(section, row);
     if (
       !states[section].includes(String(row.status)) ||
-      (section === "merchants" ? positiveInt64(row.userId, "商家 ID") !== id : !uuid(id)) ||
-      (section !== "appeals" && (!version(row.revision) || row.revision === "0"))
+      (section === "merchants" || section === "blacklist-appeals"
+        ? positiveInt64(row.userId, "用户 ID") !== id
+        : !uuid(id)) ||
+      (section !== "appeals" &&
+        section !== "reports" &&
+        section !== "blacklist-appeals" &&
+        (!version(row.revision) || row.revision === "0"))
     )
       throw Error("C2C 记录身份、版本或状态异常。");
     if (
@@ -83,6 +98,8 @@ export function c2cReviewPage(value: unknown, section: C2cReviewSection, offset:
     }
     if (section === "appeals" && (!uuid(row.orderId) || !text(row.reason)))
       throw Error("申诉订单绑定不完整。");
+    if (section === "reports" && !text(row.reason))
+      throw Error("投诉原因响应不完整。");
   }
   if (new Set(rows.map((row) => c2cRowId(section, row))).size !== rows.length)
     throw Error("C2C 列表包含重复记录。");
@@ -213,6 +230,10 @@ export function c2cDecisions(section: C2cReviewSection, row: UnknownRecord): str
     return row.status === "ACTIVE" ? ["PAUSE"] : row.status === "PAUSED" ? ["RESUME"] : [];
   if (section === "appeals")
     return ["OPEN", "REVIEWING"].includes(String(row.status)) ? ["RELEASE", "REFUND"] : [];
+  if (section === "reports")
+    return row.status === "OPEN" ? ["REVIEWED", "DISMISSED"] : [];
+  if (section === "blacklist-appeals")
+    return row.blacklisted ? ["APPROVE", "REJECT"] : [];
   if (section === "payment-accounts")
     return row.status === "PENDING"
       ? ["APPROVE", "REJECT", "DISABLE"]

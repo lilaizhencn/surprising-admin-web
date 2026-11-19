@@ -52,6 +52,9 @@ const state: Record<string, string> = {
   CLOSED: "已关闭",
   OPEN: "待处理",
   REVIEWING: "处理中",
+  REVIEWED: "已核实处理",
+  DISMISSED: "已驳回",
+  BLACKLISTED: "已拉黑（待申诉）",
   MATCHED: "核对一致",
   MISMATCH: "核对不一致",
   UNAVAILABLE: "查询未就绪",
@@ -66,8 +69,18 @@ const decisionLabels: Record<string, string> = {
   RESUME: "恢复广告",
   RELEASE: "裁决放币",
   REFUND: "退回原卖家",
+  REVIEWED: "确认违规并记录",
+  DISMISSED: "驳回投诉",
 };
-type Section = "configuration" | "merchants" | "payment-accounts" | "ads" | "appeals" | "chat";
+type Section =
+  | "configuration"
+  | "merchants"
+  | "payment-accounts"
+  | "ads"
+  | "appeals"
+  | "reports"
+  | "blacklist-appeals"
+  | "chat";
 export function C2cBusinessPage({ session }: { session: AuthSession }) {
   return (
     <Business
@@ -97,6 +110,9 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
     [writeBlocked, setWriteBlocked] = useState(false);
   const [selected, setSelected] = useState<C2cRow | null>(null),
     [reason, setReason] = useState(""),
+    [premiumVerified, setPremiumVerified] = useState(false),
+    [freezeCompensation, setFreezeCompensation] = useState(false),
+    [bdContact, setBdContact] = useState(""),
     [details, setDetails] = useState<C2cRow | null>(null),
     [detailsLoading, setDetailsLoading] = useState(false),
     [detailsError, setDetailsError] = useState("");
@@ -116,6 +132,9 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
     setDetailsError("");
     setIdentityChecked(false);
     setReason("");
+    setPremiumVerified(false);
+    setFreezeCompensation(false);
+    setBdContact("");
   };
   useEffect(() => {
     live.current = true;
@@ -283,6 +302,9 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
       return;
     clearSelection();
     selectedKey.current = c2cRowId(section, row);
+    setPremiumVerified(Boolean(row.premiumVerified));
+    setFreezeCompensation(Boolean(row.freezeCompensation));
+    setBdContact(row.bdContact ? String(row.bdContact) : "");
     setSelected(row);
     setNotice("");
     if (section === "appeals") void loadDetails(row);
@@ -355,7 +377,13 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
       await run(async () => {
         const result = await c2cBusinessWrite(owner, `/${section}/${id}/${suffix}`, body);
         if (section === "appeals") c2cAppealOrder(result, row.orderId);
-        else if (
+        else if (section === "reports") {
+          if (String(result.reportId) !== id || !result.status)
+            throw Error("投诉处理响应与原目标不匹配。");
+        } else if (section === "blacklist-appeals") {
+          if (String(result.userId) !== id || !result.status)
+            throw Error("黑名单解除响应与原目标不匹配。");
+        } else if (
           String(
             result[
               section === "merchants"
@@ -387,6 +415,8 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
             ["payment-accounts", "收款审核"],
             ["ads", "广告管理"],
             ["appeals", "申诉裁决"],
+            ["reports", "投诉处理"],
+            ["blacklist-appeals", "黑名单解除"],
             ["chat", "订单会话"],
           ] as const
         ).map(([key, title]) => (
@@ -745,6 +775,13 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                   c2cStatus: label(source.status),
                   c2cKycStatus: label(source.kycStatus),
                   c2cBondStatus: label(source.bondStatus),
+                  c2cBadges:
+                    [
+                      source.premiumVerified ? "优质商户" : "",
+                      source.freezeCompensation ? "冻结必赔" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—",
                 };
                 if (section === "ads")
                   return {
@@ -763,10 +800,11 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                       "userId",
                       "nickname",
                       "c2cStatus",
+                      "c2cBadges",
+                      "bdContact",
                       "c2cKycStatus",
                       "c2cBondStatus",
                       "bondAmount",
-                      "bondAsset",
                     ]
                   : section === "payment-accounts"
                     ? ["accountId", "userId", "fiat", "methodCode", "maskedLabel", "c2cStatus"]
@@ -780,7 +818,11 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                           "c2cAvailable",
                           "c2cStatus",
                         ]
-                      : ["appealId", "orderId", "openerUserId", "c2cStatus", "reason"]
+                      : section === "reports"
+                        ? ["reportId", "userId", "targetUserId", "c2cStatus", "reason"]
+                        : section === "blacklist-appeals"
+                          ? ["userId", "nickname", "timeoutStrikes", "c2cStatus", "blacklistReason"]
+                          : ["appealId", "orderId", "openerUserId", "c2cStatus", "reason"]
               }
               loading={loading}
               error={error && !rows.length ? error : ""}
@@ -827,7 +869,14 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                     ...(section === "merchants"
                       ? {
                           商家: selected.nickname,
+                          面向市场:
+                            selected.targetAsset || selected.targetFiat
+                              ? `${text(selected.targetAsset)}/${text(selected.targetFiat)}`
+                              : "—",
                           申请资料: selected.application,
+                          优质商户: selected.premiumVerified ? "已认证" : "未认证",
+                          冻结必赔: selected.freezeCompensation ? "已认证" : "未认证",
+                          对接商务: selected.bdContact || "—",
                           身份认证: selected.kycStatus,
                           认证有效期: selected.kycExpiresAt,
                           质押状态: label(selected.bondStatus),
@@ -854,15 +903,85 @@ function Business({ session, owner }: { session: AuthSession; owner: string }) {
                               剩余数量: selected.availableQuantity,
                               交易条款: selected.terms,
                             }
-                          : {
-                              原订单: selected.orderId,
-                              "发起人 ID": selected.openerUserId,
-                              申诉原因: selected.reason,
-                              原决定: selected.decision,
-                              原决定原因: selected.decisionReason,
-                            }),
+                          : section === "reports"
+                            ? {
+                                "投诉人 ID": selected.userId,
+                                "被投诉人 ID": selected.targetUserId,
+                                关联订单: selected.orderId,
+                                投诉原因: selected.reason,
+                                处理备注: selected.reviewReason,
+                              }
+                            : section === "blacklist-appeals"
+                              ? {
+                                  用户昵称: selected.nickname,
+                                  超时违约次数: selected.timeoutStrikes,
+                                  限制原因: selected.blacklistReason,
+                                  解除申请说明: selected.appealReason,
+                                  审核备注: selected.reviewNote,
+                                }
+                              : {
+                                原订单: selected.orderId,
+                                "发起人 ID": selected.openerUserId,
+                                申诉原因: selected.reason,
+                                原决定: selected.decision,
+                                原决定原因: selected.decisionReason,
+                              }),
                   }}
                 />
+                {section === "merchants" && (
+                  <div className="c2c-merchant-attributes panel">
+                    <h3>商户认证标识与对接商务</h3>
+                    <div className="toolbar">
+                      <label className="c2c-identity-check">
+                        <input
+                          type="checkbox"
+                          disabled={busy || writeBlocked}
+                          checked={premiumVerified}
+                          onChange={(event) => setPremiumVerified(event.target.checked)}
+                        />
+                        优质商户标识认证
+                      </label>
+                      <label className="c2c-identity-check">
+                        <input
+                          type="checkbox"
+                          disabled={busy || writeBlocked}
+                          checked={freezeCompensation}
+                          onChange={(event) => setFreezeCompensation(event.target.checked)}
+                        />
+                        冻结必赔认证
+                      </label>
+                    </div>
+                    <label>
+                      对接商务
+                      <input
+                        value={bdContact}
+                        disabled={busy || writeBlocked}
+                        maxLength={120}
+                        placeholder="如：Alice (BD-01)"
+                        onChange={(event) => setBdContact(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={busy || loading || writeBlocked || reason.trim().length < 5}
+                      onClick={() => {
+                        const id = c2cRowId(section, selected);
+                        void run(async () => {
+                          await c2cBusinessWrite(owner, `/merchants/${id}/attributes`, {
+                            revision: selected.revision,
+                            premiumVerified,
+                            freezeCompensation,
+                            bdContact: bdContact.trim(),
+                            reason: reason.trim(),
+                          });
+                        });
+                      }}
+                    >
+                      保存认证与商务（需在下方填写原因）
+                    </button>
+                  </div>
+                )}
                 {selfReview && (
                   <p className="alert" role="status">
                     不能审核本人的商家资格或收款资料，请由其他管理员核对。
