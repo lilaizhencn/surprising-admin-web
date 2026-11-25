@@ -47,6 +47,9 @@ export interface AuthenticatedUser {
   status: string;
   roles: string[];
   createdAt: string;
+  displayName?: string | null;
+  statusReason?: string | null;
+  frozenUntil?: string | null;
 }
 
 export interface AuthSession {

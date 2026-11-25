@@ -14,8 +14,20 @@ export function adminUsers(params: { query?: string; status?: string; limit?: nu
   }>(`/api/v1/admin/users${queryString(params)}`);
 }
 
-export function updateUserStatus(userId: number | string, status: string) {
-  return adminLocalWrite<AuthenticatedUser>("POST", `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/status`, { status });
+export function updateUserStatus(
+  userId: number | string,
+  status: string,
+  options?: { reason?: string | null; frozenUntil?: string | null }
+) {
+  return adminLocalWrite<AuthenticatedUser>(
+    "POST",
+    `/api/v1/admin/users/${positiveInt64(userId, "用户 ID")}/status`,
+    {
+      status,
+      reason: options?.reason?.trim() || undefined,
+      frozenUntil: options?.frozenUntil || undefined
+    }
+  );
 }
 
 export function replaceUserRoles(userId: number | string, roles: string[]) {
