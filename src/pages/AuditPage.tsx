@@ -1,5 +1,5 @@
 import { Select } from "../components/CustomSelect";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type UnknownRecord } from "../types";
 import { loginLogs, operationLogs } from "../api/admin";
 import { Search } from "lucide-react";
@@ -17,7 +17,10 @@ export default function AuditPage({ embedded = false }: { embedded?: boolean } =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const loadSeqRef = useRef(0);
+
   async function load(nextLoginCursor = loginFilters.cursor, nextOperationCursor = operationFilters.cursor) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -30,6 +33,7 @@ export default function AuditPage({ embedded = false }: { embedded?: boolean } =
           limit: Number(operationFilters.limit) || 200
         })
       ]);
+      if (seq !== loadSeqRef.current) return;
       setLoginRows(loginResponse.logs);
       setOperationRows(operationResponse.logs);
       setLoginPageInfo(cursorInfo(loginResponse));
@@ -37,13 +41,20 @@ export default function AuditPage({ embedded = false }: { embedded?: boolean } =
       setLoginFilters((current) => ({ ...current, cursor: nextLoginCursor }));
       setOperationFilters((current) => ({ ...current, cursor: nextOperationCursor }));
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   const body = (
     <div className="stack">

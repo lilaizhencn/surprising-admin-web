@@ -6,6 +6,7 @@ import { CustodyWithdrawalsPanel } from "../features/CustodyWithdrawalsPanel";
 import { Search } from "lucide-react";
 import { cursorInfo, Page, Metric, Panel, TextFilter, SortSelect, DataTable, CursorPager, TabBar, ExportCsvButton } from "../components/AdminUi";
 import { errorMessage, records, fieldText } from "../lib/adminData";
+import { sumDecimals } from "../lib/decimals";
 import { UPDATED_AT_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 
 const WALLET_WITHDRAWAL_STATUSES = [
@@ -310,13 +311,17 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteT
     import("../api/client").then(({ request }) =>
       request<UnknownRecord[]>("/api/v1/admin/assets", { signal: abort.signal })
         .then(setListedAssets)
-        .catch(() => {}),
+        .catch((err) => {
+          if (!abort.signal.aborted) {
+            setError((prev) => prev || errorMessage(err));
+          }
+        }),
     );
     return () => abort.abort();
   }, []);
 
   const assetSummaryRows = (() => {
-    const map = new Map<string, { asset: string; name: string; status: string; depositCount: number; depositAmount: number; withdrawalCount: number; withdrawalAmount: number }>();
+    const map = new Map<string, { asset: string; name: string; status: string; depositCount: number; depositAmounts: unknown[]; withdrawalCount: number; withdrawalAmounts: unknown[] }>();
     for (const a of listedAssets) {
       const code = String(a.asset ?? a.symbol ?? a.code ?? "");
       if (!code) continue;
@@ -325,25 +330,29 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteT
         name: String(a.name ?? a.displayName ?? code),
         status: a.listed === false ? "UNLISTED" : String(a.status ?? "LISTED"),
         depositCount: 0,
-        depositAmount: 0,
+        depositAmounts: [],
         withdrawalCount: 0,
-        withdrawalAmount: 0,
+        withdrawalAmounts: [],
       });
     }
     for (const d of financeDeposits) {
       const code = String(d.assetSymbol ?? d.asset ?? "");
       if (!code) continue;
-      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmount: 0, withdrawalCount: 0, withdrawalAmount: 0 };
+      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmounts: [], withdrawalCount: 0, withdrawalAmounts: [] };
       entry.depositCount += 1;
-      entry.depositAmount += Number(d.amount ?? d.usdtValue ?? 0) || 0;
+      if (d.amount !== undefined && d.amount !== null) {
+        entry.depositAmounts.push(d.amount);
+      }
       map.set(code, entry);
     }
     for (const w of financeWithdrawals) {
       const code = String(w.assetSymbol ?? w.asset ?? "");
       if (!code) continue;
-      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmount: 0, withdrawalCount: 0, withdrawalAmount: 0 };
+      const entry = map.get(code) ?? { asset: code, name: code, status: "LISTED", depositCount: 0, depositAmounts: [], withdrawalCount: 0, withdrawalAmounts: [] };
       entry.withdrawalCount += 1;
-      entry.withdrawalAmount += Number(w.amount ?? w.usdtValue ?? 0) || 0;
+      if (w.amount !== undefined && w.amount !== null) {
+        entry.withdrawalAmounts.push(w.amount);
+      }
       map.set(code, entry);
     }
     return [...map.values()].map((item) => ({
@@ -351,9 +360,9 @@ export default function WalletPage({ onNavigate }: { onNavigate?: (route: RouteT
       名称: item.name,
       上线状态: item.status,
       充值笔数: item.depositCount,
-      累计充值量: item.depositAmount.toFixed(4),
+      累计充值量: sumDecimals(item.depositAmounts, 4),
       提现笔数: item.withdrawalCount,
-      累计提现量: item.withdrawalAmount.toFixed(4),
+      累计提现量: sumDecimals(item.withdrawalAmounts, 4),
     }));
   })();
 

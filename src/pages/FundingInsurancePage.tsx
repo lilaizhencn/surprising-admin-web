@@ -1,6 +1,6 @@
 import { Select } from "../components/CustomSelect";
 import { assetCode } from "../lib/formValues";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
 import { gatewayGet, gatewayPost } from "../api/admin";
 import { type UnknownRecord } from "../types";
@@ -61,12 +61,15 @@ export default function FundingInsurancePage() {
     }));
   }
 
+  const loadSeqRef = useRef(0);
+
   async function load(
     nextRateCursor = listFilters.rateCursor,
     nextPaymentCursor = listFilters.paymentCursor,
     nextLedgerCursor = listFilters.ledgerCursor,
     nextCoverageCursor = listFilters.coverageCursor
   ) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -109,6 +112,7 @@ export default function FundingInsurancePage() {
           sort: listFilters.insuranceSort
         })
       ]);
+      if (seq !== loadSeqRef.current) return;
       setData({
         latest,
         history: history.rates ?? history.items ?? [],
@@ -130,9 +134,13 @@ export default function FundingInsurancePage() {
         coverageCursor: nextCoverageCursor
       }));
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -153,7 +161,10 @@ export default function FundingInsurancePage() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   return (
     <Page title="资金费与保险基金" onRefresh={() => load()} loading={loading} error={error}>

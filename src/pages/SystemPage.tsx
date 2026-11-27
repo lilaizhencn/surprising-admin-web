@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type UnknownRecord } from "../types";
 import {
   systemHealth,
@@ -30,7 +30,10 @@ export default function SystemPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const loadSeqRef = useRef(0);
+
   async function load() {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -39,6 +42,7 @@ export default function SystemPage() {
         systemRoutes(),
         mfaStatus()
       ]);
+      if (seq !== loadSeqRef.current) return;
       setHealth(healthResponse);
       setRoutes(routesResponse);
       setMfa(mfaResponse);
@@ -48,17 +52,25 @@ export default function SystemPage() {
         operationLogs({ limit: 100 }),
         loginLogs({ limit: 100 })
       ]);
+      if (seq !== loadSeqRef.current) return;
       setWsMetrics(wsRes.status === "fulfilled" ? wsRes.value : null);
       setOpLogs(opsRes.status === "fulfilled" && Array.isArray(opsRes.value.logs) ? opsRes.value.logs : []);
       setRecentLogins(loginsRes.status === "fulfilled" && Array.isArray(loginsRes.value.logs) ? loginsRes.value.logs : []);
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   const healthRows = records(health?.services as UnknownRecord[] | undefined);
   const publicRoutes = records(routes?.publicRoutes as UnknownRecord[] | undefined);

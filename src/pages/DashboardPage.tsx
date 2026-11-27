@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { request } from "../api/client";
 import { Metric, Page, Panel } from "../components/AdminUi";
 import { errorMessage } from "../lib/adminData";
+import { formatUsdtDecimal } from "../lib/decimals";
 import type { ProductLine, RouteTarget } from "../types";
 import "./DashboardPage.css";
 
@@ -61,12 +62,7 @@ const PRODUCT_LINE_META: ReadonlyArray<{
 ];
 
 function formatUsdt(value: number | string | undefined): string {
-  const num = Number(value ?? 0);
-  if (!Number.isFinite(num)) return "0.00";
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+  return formatUsdtDecimal(value);
 }
 
 export default function DashboardPage({
@@ -78,30 +74,36 @@ export default function DashboardPage({
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<SystemOverviewResponse | null>(null);
   const [activeLines, setActiveLines] = useState<Set<string>>(new Set());
-  const pending = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function load() {
-    if (pending.current) return;
-    pending.current = true;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const [overviewRes, runtimeRes] = await Promise.all([
-        request<SystemOverviewResponse>("/api/v1/admin/system/overview"),
-        request<RuntimeStatusResponse>("/api/v1/runtime").catch(() => ({ productLines: [] })),
+        request<SystemOverviewResponse>("/api/v1/admin/system/overview", { signal: controller.signal }),
+        request<RuntimeStatusResponse>("/api/v1/runtime", { signal: controller.signal }).catch(() => ({ productLines: [] })),
       ]);
+      if (controller.signal.aborted) return;
       setOverview(overviewRes);
       setActiveLines(new Set(runtimeRes.productLines ?? []));
     } catch (err) {
-      setError(errorMessage(err));
+      if (!controller.signal.aborted) {
+        setError(errorMessage(err));
+      }
     } finally {
-      pending.current = false;
-      setLoading(false);
+      if (abortRef.current === controller) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, []);
 
   const lineMap = new Map(

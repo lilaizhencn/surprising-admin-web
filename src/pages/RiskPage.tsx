@@ -1,6 +1,6 @@
 import { Select } from "../components/CustomSelect";
 import { safeInteger } from "../lib/integers";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost } from "../api/admin";
 import { Search } from "lucide-react";
@@ -70,6 +70,8 @@ export default function RiskPage() {
     }));
   }
 
+  const loadSeqRef = useRef(0);
+
   async function load(
     nextCandidateCursor = listFilters.candidateCursor,
     nextHighRiskCursor = listFilters.highRiskCursor,
@@ -77,6 +79,7 @@ export default function RiskPage() {
     nextAdlQueueCursor = listFilters.adlQueueCursor,
     nextAdlEventCursor = listFilters.adlEventCursor
   ) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -119,6 +122,7 @@ export default function RiskPage() {
           sort: listFilters.highRiskSort
         })
       ]);
+      if (seq !== loadSeqRef.current) return;
       const ruleRows = rules.rules ?? rules.items ?? [];
       setData({
         candidates: candidates.candidates ?? candidates.items ?? [],
@@ -157,9 +161,13 @@ export default function RiskPage() {
         };
       });
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -262,7 +270,10 @@ export default function RiskPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   const timelineRows = records(timeline?.timeline as UnknownRecord[] | undefined);
 

@@ -1,5 +1,5 @@
 import { Select } from "../components/CustomSelect";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { type Instrument, type UnknownRecord, type PositionRecord, type ProductLine } from "../types";
 import { instruments as instrumentList, gatewayGet } from "../api/admin";
 import { Search } from "lucide-react";
@@ -7,6 +7,7 @@ import { cursorInfo, Page, TextFilter, SortSelect, Metric, TwoColumn, Panel, Cur
 import MaintenancePage from "../MaintenancePage";
 import { accountTypeForProductLine, defaultAssetForProductLine, productLineForInstrument, INSTRUMENT_STATUSES, ACCOUNT_TYPES } from "../lib/products";
 import { errorMessage } from "../lib/adminData";
+import { sumBigIntUnits } from "../lib/decimals";
 import { INSTRUMENT_SORTS, CREATED_AT_SORTS } from "../lib/queryOptions";
 
 const LIFECYCLE_PRODUCT_LINES = ["LINEAR_DELIVERY", "INVERSE_DELIVERY", "OPTION"] as const;
@@ -56,7 +57,10 @@ export default function LifecyclePage({
     });
   }
 
+  const loadSeqRef = useRef(0);
+
   async function load(nextInstrumentCursor = filters.instrumentCursor, nextLedgerCursor = filters.ledgerCursor) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -93,6 +97,7 @@ export default function LifecyclePage({
           }).catch(() => ({ positions: [] as PositionRecord[], items: [] as PositionRecord[] }))
           : Promise.resolve({ positions: [] as PositionRecord[], items: [] as PositionRecord[] })
       ]);
+      if (seq !== loadSeqRef.current) return;
       const rawInstruments = instrumentResponse.instruments ?? instrumentResponse.items ?? [];
       const productInstruments = rawInstruments
         .filter((item) => productLineForInstrument(item) === productLine)
@@ -111,17 +116,24 @@ export default function LifecyclePage({
         ledgerCursor: nextLedgerCursor
       }));
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
-  useEffect(() => { void load("", ""); }, []);
+  useEffect(() => {
+    void load("", "");
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   const closedCount = instruments.filter((item) => item.status === "CLOSED").length;
   const settlingCount = instruments.filter((item) => ["PRE_TRADING", "SETTLING"].includes(String(item.status ?? ""))).length;
-  const ledgerNet = ledger.reduce((sum, row) => sum + numericValue(row.amountUnits), 0);
+  const ledgerNet = sumBigIntUnits(ledger.map((row) => row.amountUnits)).toString();
   const referenceType = lifecycleReferenceType(filters.productLine);
 
   return (
@@ -174,7 +186,7 @@ export default function LifecyclePage({
         <Metric label="已关闭" value={closedCount} tone="ok" />
         <Metric label="流水类型" value={referenceType} tone="muted" />
         <Metric label="流水条数" value={ledger.length} tone={ledger.length ? "warn" : "muted"} />
-        <Metric label="流水净额" value={ledgerNet} tone={ledgerNet === 0 ? "ok" : "warn"} />
+        <Metric label="流水净额" value={ledgerNet} tone={ledgerNet === "0" ? "ok" : "warn"} />
       </div>
       <TwoColumn>
         <Panel title="交割 / 行权产品">
@@ -261,13 +273,4 @@ function lifecycleInstrumentType(productLine: string) {
 
 function lifecycleReferenceType(productLine: string) {
   return productLine === "OPTION" ? "OPTION_EXERCISE" : "DELIVERY_SETTLEMENT";
-}
-
-function numericValue(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
 }

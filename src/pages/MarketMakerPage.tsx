@@ -1,5 +1,5 @@
 import { Select } from "../components/CustomSelect";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
 import { type UnknownRecord } from "../types";
 import { gatewayGet, gatewayPost, adminGridStrategies, adminStopGridStrategy } from "../api/admin";
@@ -79,7 +79,10 @@ export default function MarketMakerPage() {
     setInsightFilters((current) => ({ ...current, ...patch, logCursor: "" }));
   }
 
+  const loadSeqRef = useRef(0);
+
   async function load(nextLogCursor = insightFilters.logCursor) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -91,6 +94,7 @@ export default function MarketMakerPage() {
         gatewayGet<UnknownRecord>("market-maker", "/pnl-attribution", insightParams),
         gatewayGet<{ events?: UnknownRecord[]; count?: number; nextCursor?: string | null; hasMore?: boolean; sort?: string; limit?: number }>("market-maker", "/strategy-logs", logParams)
       ]);
+      if (seq !== loadSeqRef.current) return;
       const nextStrategies = strategyResponse.strategies ?? strategyResponse.items ?? [];
       setStrategies(nextStrategies);
       if (nextStrategies.length && (!selectedStrategyId || !nextStrategies.some((item) => String(item.strategyId ?? item.id ?? "") === selectedStrategyId))) {
@@ -105,9 +109,13 @@ export default function MarketMakerPage() {
       setLogPageInfo(cursorInfo(logResponse));
       setInsightFilters((current) => ({ ...current, logCursor: nextLogCursor || "" }));
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -138,7 +146,10 @@ export default function MarketMakerPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   const totals = objectValue(metrics?.totals);
   const metricRows: UnknownRecord[] = records(metrics?.rows as UnknownRecord[] | undefined).map((row) => ({

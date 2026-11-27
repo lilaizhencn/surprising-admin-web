@@ -1,6 +1,6 @@
 import { Select } from "../components/CustomSelect";
 import { FEE_STATUSES, FEE_SOURCE_TYPES, feeScheduleFormTemplate, feeScheduleFormFromRecord, feeSchedulePayload } from "../features/fees/feeScheduleForm";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useConfirmDialog } from "../components/ConfirmDialog";
 import { gatewayGet, gatewayPost, adminVipLevels, adminUserVipStatus, adminUpdateUserVip } from "../api/admin";
 import { type UnknownRecord } from "../types";
@@ -44,7 +44,10 @@ export default function FeesPage() {
     setFilters((current) => ({ ...current, ...patch, scheduleCursor: "" }));
   }
 
+  const loadSeqRef = useRef(0);
+
   async function load(nextScheduleCursor = filters.scheduleCursor) {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError("");
     try {
@@ -68,6 +71,7 @@ export default function FeesPage() {
           : Promise.resolve(null),
         adminVipLevels(filters.productLine)
       ]);
+      if (seq !== loadSeqRef.current) return;
       setData({
         schedules: schedules.schedules ?? schedules.items ?? [],
         effective: effective ?? {}
@@ -79,9 +83,13 @@ export default function FeesPage() {
         scheduleCursor: nextScheduleCursor || ""
       }));
     } catch (err) {
-      setError(errorMessage(err));
+      if (seq === loadSeqRef.current) {
+        setError(errorMessage(err));
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -180,7 +188,10 @@ export default function FeesPage() {
     finally { setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    void load();
+    return () => { loadSeqRef.current += 1; };
+  }, []);
 
   return (
     <Page title="费率与 VIP 运营管理" onRefresh={load} loading={loading} error={error}>
